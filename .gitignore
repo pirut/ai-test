@@ -12,3 +12,4 @@ apps/player/dist
 apps/player/node_modules
 apps/admin/node_modules
 packages/*/node_modules
+.vercel
