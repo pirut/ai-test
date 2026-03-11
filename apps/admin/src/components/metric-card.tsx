@@ -1,22 +1,21 @@
 import { cn } from "@/lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
 
-type Tone = "signal" | "warning" | "danger" | "brand" | "queue" | "unclaimed";
+type Tone = "signal" | "warning" | "danger" | "primary" | "queue" | "unclaimed";
 
-const toneStyles: Record<Tone, { bar: string; number: string }> = {
-  signal:    { bar: "bg-signal",    number: "text-signal" },
-  warning:   { bar: "bg-warning",   number: "text-warning" },
-  danger:    { bar: "bg-danger",    number: "text-danger" },
-  brand:     { bar: "bg-brand",     number: "text-brand" },
-  queue:     { bar: "bg-queue",     number: "text-queue" },
-  unclaimed: { bar: "bg-unclaimed", number: "text-unclaimed" },
+const numberColor: Record<Tone, string> = {
+  signal:    "text-signal",
+  warning:   "text-warning",
+  danger:    "text-danger",
+  primary:   "text-primary",
+  queue:     "text-queue",
+  unclaimed: "text-unclaimed",
 };
 
 export function MetricCard({
   label,
   value,
   hint,
-  tone = "brand",
+  tone = "primary",
 }: {
   label: string;
   value: string | number;
@@ -24,18 +23,12 @@ export function MetricCard({
   tone?: Tone;
 }) {
   return (
-    <Card className="relative overflow-hidden gap-2 py-5">
-      {/* Colored top accent strip */}
-      <span className={cn("absolute inset-x-0 top-0 h-0.5", toneStyles[tone].bar)} />
-      <CardContent className="flex flex-col gap-1">
-        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-brand">
-          {label}
-        </p>
-        <strong className={cn("font-mono text-4xl font-semibold tracking-tight leading-none", toneStyles[tone].number)}>
-          {value}
-        </strong>
-        <span className="text-[0.8rem] text-muted-foreground leading-snug">{hint}</span>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1 rounded-xl border border-border bg-card px-5 py-4">
+      <span className="text-[0.78rem] font-medium text-muted-foreground">{label}</span>
+      <span className={cn("font-mono text-[2.2rem] font-semibold leading-none tracking-tight tabular-nums", numberColor[tone])}>
+        {value}
+      </span>
+      <span className="text-[0.78rem] text-muted-foreground/70 leading-snug">{hint}</span>
+    </div>
   );
 }

@@ -6,172 +6,123 @@
 
 /* ─── Light theme ─────────────────────────────────────────────── */
 :root {
-  /* shadcn core — light */
-  --background:          #f0f5f2;
-  --foreground:          #0c1e19;
-  --card:                #ffffff;
-  --card-foreground:     #0c1e19;
-  --popover:             #ffffff;
-  --popover-foreground:  #0c1e19;
-  --primary:             #00a87a;
-  --primary-foreground:  #030a07;
-  --secondary:           #e4eeea;
-  --secondary-foreground:#0c1e19;
-  --muted:               #e4eeea;
-  --muted-foreground:    #527068;
-  --accent:              #e4eeea;
-  --accent-foreground:   #0c1e19;
-  --destructive:         #dc2626;
-  --border:              rgba(0, 0, 0, 0.08);
-  --input:               rgba(0, 0, 0, 0.05);
-  --ring:                #00a87a;
-  --radius:              0.625rem;
+  --background:           #f8fafc;
+  --foreground:           #0f172a;
+  --card:                 #ffffff;
+  --card-foreground:      #0f172a;
+  --popover:              #ffffff;
+  --popover-foreground:   #0f172a;
+  --primary:              #0284c7;
+  --primary-foreground:   #ffffff;
+  --secondary:            #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted:                #f1f5f9;
+  --muted-foreground:     #64748b;
+  --accent:               #f1f5f9;
+  --accent-foreground:    #0f172a;
+  --destructive:          #dc2626;
+  --border:               rgba(15, 23, 42, 0.08);
+  --input:                rgba(15, 23, 42, 0.05);
+  --ring:                 #0284c7;
+  --radius:               0.5rem;
 
-  /* App status tokens */
-  --brand:               #00a87a;
-  --brand-dim:           rgba(0, 168, 122, 0.12);
-  --brand-glow:          rgba(0, 168, 122, 0.25);
-  --signal:              #16a34a;
-  --signal-dim:          rgba(22, 163, 74, 0.1);
-  --warning:             #c27803;
-  --warning-dim:         rgba(194, 120, 3, 0.1);
-  --danger:              #dc2626;
-  --danger-dim:          rgba(220, 38, 38, 0.1);
-  --queue:               #6d28d9;
-  --queue-dim:           rgba(109, 40, 217, 0.1);
-  --unclaimed:           #0369a1;
-  --unclaimed-dim:       rgba(3, 105, 161, 0.1);
+  --sidebar:              #ffffff;
+  --sidebar-border:       rgba(15, 23, 42, 0.08);
 
-  /* Layout */
-  --sidebar-bg:          rgba(248, 252, 250, 0.99);
-  --body-g1:             rgba(0, 168, 122, 0.06);
-  --body-g2:             rgba(3, 105, 161, 0.04);
-  --grid-line:           rgba(0, 0, 0, 0.04);
+  --signal:               #16a34a;
+  --warning:              #d97706;
+  --danger:               #dc2626;
+  --queue:                #7c3aed;
+  --unclaimed:            #2563eb;
 }
 
 /* ─── Dark theme ──────────────────────────────────────────────── */
 .dark {
-  /* shadcn core — dark */
-  --background:          #050b0e;
-  --foreground:          #cce6de;
-  --card:                #0c1b26;
-  --card-foreground:     #cce6de;
-  --popover:             #08121a;
-  --popover-foreground:  #cce6de;
-  --primary:             #00d9a0;
-  --primary-foreground:  #030a07;
-  --secondary:           #08121a;
-  --secondary-foreground:#cce6de;
-  --muted:               #08121a;
-  --muted-foreground:    #4e7a74;
-  --accent:              #0d1e2a;
-  --accent-foreground:   #cce6de;
-  --destructive:         #f43f5e;
-  --border:              rgba(255, 255, 255, 0.055);
-  --input:               rgba(255, 255, 255, 0.04);
-  --ring:                #00d9a0;
+  --background:           #0b1018;
+  --foreground:           #dde9f0;
+  --card:                 #111926;
+  --card-foreground:      #dde9f0;
+  --popover:              #0f1722;
+  --popover-foreground:   #dde9f0;
+  --primary:              #38bdf8;
+  --primary-foreground:   #082a3f;
+  --secondary:            #111926;
+  --secondary-foreground: #dde9f0;
+  --muted:                #111926;
+  --muted-foreground:     #526475;
+  --accent:               #161e2b;
+  --accent-foreground:    #dde9f0;
+  --destructive:          #f87171;
+  --border:               rgba(255, 255, 255, 0.065);
+  --input:                rgba(255, 255, 255, 0.05);
+  --ring:                 #38bdf8;
 
-  /* App status tokens */
-  --brand:               #00d9a0;
-  --brand-dim:           rgba(0, 217, 160, 0.1);
-  --brand-glow:          rgba(0, 217, 160, 0.22);
-  --signal:              #22d37a;
-  --signal-dim:          rgba(34, 211, 122, 0.1);
-  --warning:             #f0a500;
-  --warning-dim:         rgba(240, 165, 0, 0.1);
-  --danger:              #f43f5e;
-  --danger-dim:          rgba(244, 63, 94, 0.1);
-  --queue:               #a78bfa;
-  --queue-dim:           rgba(167, 139, 250, 0.1);
-  --unclaimed:           #38bdf8;
-  --unclaimed-dim:       rgba(56, 189, 248, 0.1);
+  --sidebar:              #0d1520;
+  --sidebar-border:       rgba(255, 255, 255, 0.065);
 
-  /* Layout */
-  --sidebar-bg:          rgba(4, 9, 13, 0.98);
-  --body-g1:             rgba(0, 217, 160, 0.07);
-  --body-g2:             rgba(56, 189, 248, 0.04);
-  --grid-line:           rgba(255, 255, 255, 0.013);
+  --signal:               #34d399;
+  --warning:              #fbbf24;
+  --danger:               #f87171;
+  --queue:                #a78bfa;
+  --unclaimed:            #60a5fa;
 }
 
-/* ─── Tailwind v4 theme mapping ───────────────────────────────── */
+/* ─── Theme mapping ───────────────────────────────────────────── */
 @theme inline {
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* shadcn semantic colors → Tailwind utilities */
-  --color-background:          var(--background);
-  --color-foreground:          var(--foreground);
-  --color-card:                var(--card);
-  --color-card-foreground:     var(--card-foreground);
-  --color-popover:             var(--popover);
-  --color-popover-foreground:  var(--popover-foreground);
-  --color-primary:             var(--primary);
-  --color-primary-foreground:  var(--primary-foreground);
-  --color-secondary:           var(--secondary);
-  --color-secondary-foreground:var(--secondary-foreground);
-  --color-muted:               var(--muted);
-  --color-muted-foreground:    var(--muted-foreground);
-  --color-accent:              var(--accent);
-  --color-accent-foreground:   var(--accent-foreground);
-  --color-destructive:         var(--destructive);
-  --color-border:              var(--border);
-  --color-input:               var(--input);
-  --color-ring:                var(--ring);
+  --color-background:           var(--background);
+  --color-foreground:           var(--foreground);
+  --color-card:                 var(--card);
+  --color-card-foreground:      var(--card-foreground);
+  --color-popover:              var(--popover);
+  --color-popover-foreground:   var(--popover-foreground);
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+  --color-destructive:          var(--destructive);
+  --color-border:               var(--border);
+  --color-input:                var(--input);
+  --color-ring:                 var(--ring);
+  --color-sidebar:              var(--sidebar);
+  --color-sidebar-border:       var(--sidebar-border);
 
-  /* App colors → Tailwind utilities (e.g. bg-brand, text-signal) */
-  --color-brand:               var(--brand);
-  --color-signal:              var(--signal);
-  --color-warning:             var(--warning);
-  --color-danger:              var(--danger);
-  --color-queue:               var(--queue);
-  --color-unclaimed:           var(--unclaimed);
+  /* Status colors */
+  --color-signal:    var(--signal);
+  --color-warning:   var(--warning);
+  --color-danger:    var(--danger);
+  --color-queue:     var(--queue);
+  --color-unclaimed: var(--unclaimed);
 
-  --radius-sm:   calc(var(--radius) * 0.6);
-  --radius-md:   calc(var(--radius) * 0.8);
-  --radius-lg:   var(--radius);
-  --radius-xl:   calc(var(--radius) * 1.6);
-  --radius-2xl:  calc(var(--radius) * 2.2);
+  --radius-sm:  calc(var(--radius) * 0.75);
+  --radius-md:  var(--radius);
+  --radius-lg:  calc(var(--radius) * 1.5);
+  --radius-xl:  calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 3);
 }
 
 /* ─── Keyframes ───────────────────────────────────────────────── */
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.5; transform: scale(0.7); }
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.65); }
 }
 
-/* ─── Base layer ──────────────────────────────────────────────── */
+/* ─── Base ────────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
-    font-size: 14.5px;
+    @apply bg-background text-foreground font-sans;
+    font-size: 14px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-}
-
-/* ─── Body atmosphere (gradient + grid) ──────────────────────── */
-body {
-  background:
-    radial-gradient(ellipse 70% 45% at 15% -5%, var(--body-g1), transparent),
-    radial-gradient(ellipse 50% 35% at 90% 105%, var(--body-g2), transparent),
-    var(--background);
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    repeating-linear-gradient(0deg,  transparent, transparent 31px, var(--grid-line) 31px, var(--grid-line) 32px),
-    repeating-linear-gradient(90deg, transparent, transparent 31px, var(--grid-line) 31px, var(--grid-line) 32px);
-  pointer-events: none;
-  z-index: 0;
-}
-
-body > * {
-  position: relative;
-  z-index: 1;
 }

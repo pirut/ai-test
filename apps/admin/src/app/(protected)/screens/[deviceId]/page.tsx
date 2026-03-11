@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { CommandPanel } from "@/components/command-panel";
+import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { requireOrgId } from "@/lib/auth";
 import { getDevice, latestScreenshot, listCommands } from "@/lib/backend";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function ScreenDetailPage({
   params,
@@ -17,74 +17,82 @@ export default async function ScreenDetailPage({
 
   if (!device) notFound();
 
-  const screenshot = await latestScreenshot(device.id);
-  const commands = await listCommands(device.id);
+  const [screenshot, commands] = await Promise.all([
+    latestScreenshot(device.id),
+    listCommands(device.id),
+  ]);
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <header className="flex items-start justify-between gap-4 border-b border-border pb-6">
-        <div>
-          <p className="mb-1 flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-brand">
-            <span className="inline-block h-px w-4 bg-brand opacity-70" />
-            Screen detail
-          </p>
-          <h1 className="text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold tracking-tight leading-tight">
-            {device.name}
-          </h1>
-          <p className="mt-1 text-[0.9rem] text-muted-foreground">{device.siteName}</p>
-        </div>
-        <StatusPill label={device.status} status={device.status} />
-      </header>
+    <>
+      <PageHeader
+        title={device.name}
+        description={device.siteName}
+        action={<StatusPill status={device.status} label={device.status} />}
+      />
 
-      {/* Detail grid */}
-      <div className="grid gap-5 grid-cols-[minmax(0,1.5fr)_minmax(300px,0.5fr)]">
-        {/* Screenshot + stats */}
-        <Card>
-          <CardContent className="flex flex-col gap-4 pt-4">
+      <div className="p-8">
+        <div className="grid grid-cols-[1fr_300px] gap-6">
+          {/* Left: screenshot + stats */}
+          <div className="flex flex-col gap-4">
             {screenshot ? (
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
                 <img alt={device.name} src={screenshot.publicUrl} className="w-full h-auto block" />
               </div>
-            ) : null}
-            <div className="divide-y divide-border">
+            ) : (
+              <div className="flex aspect-video items-center justify-center rounded-xl border border-border bg-card text-muted-foreground/30">
+                <svg className="size-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <path d="M8 21h8M12 17v4" strokeLinecap="round" />
+                </svg>
+              </div>
+            )}
+
+            {/* Device stats */}
+            <div className="rounded-xl border border-border bg-card">
               {[
                 { label: "Current playlist", value: device.currentPlaylistName ?? "Unassigned" },
-                { label: "Manifest version", value: device.manifestVersion ?? "None" },
+                { label: "Manifest version", value: String(device.manifestVersion ?? "—") },
                 { label: "Last heartbeat",   value: device.lastHeartbeatAt },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between gap-4 py-3 text-[0.88rem]">
+              ].map(({ label, value }, i, arr) => (
+                <div
+                  key={label}
+                  className={`flex items-center justify-between gap-4 px-4 py-3 text-sm ${i < arr.length - 1 ? "border-b border-border" : ""}`}
+                >
                   <span className="text-muted-foreground">{label}</span>
-                  <strong className="font-mono text-[0.85rem] text-card-foreground">{String(value)}</strong>
+                  <span className="font-mono text-[0.82rem] text-foreground">{String(value)}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Commands + log */}
-        <div className="flex flex-col gap-4">
-          <CommandPanel deviceId={device.id} />
-          <Card>
-            <CardHeader>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-brand">
-                Command log
-              </p>
-              <CardTitle className="text-lg">Recent queue</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y divide-border">
-                {commands.map((command) => (
-                  <div key={command.id} className="flex items-center justify-between gap-4 py-2.5 text-[0.85rem]">
-                    <span className="text-muted-foreground">{command.commandType}</span>
-                    <strong className="font-mono text-[0.8rem] text-card-foreground">{command.issuedAt}</strong>
-                  </div>
-                ))}
+          {/* Right: commands + log */}
+          <div className="flex flex-col gap-4">
+            <CommandPanel deviceId={device.id} />
+
+            {/* Command log */}
+            <div className="rounded-xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="text-[0.88rem] font-semibold text-foreground">Command log</h2>
               </div>
-            </CardContent>
-          </Card>
+              {commands.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-muted-foreground">No commands issued yet.</p>
+              ) : (
+                <div>
+                  {commands.map((cmd, i) => (
+                    <div
+                      key={cmd.id}
+                      className={`flex items-center justify-between gap-4 px-4 py-2.5 text-sm ${i < commands.length - 1 ? "border-b border-border" : ""}`}
+                    >
+                      <span className="font-mono text-[0.8rem] text-foreground">{cmd.commandType}</span>
+                      <span className="font-mono text-[0.75rem] text-muted-foreground">{cmd.issuedAt}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

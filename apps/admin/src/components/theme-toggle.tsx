@@ -1,32 +1,32 @@
 "use client";
 
 import { useTheme } from "next-themes";
-
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground font-normal"
+    <button
       onClick={() => setTheme(isDark ? "light" : "dark")}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground",
+        "transition-colors hover:bg-accent/60 hover:text-foreground"
+      )}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
     >
       {isDark ? (
-        <svg width="14" height="14" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
-          <circle cx="7.5" cy="7.5" r="2.5" />
-          <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M3.05 3.05l1.06 1.06M10.89 10.89l1.06 1.06M10.89 4.11l1.06-1.06M3.05 11.95l1.06-1.06" />
+        <svg className="size-[15px] shrink-0 opacity-50" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+          <circle cx="8" cy="8" r="2.75" />
+          <path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M11.54 4.46l1.06-1.06M3.4 12.6l1.06-1.06" />
         </svg>
       ) : (
-        <svg width="14" height="14" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
-          <path d="M12 9.5A5.5 5.5 0 015.5 3a5.5 5.5 0 100 9 5.5 5.5 0 006.5-2.5z" />
+        <svg className="size-[15px] shrink-0 opacity-50" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+          <path d="M13.5 10a6 6 0 01-8-8 6 6 0 108 8z" />
         </svg>
       )}
       {isDark ? "Light mode" : "Dark mode"}
-    </Button>
+    </button>
   );
 }

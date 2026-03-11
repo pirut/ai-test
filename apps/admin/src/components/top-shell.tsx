@@ -7,18 +7,17 @@ import { useTheme } from "next-themes";
 
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   {
     href: "/dashboard",
     label: "Dashboard",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-        <rect x="1" y="1" width="6" height="6" rx="1.5" />
-        <rect x="9" y="1" width="6" height="6" rx="1.5" />
-        <rect x="1" y="9" width="6" height="6" rx="1.5" />
-        <rect x="9" y="9" width="6" height="6" rx="1.5" />
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+        <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.25" />
+        <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.25" />
+        <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.25" />
+        <rect x="9" y="9" width="5.5" height="5.5" rx="1.25" />
       </svg>
     ),
   },
@@ -26,9 +25,9 @@ const navItems = [
     href: "/screens",
     label: "Screens",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
         <rect x="1" y="2" width="14" height="9" rx="1.5" />
-        <path d="M5 14h6M8 11v3" strokeLinecap="round" />
+        <path d="M5.5 14h5M8 11v3" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -36,9 +35,9 @@ const navItems = [
     href: "/media",
     label: "Media",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
         <rect x="1" y="1" width="14" height="14" rx="2" />
-        <path d="M6 5.5l5 2.5-5 2.5V5.5z" fill="currentColor" stroke="none" />
+        <path d="M6.5 5.5l4.5 2.5-4.5 2.5V5.5z" fill="currentColor" stroke="none" />
       </svg>
     ),
   },
@@ -46,10 +45,10 @@ const navItems = [
     href: "/playlists",
     label: "Playlists",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-        <path d="M2 4h12M2 8h9M2 12h7" strokeLinecap="round" />
-        <circle cx="13" cy="10" r="2" />
-        <path d="M13 8V4" strokeLinecap="round" />
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+        <path d="M2 4h12M2 8h8.5M2 12h6" strokeLinecap="round" />
+        <circle cx="13" cy="10.5" r="1.75" />
+        <path d="M13 8.75V5" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -57,9 +56,9 @@ const navItems = [
     href: "/schedules",
     label: "Schedules",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-        <rect x="1" y="2" width="14" height="13" rx="2" />
-        <path d="M5 1v3M11 1v3M1 7h14" strokeLinecap="round" />
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+        <rect x="1" y="2.5" width="14" height="12" rx="1.5" />
+        <path d="M5 1v3M11 1v3M1 7.5h14" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -67,7 +66,7 @@ const navItems = [
     href: "/team",
     label: "Team",
     icon: (
-      <svg className="size-4 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
         <circle cx="6" cy="5" r="2.5" />
         <path d="M1 14c0-2.76 2.24-5 5-5s5 2.24 5 5" strokeLinecap="round" />
         <circle cx="12.5" cy="5" r="2" />
@@ -80,37 +79,35 @@ const navItems = [
 function useClerkAppearance() {
   const { resolvedTheme } = useTheme();
 
-  // Clerk popovers render in a detached portal, so we pass explicit hex
-  // values per theme rather than CSS variable references.
   if (resolvedTheme === "light") {
     return {
       variables: {
-        colorPrimary:         "#00a87a",
+        colorPrimary:         "#0284c7",
         colorBackground:      "#ffffff",
-        colorText:            "#0c1e19",
-        colorTextSecondary:   "#527068",
-        colorInputBackground: "#f0f5f2",
-        colorInputText:       "#0c1e19",
-        colorNeutral:         "#0c1e19",
+        colorText:            "#0f172a",
+        colorTextSecondary:   "#64748b",
+        colorInputBackground: "#f8fafc",
+        colorInputText:       "#0f172a",
+        colorNeutral:         "#0f172a",
         fontFamily:           "var(--font-sans)",
-        borderRadius:         "10px",
-        fontSize:             "14.5px",
+        borderRadius:         "8px",
+        fontSize:             "14px",
       },
     } as const;
   }
 
   return {
     variables: {
-      colorPrimary:         "#00d9a0",
-      colorBackground:      "#08121a",
-      colorText:            "#cce6de",
-      colorTextSecondary:   "#4e7a74",
-      colorInputBackground: "#050b0e",
-      colorInputText:       "#cce6de",
-      colorNeutral:         "#cce6de",
+      colorPrimary:         "#38bdf8",
+      colorBackground:      "#0f1722",
+      colorText:            "#dde9f0",
+      colorTextSecondary:   "#526475",
+      colorInputBackground: "#0b1018",
+      colorInputText:       "#dde9f0",
+      colorNeutral:         "#dde9f0",
       fontFamily:           "var(--font-sans)",
-      borderRadius:         "10px",
-      fontSize:             "14.5px",
+      borderRadius:         "8px",
+      fontSize:             "14px",
     },
   } as const;
 }
@@ -120,25 +117,19 @@ export function TopShell({ children }: { children: React.ReactNode }) {
   const clerkAppearance = useClerkAppearance();
 
   return (
-    <div className="grid min-h-screen grid-cols-[260px_1fr]">
+    <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside
-        className="sticky top-0 flex h-screen flex-col gap-0 overflow-y-auto border-r border-border"
-        style={{ background: "var(--sidebar-bg)" }}
-      >
-        {/* Brand */}
-        <div className="px-4 py-5 border-b border-border">
-          <p className="mb-1 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-brand flex items-center gap-2">
-            <span className="inline-block h-px w-4 bg-brand opacity-70" />
-            Showroom Control
-          </p>
-          <h1 className="text-xl font-semibold uppercase tracking-tight text-foreground leading-none">
-            Signal Room
-          </h1>
+      <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+        {/* Wordmark */}
+        <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
+          <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold tracking-tight select-none">
+            SR
+          </div>
+          <span className="text-[0.88rem] font-semibold text-foreground tracking-tight">Signal Room</span>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
+        <nav className="flex flex-1 flex-col gap-px px-2 py-3">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -146,13 +137,13 @@ export function TopShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[0.88rem] font-medium transition-colors",
+                  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
                   isActive
-                    ? "bg-brand/10 text-brand border border-brand/20"
-                    : "text-muted-foreground border border-transparent hover:bg-accent hover:text-foreground"
+                    ? "bg-accent text-foreground font-medium"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                 )}
               >
-                <span className={cn("opacity-50 transition-opacity", isActive && "opacity-100")}>
+                <span className={cn("transition-opacity", isActive ? "opacity-80" : "opacity-40 group-hover:opacity-60")}>
                   {item.icon}
                 </span>
                 {item.label}
@@ -162,22 +153,23 @@ export function TopShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="px-3 py-4 border-t border-border flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border-t border-sidebar-border p-3">
           <ThemeToggle />
-          <Separator className="my-1" />
-          <OrganizationSwitcher
-            afterCreateOrganizationUrl="/dashboard"
-            afterLeaveOrganizationUrl="/"
-            afterSelectOrganizationUrl="/dashboard"
-            hidePersonal
-            appearance={clerkAppearance}
-          />
-          <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+          <div className="flex items-center justify-between">
+            <OrganizationSwitcher
+              afterCreateOrganizationUrl="/dashboard"
+              afterLeaveOrganizationUrl="/"
+              afterSelectOrganizationUrl="/dashboard"
+              hidePersonal
+              appearance={clerkAppearance}
+            />
+            <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+          </div>
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="min-w-0 p-8">{children}</main>
+      {/* Main */}
+      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
     </div>
   );
 }
