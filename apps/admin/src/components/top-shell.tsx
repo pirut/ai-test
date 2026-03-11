@@ -5,6 +5,8 @@ import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
 
 import { classNames } from "@/lib/utils";
+import { useTheme } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const items = [
   {
@@ -68,14 +70,54 @@ const items = [
         <circle cx="6" cy="5" r="2.5" />
         <path d="M1 14c0-2.76 2.24-5 5-5s5 2.24 5 5" strokeLinecap="round" />
         <circle cx="12" cy="5" r="2" />
-        <path d="M12 9c1.66 0 3 1.34 3 3" strokeLinecap="round" />
+        <path d="M12 9c1.66 0 1.34 3 3 3" strokeLinecap="round" />
       </svg>
     ),
   },
 ];
 
+function useClerkAppearance() {
+  const { theme } = useTheme();
+
+  // Clerk popover/dropdown sits outside the React tree in a portal,
+  // so we pass explicit hex values per theme instead of CSS variables
+  // (which can't be guaranteed to resolve in detached DOM).
+  if (theme === "light") {
+    return {
+      variables: {
+        colorPrimary:         "#00a87a",
+        colorBackground:      "#ffffff",
+        colorText:            "#0c1e19",
+        colorTextSecondary:   "#527068",
+        colorInputBackground: "#f0f5f2",
+        colorInputText:       "#0c1e19",
+        colorNeutral:         "#0c1e19",
+        fontFamily:           '"IBM Plex Sans", system-ui, sans-serif',
+        borderRadius:         "10px",
+        fontSize:             "14.5px",
+      },
+    } as const;
+  }
+
+  return {
+    variables: {
+      colorPrimary:         "#00d9a0",
+      colorBackground:      "#0c1b26",
+      colorText:            "#cce6de",
+      colorTextSecondary:   "#4e7a74",
+      colorInputBackground: "#08121a",
+      colorInputText:       "#cce6de",
+      colorNeutral:         "#cce6de",
+      fontFamily:           '"IBM Plex Sans", system-ui, sans-serif',
+      borderRadius:         "10px",
+      fontSize:             "14.5px",
+    },
+  } as const;
+}
+
 export function TopShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const clerkAppearance = useClerkAppearance();
 
   return (
     <div className="chrome">
@@ -99,13 +141,18 @@ export function TopShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
         <div className="railFooter">
+          <ThemeToggle />
           <OrganizationSwitcher
             afterCreateOrganizationUrl="/dashboard"
             afterLeaveOrganizationUrl="/"
             afterSelectOrganizationUrl="/dashboard"
             hidePersonal
+            appearance={clerkAppearance}
           />
-          <UserButton afterSignOutUrl="/" />
+          <UserButton
+            afterSignOutUrl="/"
+            appearance={clerkAppearance}
+          />
         </div>
       </aside>
       <main className="workspace">{children}</main>
