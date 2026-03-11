@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.local
+.next
+dist
+node_modules
+coverage
+*.log
+*.tsbuildinfo
+apps/admin/.next
+apps/player/dist
+apps/player/node_modules
+apps/admin/node_modules
+packages/*/node_modules

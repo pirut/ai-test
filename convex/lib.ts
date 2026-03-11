@@ -1,0 +1,75 @@
+import { ConvexError, v } from "convex/values";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+export async function hashValue(value: string) {
+  const buffer = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(buffer))
+    .map((entry) => entry.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export function randomToken(length = 24) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnopqrstuvwxyz";
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+function extractClaim(identity: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = identity[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+export async function requireOrgIdentity(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new ConvexError("Authentication required");
+  }
+
+  const claims = identity as unknown as Record<string, unknown>;
+  const orgId = extractClaim(claims, ["orgId", "org_id", "organization_id"]);
+  const role = extractClaim(claims, ["orgRole", "org_role", "role"]) ?? "org:member";
+
+  if (!orgId) {
+    throw new ConvexError("Organization context required");
+  }
+
+  return {
+    orgId,
+    role,
+    userId: identity.subject,
+    email: typeof claims.email === "string" ? claims.email : "",
+  };
+}
+
+export async function requireAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await requireOrgIdentity(ctx);
+  if (identity.role !== "org:admin") {
+    throw new ConvexError("Admin role required");
+  }
+  return identity;
+}
+
+export async function resolveDeviceByCredential(
+  ctx: QueryCtx | MutationCtx,
+  credential: string,
+) {
+  const secretHash = await hashValue(credential);
+  const record = await ctx.db
+    .query("deviceCredentials")
+    .withIndex("by_secret_hash", (q) => q.eq("secretHash", secretHash))
+    .unique();
+
+  if (!record || record.revokedAt) {
+    return null;
+  }
+
+  return ctx.db.get(record.deviceId);
+}

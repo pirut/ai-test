@@ -1,0 +1,431 @@
+import { auth } from "@clerk/nextjs/server";
+import {
+  type DeviceCommandResult,
+  type HeartbeatPayload,
+  type ScreenshotUploadPayload,
+  dashboardStatsSchema,
+  deviceManifestSchema,
+  deviceSummarySchema,
+  mediaAssetSchema,
+  playlistSchema,
+  temporaryRegistrationResponseSchema,
+  claimStatusResponseSchema,
+  deviceCommandSchema,
+} from "@showroom/contracts";
+import { ConvexHttpClient } from "convex/browser";
+import type { FunctionReference } from "convex/server";
+import { z } from "zod";
+
+import { api } from "@convex-api";
+import { env, hasConvexBackend } from "@/lib/env";
+import * as mock from "@/lib/mock-store";
+
+const screenshotSchema = z.object({
+  deviceId: z.string(),
+  publicUrl: z.string(),
+  capturedAt: z.string(),
+  bytes: z.number(),
+});
+
+const uploadDraftSchema = z.object({
+  assetId: z.string(),
+  uploadUrl: z.string(),
+  storagePath: z.string(),
+  expiresInSeconds: z.number(),
+});
+
+function publicConvexClient() {
+  if (!env.convexUrl) {
+    throw new Error("NEXT_PUBLIC_CONVEX_URL is required for Convex mode.");
+  }
+
+  return new ConvexHttpClient(env.convexUrl);
+}
+
+async function adminConvexClient() {
+  if (!env.convexUrl) {
+    throw new Error("NEXT_PUBLIC_CONVEX_URL is required for Convex mode.");
+  }
+
+  const client = new ConvexHttpClient(env.convexUrl);
+  const session = await auth();
+  const token =
+    (await session.getToken({ template: "convex" }).catch(() => null)) ??
+    (await session.getToken().catch(() => null));
+
+  if (token) {
+    client.setAuth(token);
+  }
+
+  return client;
+}
+
+async function convexQuery(
+  reference: FunctionReference<"query">,
+  args: unknown,
+) {
+  const client = await adminConvexClient();
+  return client.query(reference as never, args as never);
+}
+
+async function convexMutation(
+  reference: FunctionReference<"mutation">,
+  args: unknown,
+) {
+  const client = await adminConvexClient();
+  return client.mutation(reference as never, args as never);
+}
+
+async function publicConvexQuery(
+  reference: FunctionReference<"query">,
+  args: unknown,
+) {
+  const client = publicConvexClient();
+  return client.query(reference as never, args as never);
+}
+
+async function publicConvexMutation(
+  reference: FunctionReference<"mutation">,
+  args: unknown,
+) {
+  const client = publicConvexClient();
+  return client.mutation(reference as never, args as never);
+}
+
+export async function getDashboardStats(orgId: string) {
+  if (!hasConvexBackend()) {
+    return mock.getDashboardStats(orgId);
+  }
+
+  const result = await convexQuery(api.dashboard.getOverview, {});
+  return dashboardStatsSchema.parse((result as { stats: unknown }).stats);
+}
+
+export async function listDevices(orgId: string) {
+  if (!hasConvexBackend()) {
+    return mock.listDevices(orgId);
+  }
+
+  const result = await convexQuery(api.admin.listScreens, {});
+  return z.array(deviceSummarySchema).parse(result);
+}
+
+export async function getDevice(orgId: string, deviceId: string) {
+  if (!hasConvexBackend()) {
+    return mock.getDevice(orgId, deviceId);
+  }
+
+  const result = await convexQuery(api.admin.getScreenDetail, { deviceId });
+  return result
+    ? deviceSummarySchema.extend({
+        timezone: z.string(),
+        orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+        volume: z.number(),
+      }).parse(result)
+    : null;
+}
+
+export async function listCommands(deviceId?: string) {
+  if (!hasConvexBackend()) {
+    return mock.listCommands(deviceId);
+  }
+
+  const result = await convexQuery(api.admin.listDeviceCommands, {
+    deviceId: deviceId ?? undefined,
+  });
+  return z.array(deviceCommandSchema).parse(result);
+}
+
+export async function latestScreenshot(deviceId: string) {
+  if (!hasConvexBackend()) {
+    return mock.latestScreenshot(deviceId);
+  }
+
+  const result = await convexQuery(api.admin.getLatestScreenshot, { deviceId });
+  return result ? screenshotSchema.parse(result) : null;
+}
+
+export async function listMediaAssets() {
+  if (!hasConvexBackend()) {
+    return mock.listMediaAssets();
+  }
+
+  const result = await convexQuery(api.admin.listMediaAssets, {});
+  return z.array(mediaAssetSchema).parse(result);
+}
+
+export async function listPlaylists() {
+  if (!hasConvexBackend()) {
+    return mock.listPlaylists();
+  }
+
+  const result = await convexQuery(api.admin.listPlaylists, {});
+  return z.array(playlistSchema).parse(result);
+}
+
+export async function listSchedules() {
+  if (!hasConvexBackend()) {
+    return [
+      {
+        id: "schedule-opening",
+        label: "Morning opening",
+        startsAt: "2026-03-11T09:00:00.000Z",
+        endsAt: "2026-03-11T16:00:00.000Z",
+        priority: 10,
+      },
+    ];
+  }
+
+  return z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      startsAt: z.string(),
+      endsAt: z.string(),
+      priority: z.number(),
+    }),
+  ).parse(await convexQuery(api.admin.listSchedules, {}));
+}
+
+export async function createUploadDraft(input: {
+  fileName: string;
+  mimeType: string;
+  bytes: number;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.createUploadDraft(input);
+  }
+
+  const result = await convexMutation(api.admin.generateMediaUploadUrl, input);
+  return uploadDraftSchema.parse(result);
+}
+
+export async function claimDevice(input: {
+  orgId: string;
+  claimCode: string;
+  name: string;
+  siteName: string;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.claimDevice(input);
+  }
+
+  const result = await convexMutation(api.admin.claimDeviceByCode, {
+    claimCode: input.claimCode,
+    name: input.name,
+    siteName: input.siteName,
+  });
+  return z
+    .object({
+      deviceId: z.string(),
+      credential: z.string(),
+    })
+    .parse(result);
+}
+
+export async function issueCommand(input: {
+  deviceId: string;
+  commandType: string;
+  payload?: Record<string, unknown>;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.issueCommand(input);
+  }
+
+  const result = await convexMutation(api.admin.enqueueDeviceCommand, input);
+  return deviceCommandSchema.parse(result);
+}
+
+export async function compileManifests(orgId: string) {
+  if (!hasConvexBackend()) {
+    return mock.compileManifests(orgId);
+  }
+
+  return z
+    .object({
+      affectedDeviceCount: z.number(),
+      manifestVersion: z.string(),
+    })
+    .parse(await convexMutation(api.admin.compileManifests, {}));
+}
+
+export async function registerTemporaryDevice() {
+  if (!hasConvexBackend()) {
+    return mock.registerTemporaryDevice();
+  }
+
+  return temporaryRegistrationResponseSchema.parse(
+    await publicConvexMutation(api.device.registerTemporary, {}),
+  );
+}
+
+export async function getClaimStatus(input: {
+  deviceSessionId: string;
+  claimToken: string;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.getClaimStatus(input);
+  }
+
+  return claimStatusResponseSchema.parse(
+    await publicConvexQuery(api.device.getClaimStatus, input),
+  );
+}
+
+export async function refreshDeviceAuth(credential: string | null) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    return mock.refreshDeviceAuth(credential);
+  }
+
+  return z
+    .object({
+      deviceId: z.string(),
+      credential: z.string(),
+      expiresInSeconds: z.number(),
+    })
+    .parse(await publicConvexMutation(api.device.refreshAuth, { credential }));
+}
+
+export async function getManifestForCredential(credential: string | null) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    const device = mock.authenticateDevice(credential);
+    return device ? mock.getManifestForDevice(device.id) : null;
+  }
+
+  const result = await publicConvexQuery(api.device.getManifest, { credential });
+  return result ? deviceManifestSchema.parse(result) : null;
+}
+
+export async function getCommandsForCredential(credential: string | null) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    const device = mock.authenticateDevice(credential);
+    return device ? mock.getCommandsForDevice(device.id) : null;
+  }
+
+  return z
+    .array(deviceCommandSchema)
+    .parse(await publicConvexQuery(api.device.pullCommands, { credential }));
+}
+
+export async function recordHeartbeatForCredential(
+  credential: string | null,
+  payload: HeartbeatPayload,
+) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    const device = mock.authenticateDevice(credential);
+    return device ? mock.recordHeartbeat(device.id, payload) : null;
+  }
+
+  return await publicConvexMutation(api.device.recordHeartbeat, {
+    credential,
+    payload,
+  });
+}
+
+export async function recordScreenshotForCredential(
+  credential: string | null,
+  payload: ScreenshotUploadPayload,
+) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    const device = mock.authenticateDevice(credential);
+    return device
+      ? mock.recordScreenshot({
+          deviceId: device.id,
+          capturedAt: payload.capturedAt,
+          bytes: payload.bytes,
+          publicUrl: `https://picsum.photos/seed/${device.id}/1280/720`,
+        })
+      : null;
+  }
+
+  return screenshotSchema.parse(
+    await publicConvexMutation(api.device.recordScreenshot, {
+      credential,
+      payload,
+    }),
+  );
+}
+
+export async function recordCommandResultForCredential(
+  credential: string | null,
+  payload: DeviceCommandResult,
+) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    return mock.recordCommandResult(payload);
+  }
+
+  return await publicConvexMutation(api.device.recordCommandResult, {
+    credential,
+    payload,
+  });
+}
+
+export async function upsertOrganizationFromClerkWebhook(input: {
+  clerkOrgId: string;
+  name: string;
+  slug: string;
+  metadata: Record<string, unknown>;
+}) {
+  if (!hasConvexBackend()) {
+    return input;
+  }
+
+  return convexMutation(api.sync.upsertOrganizationFromClerk, input);
+}
+
+export async function deleteOrganizationFromClerkWebhook(input: {
+  clerkOrgId: string;
+}) {
+  if (!hasConvexBackend()) {
+    return input;
+  }
+
+  return convexMutation(api.sync.deleteOrganizationFromClerk, input);
+}
+
+export async function upsertUserFromClerkWebhook(input: {
+  clerkUserId: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+}) {
+  if (!hasConvexBackend()) {
+    return input;
+  }
+
+  return convexMutation(api.sync.upsertUserFromClerk, input);
+}
+
+export async function deleteUserFromClerkWebhook(input: {
+  clerkUserId: string;
+}) {
+  if (!hasConvexBackend()) {
+    return input;
+  }
+
+  return convexMutation(api.sync.deleteUserFromClerk, input);
+}

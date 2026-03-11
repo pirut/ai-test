@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Showroom Signage Device and Admin API
+  version: 0.1.0
+servers:
+  - url: https://example.com
+components:
+  schemas:
+    DeviceManifest:
+      type: object
+      required:
+        - manifestVersion
+        - deviceId
+        - generatedAt
+        - timezone
+        - orientation
+        - volume
+        - defaultPlaylist
+        - scheduleWindows
+        - assetBaseUrl
+        - assetChecksums
+      properties:
+        manifestVersion:
+          type: string
+        deviceId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        orientation:
+          type: integer
+          enum: [0, 90, 180, 270]
+        volume:
+          type: integer
+          minimum: 0
+          maximum: 100
+        defaultPlaylist:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestPlaylistItem'
+        scheduleWindows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleWindow'
+        assetBaseUrl:
+          type: string
+        assetChecksums:
+          type: object
+          additionalProperties:
+            type: string
+    ManifestPlaylistItem:
+      type: object
+      required:
+        - id
+        - assetId
+        - assetType
+        - title
+        - url
+        - checksum
+      properties:
+        id:
+          type: string
+        assetId:
+          type: string
+        assetType:
+          type: string
+          enum: [image, video]
+        title:
+          type: string
+        url:
+          type: string
+        checksum:
+          type: string
+        durationSeconds:
+          type: integer
+    ScheduleWindow:
+      type: object
+      required:
+        - id
+        - label
+        - startsAt
+        - endsAt
+        - playlist
+        - priority
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        priority:
+          type: integer
+        playlist:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestPlaylistItem'
+paths:
+  /api/device/register-temporary:
+    post:
+      summary: Register an unclaimed device session.
+  /api/device/manifest:
+    get:
+      summary: Retrieve the active manifest for a device.
+

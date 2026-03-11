@@ -1,0 +1,15 @@
+[Unit]
+Description=Showroom Chromium kiosk
+After=showroom-agent.service graphical.target
+Wants=showroom-agent.service
+
+[Service]
+ExecStart=/usr/local/bin/showroom-start-kiosk
+Restart=always
+RestartSec=5
+User=pi
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=graphical.target
+
