@@ -5,7 +5,9 @@ import { useMemo, useState } from "react";
 import type { MediaAsset, Playlist } from "@showroom/contracts";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export function PlaylistManager({
@@ -87,18 +89,18 @@ export function PlaylistManager({
         <h2 className="mb-4 text-[0.88rem] font-semibold text-foreground">Create playlist</h2>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[0.8rem] text-muted-foreground">Name</label>
-            <Input onChange={(event) => setName(event.target.value)} value={name} />
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="playlist-name">
+              Name
+            </Label>
+            <Input id="playlist-name" onChange={(event) => setName(event.target.value)} value={name} />
           </div>
-          <label className="flex items-center gap-2 text-[0.8rem] text-muted-foreground">
-            <input
+          <Label className="flex items-center gap-2 text-[0.8rem] text-muted-foreground">
+            <Checkbox
               checked={makeDefault}
-              className="size-4 rounded border-border bg-background"
-              onChange={(event) => setMakeDefault(event.target.checked)}
-              type="checkbox"
+              onCheckedChange={setMakeDefault}
             />
             Use as default fallback playlist
-          </label>
+          </Label>
           <Button disabled={saving} onClick={() => void handleSave()} type="button">
             {saving ? "Saving…" : "Save playlist"}
           </Button>
@@ -123,10 +125,9 @@ export function PlaylistManager({
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <input
+                  <Checkbox
                     checked={selectedSet.has(asset.id)}
-                    onChange={() => toggleAsset(asset.id)}
-                    type="checkbox"
+                    onCheckedChange={() => toggleAsset(asset.id)}
                   />
                   <span className="truncate text-sm font-medium text-foreground">{asset.title}</span>
                 </div>

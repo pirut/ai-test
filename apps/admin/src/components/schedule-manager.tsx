@@ -5,6 +5,14 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 type ScheduleSummary = {
@@ -29,6 +37,8 @@ type DeviceOption = {
   name: string;
 };
 
+const ALL_SCREENS_VALUE = "__all__";
+
 function toLocalDateTime(value: string) {
   return value.slice(0, 16);
 }
@@ -52,6 +62,14 @@ export function ScheduleManager({
   const [deviceId, setDeviceId] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const playlistOptions = playlists.map((playlist) => ({
+    label: playlist.name,
+    value: playlist.id,
+  }));
+  const deviceOptions = [{ label: "All screens", value: ALL_SCREENS_VALUE }, ...devices.map((device) => ({
+    label: device.name,
+    value: device.id,
+  }))];
 
   async function handleSave() {
     if (!name.trim() || !startsAt || !endsAt || !playlistId) {
@@ -103,33 +121,60 @@ export function ScheduleManager({
       <section className="rounded-xl border border-border bg-card p-5">
         <h2 className="mb-4 text-[0.88rem] font-semibold text-foreground">Create schedule</h2>
         <div className="flex flex-col gap-3">
-          <Input onChange={(event) => setName(event.target.value)} placeholder="Morning loop" value={name} />
-          <Input onChange={(event) => setStartsAt(event.target.value)} type="datetime-local" value={startsAt} />
-          <Input onChange={(event) => setEndsAt(event.target.value)} type="datetime-local" value={endsAt} />
-          <Input min="0" onChange={(event) => setPriority(event.target.value)} type="number" value={priority} />
-          <select
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground"
-            onChange={(event) => setPlaylistId(event.target.value)}
-            value={playlistId}
-          >
-            {playlists.map((playlist) => (
-              <option key={playlist.id} value={playlist.id}>
-                {playlist.name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground"
-            onChange={(event) => setDeviceId(event.target.value)}
-            value={deviceId}
-          >
-            <option value="">All screens</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-name">Name</Label>
+            <Input id="schedule-name" onChange={(event) => setName(event.target.value)} placeholder="Morning loop" value={name} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-start">Starts</Label>
+            <Input id="schedule-start" onChange={(event) => setStartsAt(event.target.value)} type="datetime-local" value={startsAt} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-end">Ends</Label>
+            <Input id="schedule-end" onChange={(event) => setEndsAt(event.target.value)} type="datetime-local" value={endsAt} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-priority">Priority</Label>
+            <Input id="schedule-priority" min="0" onChange={(event) => setPriority(event.target.value)} type="number" value={priority} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground">Playlist</Label>
+            <Select
+              items={playlistOptions}
+              onValueChange={(value) => setPlaylistId(value ?? "")}
+              value={playlistId}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {playlistOptions.map((playlist) => (
+                  <SelectItem key={playlist.value} value={playlist.value}>
+                    {playlist.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground">Target</Label>
+            <Select
+              items={deviceOptions}
+              onValueChange={(value) => setDeviceId(value === ALL_SCREENS_VALUE ? "" : (value ?? ""))}
+              value={deviceId || ALL_SCREENS_VALUE}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {deviceOptions.map((device) => (
+                  <SelectItem key={device.value} value={device.value}>
+                    {device.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button disabled={saving} onClick={() => void handleSave()} type="button">
             {saving ? "Saving…" : "Save schedule"}
           </Button>

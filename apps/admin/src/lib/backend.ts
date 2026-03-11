@@ -222,9 +222,10 @@ export async function finalizeMediaUpload(input: {
   fileName: string;
   mimeType: string;
   bytes: number;
-  storageId: string;
   storagePath: string;
+  previewUrl: string;
   checksum: string;
+  storageId?: string;
   width?: number;
   height?: number;
   durationSeconds?: number;

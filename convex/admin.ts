@@ -251,8 +251,9 @@ export const finalizeMediaUpload = mutation({
     fileName: v.string(),
     mimeType: v.string(),
     bytes: v.number(),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
     storagePath: v.string(),
+    previewUrl: v.string(),
     checksum: v.string(),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
@@ -262,7 +263,6 @@ export const finalizeMediaUpload = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    const previewUrl = (await ctx.storage.getUrl(args.storageId)) ?? "";
 
     const assetId = await ctx.db.insert("mediaAssets", {
       organizationId: orgId,
@@ -272,7 +272,7 @@ export const finalizeMediaUpload = mutation({
       fileName: args.fileName,
       storageId: args.storageId,
       storagePath: args.storagePath,
-      previewUrl,
+      previewUrl: args.previewUrl,
       sizeBytes: args.bytes,
       width: args.width,
       height: args.height,
