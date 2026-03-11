@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 type ScreenSettings = {
@@ -45,11 +47,12 @@ export function ScreenSettingsPanel({
     siteName: device.siteName,
     timezone: device.timezone,
     orientation: String(device.orientation),
-    volume: String(device.volume),
+    volume: device.volume,
     defaultPlaylistId: device.defaultPlaylistId ?? "",
   });
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+
   const orientationOptions = ["0", "90", "180", "270"].map((option) => ({
     label: `${option}°`,
     value: option,
@@ -70,7 +73,7 @@ export function ScreenSettingsPanel({
           siteName: form.siteName,
           timezone: form.timezone,
           orientation: Number(form.orientation),
-          volume: Number(form.volume),
+          volume: form.volume,
           defaultPlaylistId: form.defaultPlaylistId || null,
         }),
       });
@@ -93,87 +96,122 @@ export function ScreenSettingsPanel({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-4 text-[0.88rem] font-semibold text-foreground">Screen settings</h2>
-      <div className="grid gap-3">
+    <Card className="border border-border/70 bg-card/95">
+      <CardHeader className="border-b border-border/60">
+        <CardTitle className="text-[0.92rem] font-semibold">Screen settings</CardTitle>
+        <p className="text-[0.78rem] text-muted-foreground">
+          Configure the device profile with shadcn-styled selectors and a live audio control slider.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-5">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-name">Name</Label>
+          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-name">
+            Name
+          </Label>
           <Input
             id="screen-name"
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
             value={form.name}
           />
         </div>
+
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-site">Site</Label>
+          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-site">
+            Site
+          </Label>
           <Input
             id="screen-site"
             onChange={(event) => setForm((current) => ({ ...current, siteName: event.target.value }))}
             value={form.siteName}
           />
         </div>
+
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-timezone">Timezone</Label>
+          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-timezone">
+            Timezone
+          </Label>
           <Input
             id="screen-timezone"
             onChange={(event) => setForm((current) => ({ ...current, timezone: event.target.value }))}
             value={form.timezone}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground">Orientation</Label>
-          <Select
-            items={orientationOptions}
-            onValueChange={(value) => setForm((current) => ({ ...current, orientation: value ?? "0" }))}
-            value={form.orientation}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {orientationOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground">Orientation</Label>
+            <Select
+              items={orientationOptions}
+              onValueChange={(value) => setForm((current) => ({ ...current, orientation: value ?? "0" }))}
+              value={form.orientation}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {orientationOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground">Default playlist</Label>
+            <Select
+              items={playlistOptions}
+              onValueChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  defaultPlaylistId: value === ORG_DEFAULT_VALUE ? "" : value ?? "",
+                }))
+              }
+              value={form.defaultPlaylistId || ORG_DEFAULT_VALUE}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {playlistOptions.map((playlist) => (
+                  <SelectItem key={playlist.value} value={playlist.value}>
+                    {playlist.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-volume">Volume</Label>
-          <Input
-            id="screen-volume"
-            max="100"
-            min="0"
-            onChange={(event) => setForm((current) => ({ ...current, volume: event.target.value }))}
-            type="number"
-            value={form.volume}
-          />
+
+        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <Label className="text-[0.8rem] text-muted-foreground">Volume</Label>
+              <p className="text-[0.75rem] text-muted-foreground">
+                Use the slider to set the playback ceiling for this screen.
+              </p>
+            </div>
+            <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.78rem] text-foreground">
+              {form.volume}%
+            </span>
+          </div>
+          <div className="mt-4">
+            <Slider
+              max={100}
+              min={0}
+              onValueChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  volume: Array.isArray(value) ? value[0] ?? 0 : value,
+                }))
+              }
+              step={1}
+              value={form.volume}
+            />
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground">Default playlist</Label>
-          <Select
-            items={playlistOptions}
-            onValueChange={(value) =>
-              setForm((current) => ({
-                ...current,
-                defaultPlaylistId: value === ORG_DEFAULT_VALUE ? "" : (value ?? ""),
-              }))
-            }
-            value={form.defaultPlaylistId || ORG_DEFAULT_VALUE}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {playlistOptions.map((playlist) => (
-                <SelectItem key={playlist.value} value={playlist.value}>
-                  {playlist.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+
         <Button disabled={saving} onClick={() => void handleSave()} type="button">
           {saving ? "Saving…" : "Save settings"}
         </Button>
@@ -182,7 +220,7 @@ export function ScreenSettingsPanel({
             {status.text}
           </p>
         ) : null}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

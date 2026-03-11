@@ -4,10 +4,13 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { MediaAsset, Playlist } from "@showroom/contracts";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 export function PlaylistManager({
@@ -84,23 +87,60 @@ export function PlaylistManager({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
-      <section className="rounded-xl border border-border bg-card p-5">
-        <h2 className="mb-4 text-[0.88rem] font-semibold text-foreground">Create playlist</h2>
-        <div className="flex flex-col gap-3">
+    <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+      <Card className="border border-border/70 bg-card/95">
+        <CardHeader className="border-b border-border/60">
+          <CardTitle className="text-[0.92rem] font-semibold">Create playlist</CardTitle>
+          <p className="text-[0.78rem] text-muted-foreground">
+            Assemble a loop from approved assets. Images can carry dwell overrides, videos play full length.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 pt-5">
           <div className="flex flex-col gap-1.5">
             <Label className="text-[0.8rem] text-muted-foreground" htmlFor="playlist-name">
               Name
             </Label>
-            <Input id="playlist-name" onChange={(event) => setName(event.target.value)} value={name} />
-          </div>
-          <Label className="flex items-center gap-2 text-[0.8rem] text-muted-foreground">
-            <Checkbox
-              checked={makeDefault}
-              onCheckedChange={setMakeDefault}
+            <Input
+              id="playlist-name"
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Main showroom loop"
+              value={name}
             />
-            Use as default fallback playlist
-          </Label>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[0.82rem] font-medium text-foreground">Default fallback</p>
+                <p className="text-[0.75rem] text-muted-foreground">
+                  Use this playlist whenever no schedule window is active.
+                </p>
+              </div>
+              <Switch checked={makeDefault} onCheckedChange={setMakeDefault} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 p-3">
+            <div>
+              <p className="text-[0.82rem] font-medium text-foreground">Selection buffer</p>
+              <p className="text-[0.75rem] text-muted-foreground">
+                {selectedIds.length} asset{selectedIds.length === 1 ? "" : "s"} staged
+              </p>
+            </div>
+            <Button
+              disabled={selectedIds.length === 0}
+              onClick={() => {
+                setSelectedIds([]);
+                setDwellByAsset({});
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Clear
+            </Button>
+          </div>
+
           <Button disabled={saving} onClick={() => void handleSave()} type="button">
             {saving ? "Saving…" : "Save playlist"}
           </Button>
@@ -109,76 +149,94 @@ export function PlaylistManager({
               {status.text}
             </p>
           ) : null}
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-col gap-6">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="mb-4 text-[0.88rem] font-semibold text-foreground">Source media</h2>
-          <div className="grid gap-2 md:grid-cols-2">
-            {mediaAssets.map((asset) => (
-              <label
-                key={asset.id}
-                className={cn(
-                  "grid gap-2 rounded-lg border p-3 transition-colors",
-                  selectedSet.has(asset.id) ? "border-primary bg-primary/5" : "border-border",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={selectedSet.has(asset.id)}
-                    onCheckedChange={() => toggleAsset(asset.id)}
-                  />
-                  <span className="truncate text-sm font-medium text-foreground">{asset.title}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[0.75rem] text-muted-foreground">
-                  <span>{asset.type}</span>
-                  <Input
-                    className="h-8 w-24 font-mono"
-                    disabled={!selectedSet.has(asset.id) || asset.type === "video"}
-                    min="1"
-                    onChange={(event) =>
-                      setDwellByAsset((current) => ({
-                        ...current,
-                        [asset.id]: event.target.value,
-                      }))
-                    }
-                    placeholder="10"
-                    type="number"
-                    value={dwellByAsset[asset.id] ?? ""}
-                  />
-                </div>
-              </label>
-            ))}
-          </div>
-        </section>
+        <Card className="border border-border/70 bg-card/95">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-[0.92rem] font-semibold">Source media</CardTitle>
+            <p className="text-[0.78rem] text-muted-foreground">
+              Click a card to include it. Selected assets receive a mint edge and a dwell override field.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 pt-5 md:grid-cols-2">
+            {mediaAssets.map((asset) => {
+              const isSelected = selectedSet.has(asset.id);
+              return (
+                <button
+                  key={asset.id}
+                  className={cn(
+                    "group flex flex-col gap-3 rounded-xl border p-3 text-left transition-all",
+                    isSelected
+                      ? "border-primary/70 bg-primary/8 shadow-[0_0_0_1px_rgba(0,217,160,0.2)]"
+                      : "border-border/80 bg-muted/15 hover:border-primary/30 hover:bg-muted/25",
+                  )}
+                  onClick={() => toggleAsset(asset.id)}
+                  type="button"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Checkbox checked={isSelected} className="pointer-events-none" />
+                      <span className="truncate text-sm font-medium text-foreground">{asset.title}</span>
+                    </div>
+                    <Badge variant="outline">{asset.type}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-[0.75rem] text-muted-foreground">
+                    <span className="truncate font-mono">{asset.fileName}</span>
+                    <span className="font-mono">
+                      {asset.type === "video" ? `${asset.durationSeconds ?? 0}s` : "image"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/70 px-3 py-2">
+                    <div className="space-y-0.5">
+                      <p className="text-[0.76rem] font-medium text-foreground">Image dwell</p>
+                      <p className="text-[0.7rem] text-muted-foreground">
+                        Override the default image dwell on selected image assets.
+                      </p>
+                    </div>
+                    <Input
+                      className="h-8 w-24 font-mono"
+                      disabled={!isSelected || asset.type === "video"}
+                      min="1"
+                      onChange={(event) =>
+                        setDwellByAsset((current) => ({
+                          ...current,
+                          [asset.id]: event.target.value,
+                        }))
+                      }
+                      onClick={(event) => event.stopPropagation()}
+                      placeholder="10"
+                      type="number"
+                      value={dwellByAsset[asset.id] ?? ""}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
 
         <section className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
           {playlists.map((playlist) => (
-            <article key={playlist.id} className="flex flex-col rounded-xl border border-border bg-card">
-              <div className="border-b border-border px-4 py-3">
-                <p className="text-[0.88rem] font-semibold text-card-foreground">{playlist.name}</p>
+            <Card key={playlist.id} className="border border-border/70 bg-card/95">
+              <CardHeader className="border-b border-border/60">
+                <CardTitle className="text-[0.88rem] font-semibold">{playlist.name}</CardTitle>
                 <p className="text-[0.75rem] text-muted-foreground">
                   {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
                 </p>
-              </div>
-              <div>
-                {playlist.items.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "flex items-center justify-between gap-4 px-4 py-2.5 text-sm",
-                      index < playlist.items.length - 1 && "border-b border-border",
-                    )}
-                  >
+              </CardHeader>
+              <CardContent className="divide-y divide-border/60 pt-2">
+                {playlist.items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-4 py-2.5 text-sm">
                     <span className="truncate text-[0.82rem] text-foreground">{item.asset.title}</span>
                     <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">
                       {item.dwellSeconds ?? item.asset.durationSeconds ?? 10}s
                     </span>
                   </div>
                 ))}
-              </div>
-            </article>
+              </CardContent>
+            </Card>
           ))}
         </section>
       </div>

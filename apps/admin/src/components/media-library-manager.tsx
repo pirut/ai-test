@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { MediaAsset } from "@showroom/contracts";
 
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { useUploadThing } from "@/lib/uploadthing";
+import { UploadDropzone } from "@/lib/uploadthing";
 
 async function getMediaMetadata(file: File) {
   if (file.type.startsWith("image/")) {
@@ -53,51 +54,40 @@ function prettyBytes(bytes: number) {
   return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
 }
 
+type UploadedFile = {
+  fileHash: string | null;
+  key: string;
+  name: string;
+  size: number;
+  type: string;
+  ufsUrl: string;
+};
+
 export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAsset[] }) {
   const router = useRouter();
   const [assets, setAssets] = useState(initialAssets);
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [queuedFile, setQueuedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
-  const { isUploading, startUpload } = useUploadThing("mediaUploader");
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
-  async function handleUpload() {
-    if (!file) {
-      setStatus({ ok: false, text: "Choose a file to upload." });
-      return;
-    }
-
+  async function finalizeUpload(uploaded: UploadedFile) {
     try {
-      setStatus({ ok: true, text: "Uploading file…" });
-
-      const uploadedFiles = await startUpload([file], {
-        title: title.trim() || file.name.replace(/\.[^.]+$/, ""),
-        tags: tags
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-      });
-
-      const uploaded = uploadedFiles?.[0];
-      if (!uploaded) {
-        throw new Error("UploadThing did not return an uploaded file");
-      }
-
-      const metadata = await getMediaMetadata(file);
-
+      setIsFinalizing(true);
       setStatus({ ok: true, text: "Finalizing asset…" });
+      const metadata = queuedFile ? await getMediaMetadata(queuedFile) : {};
       const finalizeResponse = await fetch("/api/media/finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim() || file.name.replace(/\.[^.]+$/, ""),
+          title: title.trim() || uploaded.name.replace(/\.[^.]+$/, ""),
           fileName: uploaded.name,
           mimeType: uploaded.type,
           bytes: uploaded.size,
           storagePath: uploaded.key,
           previewUrl: uploaded.ufsUrl,
-          checksum: `ut:${uploaded.fileHash}`,
+          checksum: `ut:${uploaded.fileHash ?? uploaded.key}`,
           tags: tags
             .split(",")
             .map((entry) => entry.trim())
@@ -113,7 +103,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
 
       const nextAsset = finalizePayload.asset as MediaAsset;
       setAssets((current) => [nextAsset, ...current]);
-      setFile(null);
+      setQueuedFile(null);
       setTitle("");
       setTags("");
       setStatus({ ok: true, text: `Uploaded ${nextAsset.title}` });
@@ -123,67 +113,159 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
         ok: false,
         text: error instanceof Error ? error.message : "Upload failed",
       });
+    } finally {
+      setIsFinalizing(false);
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-xl border border-border bg-card p-5">
-        <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_1fr_auto]">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="media-file">
-              File
-            </Label>
-            <Input
-              accept="image/jpeg,image/png,image/webp,video/mp4"
-              id="media-file"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="media-title">
-              Title
-            </Label>
-            <Input
-              id="media-title"
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Front-window spring reel"
-              value={title}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="media-tags">
-              Tags
-            </Label>
-            <Input
-              id="media-tags"
-              onChange={(event) => setTags(event.target.value)}
-              placeholder="spring, hero, launch"
-              value={tags}
-            />
-          </div>
-          <div className="flex items-end">
-            <Button
-              className="w-full"
-              disabled={isUploading || !file}
-              onClick={() => void handleUpload()}
-              type="button"
-            >
-              {isUploading ? "Uploading…" : "Upload asset"}
-            </Button>
-          </div>
-        </div>
-        {status ? (
-          <p className={cn("mt-3 text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
-            {status.text}
-          </p>
-        ) : null}
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_420px]">
+        <Card className="border border-border/70 bg-card/95">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-[0.92rem] font-semibold">Media ingest</CardTitle>
+            <p className="text-[0.78rem] text-muted-foreground">
+              Use UploadThing&apos;s dropzone for approved files. Title and tags apply to the next asset you drop.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-4 pt-5 md:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[0.8rem] text-muted-foreground" htmlFor="media-title">
+                Title
+              </Label>
+              <Input
+                id="media-title"
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Front-window spring reel"
+                value={title}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[0.8rem] text-muted-foreground" htmlFor="media-tags">
+                Tags
+              </Label>
+              <Input
+                id="media-tags"
+                onChange={(event) => setTags(event.target.value)}
+                placeholder="spring, hero, launch"
+                value={tags}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <UploadDropzone
+                appearance={{
+                  allowedContent: "text-[0.72rem] font-mono text-muted-foreground",
+                  button:
+                    "mt-3 h-8 rounded-lg border border-primary/40 bg-primary px-3 text-[0.78rem] font-medium text-primary-foreground hover:bg-primary/90 ut-uploading:cursor-wait ut-readying:opacity-70",
+                  container:
+                    "rounded-xl border border-dashed border-border bg-gradient-to-br from-card via-card to-muted/35 px-5 py-8 text-card-foreground transition-colors ut-ready:border-primary/30 ut-ready:hover:border-primary/50 ut-ready:hover:bg-primary/5 ut-uploading:border-primary/50",
+                  label: "text-sm font-medium tracking-[-0.01em] text-foreground",
+                  uploadIcon: "text-primary",
+                }}
+                content={{
+                  allowedContent() {
+                    return "JPG, PNG, WEBP, MP4 • Max 256 MB";
+                  },
+                  button({ isUploading }) {
+                    return isUploading ? "Uploading…" : "Choose or drop file";
+                  },
+                  label({ isDragActive, ready }) {
+                    if (!ready) return "Preparing ingest node…";
+                    return isDragActive ? "Release to ingest this file" : "Drop showroom media here";
+                  },
+                }}
+                endpoint="mediaUploader"
+                input={{
+                  tags: tags
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                  title: title.trim() || queuedFile?.name.replace(/\.[^.]+$/, "") || undefined,
+                }}
+                onChange={(files) => {
+                  const nextFile = files[0] ?? null;
+                  setQueuedFile(nextFile);
+                  if (nextFile) {
+                    setStatus({ ok: true, text: `Queued ${nextFile.name}` });
+                  }
+                }}
+                onClientUploadComplete={(result) => {
+                  const uploaded = result[0];
+                  if (!uploaded) {
+                    setStatus({ ok: false, text: "Upload completed without a returned file." });
+                    return;
+                  }
+                  void finalizeUpload(uploaded);
+                }}
+                onUploadBegin={(fileName) => {
+                  setStatus({ ok: true, text: `Uploading ${fileName}…` });
+                }}
+                onUploadError={(error) => {
+                  setStatus({ ok: false, text: error.message });
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/70 bg-card/95">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-[0.92rem] font-semibold">Upload state</CardTitle>
+            <p className="text-[0.78rem] text-muted-foreground">
+              A live readout for the next media ingest and metadata finalization step.
+            </p>
+          </CardHeader>
+          <CardContent className="flex h-full flex-col gap-4 pt-5">
+            <div className="rounded-xl border border-border/70 bg-muted/25 p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                Pending file
+              </p>
+              {queuedFile ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <p className="truncate text-sm font-medium text-foreground">{queuedFile.name}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{queuedFile.type || "unknown type"}</Badge>
+                    <Badge variant="outline">{prettyBytes(queuedFile.size)}</Badge>
+                    <Badge variant="outline">
+                      {queuedFile.type.startsWith("video/") ? "video" : "image"}
+                    </Badge>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-[0.82rem] text-muted-foreground">
+                  No file selected. Drop a file onto the UploadThing dropzone to stage the next asset.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/25 p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                Pipeline status
+              </p>
+              <p
+                className={cn(
+                  "mt-3 min-h-10 text-[0.8rem] font-mono",
+                  status ? (status.ok ? "text-primary" : "text-destructive") : "text-muted-foreground",
+                )}
+              >
+                {status?.text ?? "Idle"}
+              </p>
+              {isFinalizing ? (
+                <p className="mt-2 text-[0.75rem] text-muted-foreground">
+                  Persisting metadata and folding the asset into the remote manifest store…
+                </p>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
         {assets.map((asset) => (
-          <article key={asset.id} className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <article
+            key={asset.id}
+            className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
+          >
             <div className="aspect-[16/10] overflow-hidden bg-muted">
               {asset.type === "video" ? (
                 <video className="h-full w-full object-cover" muted src={asset.previewUrl} />
