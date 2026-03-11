@@ -4,8 +4,10 @@
 
 1. Build the image from `infra/pi-image`.
 2. Flash the image to an SD card.
-3. Optionally place a `network.env` file on the boot partition with Wi-Fi credentials.
-4. Boot the Raspberry Pi with HDMI connected.
+3. Boot the Raspberry Pi with HDMI connected.
+4. If the device starts offline, use the on-screen Wi-Fi setup form to connect it.
+
+If you prefer to preload Wi-Fi instead, create `infra/pi-image/boot/network.env` before the build so the image includes `/boot/firmware/network-config`.
 
 ## Claiming
 
@@ -19,4 +21,3 @@
 - Media cache root: `/var/lib/showroom/cache`
 - Device state: `/var/lib/showroom/state`
 - Agent config: `/etc/showroom-agent/config.env`
-

@@ -19,6 +19,7 @@ type ManifestPlaylistItem struct {
 	ID              string `json:"id"`
 	AssetID         string `json:"assetId"`
 	AssetType       string `json:"assetType"`
+	SourceType      string `json:"sourceType,omitempty"`
 	Title           string `json:"title"`
 	URL             string `json:"url"`
 	Checksum        string `json:"checksum"`
@@ -244,6 +245,10 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 }
 
 func AssetFileName(item ManifestPlaylistItem) string {
+	if item.SourceType == "youtube" || IsYouTubeURL(item.URL) {
+		return item.AssetID + ".mp4"
+	}
+
 	extension := ".bin"
 	if parsed, err := url.Parse(item.URL); err == nil {
 		extension = filepath.Ext(parsed.Path)
@@ -256,6 +261,16 @@ func AssetFileName(item ManifestPlaylistItem) string {
 		}
 	}
 	return item.AssetID + extension
+}
+
+func IsYouTubeURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	return host == "youtube.com" || host == "m.youtube.com" || host == "youtu.be" || host == "music.youtube.com"
 }
 
 func (c *Client) postAuthenticatedJSON(ctx context.Context, credential string, path string, payload interface{}, out interface{}) error {

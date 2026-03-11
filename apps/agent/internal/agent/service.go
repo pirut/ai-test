@@ -192,7 +192,13 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		expectedChecksum := manifest.AssetChecksums[item.AssetID]
 		existing, ok := cachedAssets[item.AssetID]
 		if !ok || existing.Checksum != expectedChecksum || !fileExists(filepath.Join(s.config.StorageRoot, existing.FileName)) {
-			if err := s.client.DownloadFile(ctx, item.URL, destPath); err != nil {
+			var err error
+			if item.SourceType == "youtube" || remote.IsYouTubeURL(item.URL) {
+				err = s.downloadYouTubeVideo(ctx, item.URL, destPath)
+			} else {
+				err = s.client.DownloadFile(ctx, item.URL, destPath)
+			}
+			if err != nil {
 				return item, err
 			}
 			cachedAssets[item.AssetID] = state.AssetRecord{
@@ -231,6 +237,68 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	return cachedAssets, &localManifest, nil
 }
 
+func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, destPath string) error {
+	if strings.TrimSpace(sourceURL) == "" {
+		return fmt.Errorf("youtube source url is required")
+	}
+
+	if _, err := exec.LookPath(s.config.YouTubeDLBinary); err != nil {
+		return fmt.Errorf("yt-dlp binary %q not found in PATH", s.config.YouTubeDLBinary)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+
+	destBase := strings.TrimSuffix(destPath, filepath.Ext(destPath))
+	outputTemplate := destBase + ".%(ext)s"
+	cmd := exec.CommandContext(
+		ctx,
+		s.config.YouTubeDLBinary,
+		"--no-progress",
+		"--no-part",
+		"--no-playlist",
+		"--force-overwrites",
+		"--format",
+		s.config.YouTubeFormat,
+		"--merge-output-format",
+		"mp4",
+		"--remux-video",
+		"mp4",
+		"--output",
+		outputTemplate,
+		sourceURL,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("yt-dlp download failed: %s", strings.TrimSpace(string(output)))
+	}
+
+	matches, err := filepath.Glob(destBase + ".*")
+	if err != nil {
+		return err
+	}
+
+	for _, match := range matches {
+		if match == destPath {
+			return nil
+		}
+	}
+
+	for _, match := range matches {
+		if filepath.Ext(match) != ".mp4" {
+			continue
+		}
+		if err := os.Rename(match, destPath); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return fmt.Errorf("yt-dlp completed without producing %s", filepath.Base(destPath))
+}
+
 func (s *Service) processCommands(ctx context.Context, credential string) error {
 	commands, err := s.client.FetchCommands(ctx, credential)
 	if err != nil {
@@ -262,6 +330,8 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 		err = s.runShell(ctx, s.config.BlankScreenCommand)
 	case "unblank_screen":
 		err = s.runShell(ctx, s.config.UnblankScreenCommand)
+	case "update_release":
+		err = s.applyReleaseUpdate(ctx, command.ID, command.Payload)
 	default:
 		err = fmt.Errorf("unsupported command: %s", command.CommandType)
 	}
@@ -296,17 +366,25 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 	}
 
 	freeBytes, totalBytes := diskUsage(s.config.StorageRoot)
+	agentVersion := current.AgentVersion
+	if agentVersion == "" {
+		agentVersion = "agent-v1"
+	}
+	playerVersion := current.PlayerVersion
+	if playerVersion == "" {
+		playerVersion = "player-v1"
+	}
 	payload := map[string]interface{}{
-		"deviceId":         current.DeviceID,
-		"manifestVersion":  current.ManifestVersion,
-		"appVersion":       "player-v1",
-		"agentVersion":     "agent-v1",
-		"uptimeSeconds":    int(time.Since(s.start).Seconds()),
-		"storageFreeBytes": freeBytes,
+		"deviceId":          current.DeviceID,
+		"manifestVersion":   current.ManifestVersion,
+		"appVersion":        playerVersion,
+		"agentVersion":      agentVersion,
+		"uptimeSeconds":     int(time.Since(s.start).Seconds()),
+		"storageFreeBytes":  freeBytes,
 		"storageTotalBytes": totalBytes,
-		"currentAssetId":   current.CurrentAssetID,
+		"currentAssetId":    current.CurrentAssetID,
 		"currentPlaylistId": current.CurrentPlaylistID,
-		"lastSeenAt":       time.Now().UTC().Format(time.RFC3339),
+		"lastSeenAt":        time.Now().UTC().Format(time.RFC3339),
 	}
 
 	if err := s.client.PostHeartbeat(ctx, current.Credential, payload); err != nil {

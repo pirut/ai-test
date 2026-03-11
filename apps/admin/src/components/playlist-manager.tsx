@@ -213,7 +213,11 @@ export function PlaylistManager({
                   <div className="flex items-center justify-between gap-3 text-[0.75rem] text-muted-foreground">
                     <span className="truncate font-mono">{asset.fileName}</span>
                     <span className="font-mono">
-                      {asset.type === "video" ? `${asset.durationSeconds ?? 0}s` : "image"}
+                      {asset.type === "video"
+                        ? asset.durationSeconds
+                          ? `${asset.durationSeconds}s`
+                          : "video"
+                        : "image"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/70 px-3 py-2">

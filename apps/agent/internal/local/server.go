@@ -24,6 +24,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/local/manifest", s.handleManifest)
 	mux.HandleFunc("/local/status", s.handleStatus)
+	mux.HandleFunc("/local/wifi/status", s.handleWiFiStatus)
+	mux.HandleFunc("/local/wifi/configure", s.handleWiFiConfigure)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(s.config.StorageRoot))))
 	mux.HandleFunc("/", s.handlePlayer)
 	return mux

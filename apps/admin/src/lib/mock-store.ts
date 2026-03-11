@@ -173,6 +173,34 @@ export function createUploadDraft(input: {
   return draft;
 }
 
+export function createYouTubeMediaAsset(input: {
+  title: string;
+  sourceUrl: string;
+  previewUrl: string;
+  fileName: string;
+  durationSeconds?: number;
+  tags: string[];
+}) {
+  const asset: MediaAsset = {
+    id: crypto.randomUUID(),
+    title: input.title,
+    type: "video",
+    sourceType: "youtube",
+    sourceUrl: input.sourceUrl,
+    mimeType: "video/mp4",
+    fileName: input.fileName,
+    sizeBytes: 0,
+    durationSeconds: input.durationSeconds,
+    storagePath: `youtube/org_demo/${input.fileName}`,
+    previewUrl: input.previewUrl,
+    checksum: `youtube:${crypto.createHash("sha256").update(input.sourceUrl).digest("hex")}`,
+    tags: input.tags,
+  };
+
+  state().mediaAssets.unshift(asset);
+  return asset;
+}
+
 export function claimDevice(input: {
   orgId: string;
   claimCode: string;

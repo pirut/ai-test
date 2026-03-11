@@ -3,6 +3,8 @@ set -euo pipefail
 
 SHOWROOM_DIR="$(cd "$(dirname "$0")"/.. && pwd)"
 ARTIFACTS_DIR="${SHOWROOM_DIR}/artifacts"
+NETWORK_ENV="${SHOWROOM_DIR}/boot/network.env"
+NETWORK_CONFIG="${SHOWROOM_DIR}/boot/network-config"
 
 if [[ ! -f "${ARTIFACTS_DIR}/showroom-agent" ]]; then
   echo "Missing ${ARTIFACTS_DIR}/showroom-agent. Run infra/pi-image/prepare-artifacts.sh first." >&2
@@ -14,6 +16,10 @@ if [[ ! -d "${ARTIFACTS_DIR}/player" ]]; then
   exit 1
 fi
 
+yaml_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-agent.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-agent.service"
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-kiosk.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-kiosk.service"
 install -D -m 0644 "${SHOWROOM_DIR}/config/config.env" "${ROOTFS_DIR}/etc/showroom-agent/config.env"
@@ -22,6 +28,36 @@ install -D -m 0755 "${ARTIFACTS_DIR}/showroom-agent" "${ROOTFS_DIR}/usr/local/bi
 install -D -m 0644 "${SHOWROOM_DIR}/boot/network.env.example" "${ROOTFS_DIR}/boot/network.env.example"
 mkdir -p "${ROOTFS_DIR}/opt/showroom/player"
 cp -R "${ARTIFACTS_DIR}/player/." "${ROOTFS_DIR}/opt/showroom/player/"
+
+if [[ -f "${NETWORK_ENV}" ]]; then
+  WIFI_SSID="$(grep '^WIFI_SSID=' "${NETWORK_ENV}" | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  WIFI_PSK="$(grep '^WIFI_PSK=' "${NETWORK_ENV}" | head -n 1 | cut -d= -f2- | tr -d '\r')"
+
+  if [[ -z "${WIFI_SSID}" || -z "${WIFI_PSK}" ]]; then
+    echo "Expected WIFI_SSID and WIFI_PSK in ${NETWORK_ENV}" >&2
+    exit 1
+  fi
+
+  cat > "${ROOTFS_DIR}/boot/firmware/network-config" <<EOF
+network:
+  version: 2
+
+  ethernets:
+    eth0:
+      dhcp4: true
+      optional: true
+
+  wifis:
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "$(yaml_escape "${WIFI_SSID}")":
+          password: "$(yaml_escape "${WIFI_PSK}")"
+EOF
+elif [[ -f "${NETWORK_CONFIG}" ]]; then
+  install -D -m 0644 "${NETWORK_CONFIG}" "${ROOTFS_DIR}/boot/firmware/network-config"
+fi
 
 on_chroot <<'EOF'
 systemctl enable showroom-agent.service

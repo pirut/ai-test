@@ -1,6 +1,7 @@
 xserver-xorg
 openbox
-chromium-browser
+chromium
 scrot
 unclutter
-
+ffmpeg
+yt-dlp

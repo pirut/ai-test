@@ -8,6 +8,7 @@ type ManifestItem = {
   id: string;
   assetId: string;
   assetType: "image" | "video";
+  sourceType: "upload" | "youtube";
   title: string;
   url: string;
   checksum: string;
@@ -36,11 +37,14 @@ export function deriveDeviceStatus(device: Pick<Doc<"devices">, "status" | "last
 export async function serializeAsset(ctx: Ctx, asset: Doc<"mediaAssets">) {
   const previewUrl =
     asset.storageId ? (await ctx.storage.getUrl(asset.storageId)) ?? asset.previewUrl : asset.previewUrl;
+  const sourceType = asset.sourceType ?? "upload";
 
   return {
     id: asset._id,
     title: asset.title,
     type: asset.mediaType,
+    sourceType,
+    sourceUrl: asset.sourceUrl,
     mimeType: asset.mimeType,
     fileName: asset.fileName,
     sizeBytes: asset.sizeBytes,
@@ -122,13 +126,20 @@ export async function buildManifestPlaylistItems(
   const itemPairs = await getPlaylistAssetMap(ctx, playlistId);
   return Promise.all(
     itemPairs.map(async ({ item, asset }) => {
-      const url =
+      const sourceType = asset.sourceType ?? "upload";
+      if (sourceType === "youtube" && !asset.sourceUrl) {
+        throw new ConvexError(`YouTube asset ${asset._id} is missing sourceUrl`);
+      }
+
+      const uploadUrl =
         asset.storageId ? (await ctx.storage.getUrl(asset.storageId)) ?? asset.previewUrl : asset.previewUrl;
+      const url = sourceType === "youtube" ? asset.sourceUrl! : uploadUrl;
 
       return {
         id: item._id,
         assetId: asset._id,
         assetType: asset.mediaType,
+        sourceType,
         title: asset.title,
         url,
         checksum: asset.checksum,

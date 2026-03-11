@@ -268,6 +268,7 @@ export const finalizeMediaUpload = mutation({
       organizationId: orgId,
       title: args.title,
       mediaType: args.mimeType.startsWith("video/") ? "video" : "image",
+      sourceType: "upload",
       mimeType: args.mimeType,
       fileName: args.fileName,
       storageId: args.storageId,
@@ -286,6 +287,47 @@ export const finalizeMediaUpload = mutation({
     const asset = await ctx.db.get(assetId);
     if (!asset) {
       throw new ConvexError("Media asset was not created");
+    }
+
+    return serializeAsset(ctx, asset);
+  },
+});
+
+export const createYouTubeMediaAsset = mutation({
+  args: {
+    title: v.string(),
+    sourceUrl: v.string(),
+    previewUrl: v.string(),
+    fileName: v.string(),
+    durationSeconds: v.optional(v.number()),
+    tags: v.array(v.string()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const checksum = `youtube:${await hashValue(args.sourceUrl)}`;
+
+    const assetId = await ctx.db.insert("mediaAssets", {
+      organizationId: orgId,
+      title: args.title,
+      mediaType: "video",
+      sourceType: "youtube",
+      sourceUrl: args.sourceUrl,
+      mimeType: "video/mp4",
+      fileName: args.fileName,
+      storagePath: `youtube/${orgId}/${args.fileName}`,
+      previewUrl: args.previewUrl,
+      sizeBytes: 0,
+      durationSeconds: args.durationSeconds,
+      checksum,
+      tags: args.tags,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const asset = await ctx.db.get(assetId);
+    if (!asset) {
+      throw new ConvexError("YouTube media asset was not created");
     }
 
     return serializeAsset(ctx, asset);
@@ -604,6 +646,7 @@ export const enqueueDeviceCommand = mutation({
       v.literal("take_screenshot"),
       v.literal("blank_screen"),
       v.literal("unblank_screen"),
+      v.literal("update_release"),
     ),
     payload: v.optional(v.any()),
   },

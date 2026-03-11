@@ -23,7 +23,11 @@ export async function POST(
   const payload = schema.parse(await request.json());
 
   if (
-    (payload.commandType === "reboot_device" || payload.commandType === "restart_player") &&
+    (
+      payload.commandType === "reboot_device" ||
+      payload.commandType === "restart_player" ||
+      payload.commandType === "update_release"
+    ) &&
     !session.has({ role: "org:admin" })
   ) {
     return NextResponse.json({ error: "Admin role required" }, { status: 403 });

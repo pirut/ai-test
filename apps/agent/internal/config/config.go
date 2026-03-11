@@ -6,19 +6,22 @@ import (
 )
 
 type Config struct {
-	APIBaseURL            string
-	StorageRoot           string
-	StateRoot             string
-	PlayerDistPath        string
-	ListenAddr            string
-	PollInterval          time.Duration
-	HeartbeatInterval     time.Duration
-	ScreenshotInterval    time.Duration
-	ScreenshotCommand     string
-	RestartPlayerCommand  string
-	RebootCommand         string
-	BlankScreenCommand    string
-	UnblankScreenCommand  string
+	APIBaseURL           string
+	StorageRoot          string
+	StateRoot            string
+	PlayerDistPath       string
+	ListenAddr           string
+	PollInterval         time.Duration
+	HeartbeatInterval    time.Duration
+	ScreenshotInterval   time.Duration
+	ScreenshotCommand    string
+	YouTubeDLBinary      string
+	YouTubeFormat        string
+	RestartPlayerCommand string
+	RestartAgentCommand  string
+	RebootCommand        string
+	BlankScreenCommand   string
+	UnblankScreenCommand string
 }
 
 func getenv(key string, fallback string) string {
@@ -50,7 +53,10 @@ func Load() Config {
 		HeartbeatInterval:    getduration("SHOWROOM_HEARTBEAT_INTERVAL", "30s"),
 		ScreenshotInterval:   getduration("SHOWROOM_SCREENSHOT_INTERVAL", "15m"),
 		ScreenshotCommand:    getenv("SHOWROOM_SCREENSHOT_COMMAND", "scrot -q 85 -o /tmp/showroom-screenshot.jpg"),
+		YouTubeDLBinary:      getenv("SHOWROOM_YTDLP_BINARY", "yt-dlp"),
+		YouTubeFormat:        getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/best"),
 		RestartPlayerCommand: getenv("SHOWROOM_RESTART_PLAYER_COMMAND", "systemctl restart showroom-kiosk.service"),
+		RestartAgentCommand:  getenv("SHOWROOM_RESTART_AGENT_COMMAND", "systemctl restart showroom-agent.service"),
 		RebootCommand:        getenv("SHOWROOM_REBOOT_COMMAND", "shutdown -r now"),
 		BlankScreenCommand:   getenv("SHOWROOM_BLANK_COMMAND", "vcgencmd display_power 0"),
 		UnblankScreenCommand: getenv("SHOWROOM_UNBLANK_COMMAND", "vcgencmd display_power 1"),

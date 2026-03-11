@@ -15,6 +15,7 @@ const commandTypeValidator = v.union(
   v.literal("take_screenshot"),
   v.literal("blank_screen"),
   v.literal("unblank_screen"),
+  v.literal("update_release"),
 );
 
 const commandStatusValidator = v.union(
@@ -141,6 +142,8 @@ export default defineSchema({
     organizationId: v.string(),
     title: v.string(),
     mediaType: v.union(v.literal("image"), v.literal("video")),
+    sourceType: v.optional(v.union(v.literal("upload"), v.literal("youtube"))),
+    sourceUrl: v.optional(v.string()),
     mimeType: v.string(),
     fileName: v.string(),
     storageId: v.optional(v.id("_storage")),

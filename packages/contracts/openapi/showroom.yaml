@@ -56,6 +56,7 @@ components:
         - id
         - assetId
         - assetType
+        - sourceType
         - title
         - url
         - checksum
@@ -67,6 +68,9 @@ components:
         assetType:
           type: string
           enum: [image, video]
+        sourceType:
+          type: string
+          enum: [upload, youtube]
         title:
           type: string
         url:
@@ -108,4 +112,3 @@ paths:
   /api/device/manifest:
     get:
       summary: Retrieve the active manifest for a device.
-

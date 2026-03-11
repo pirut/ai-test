@@ -14,14 +14,37 @@ export const commandTypeSchema = z.enum([
   "take_screenshot",
   "blank_screen",
   "unblank_screen",
+  "update_release",
 ]);
 
+const sha256Schema = z
+  .string()
+  .trim()
+  .regex(/^(sha256:)?[a-f0-9]{64}$/i, "Expected a SHA-256 hex digest");
+
+export const releaseUpdatePayloadSchema = z
+  .object({
+    version: z.string().trim().min(1).optional(),
+    agentVersion: z.string().trim().min(1).optional(),
+    agentUrl: z.string().url().optional(),
+    agentSha256: sha256Schema.optional(),
+    playerVersion: z.string().trim().min(1).optional(),
+    playerUrl: z.string().url().optional(),
+    playerSha256: sha256Schema.optional(),
+  })
+  .refine((value) => Boolean(value.agentUrl || value.playerUrl), {
+    message: "Provide at least one release URL",
+    path: ["agentUrl"],
+  });
+
 export const mediaTypeSchema = z.enum(["image", "video"]);
+export const assetSourceTypeSchema = z.enum(["upload", "youtube"]);
 
 export const manifestPlaylistItemSchema = z.object({
   id: z.string(),
   assetId: z.string(),
   assetType: mediaTypeSchema,
+  sourceType: assetSourceTypeSchema.default("upload"),
   title: z.string(),
   url: z.string(),
   checksum: z.string(),
@@ -116,9 +139,11 @@ export const mediaAssetSchema = z.object({
   id: z.string(),
   title: z.string(),
   type: mediaTypeSchema,
+  sourceType: assetSourceTypeSchema.default("upload"),
+  sourceUrl: z.string().url().optional(),
   mimeType: z.string(),
   fileName: z.string(),
-  sizeBytes: z.number().int().positive(),
+  sizeBytes: z.number().int().nonnegative(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   durationSeconds: z.number().positive().optional(),
@@ -161,12 +186,14 @@ export type DeviceSummary = z.infer<typeof deviceSummarySchema>;
 export type MediaAsset = z.infer<typeof mediaAssetSchema>;
 export type Playlist = z.infer<typeof playlistSchema>;
 export type DashboardStats = z.infer<typeof dashboardStatsSchema>;
+export type ReleaseUpdatePayload = z.infer<typeof releaseUpdatePayloadSchema>;
 
 export const mockMediaAssets: MediaAsset[] = [
   {
     id: "asset-hero-video",
     title: "Showroom hero reel",
     type: "video",
+    sourceType: "upload",
     mimeType: "video/mp4",
     fileName: "hero-reel.mp4",
     sizeBytes: 128_000_000,
@@ -182,6 +209,7 @@ export const mockMediaAssets: MediaAsset[] = [
     id: "asset-feature-poster",
     title: "Feature poster",
     type: "image",
+    sourceType: "upload",
     mimeType: "image/webp",
     fileName: "feature-poster.webp",
     sizeBytes: 2_400_000,
@@ -196,6 +224,7 @@ export const mockMediaAssets: MediaAsset[] = [
     id: "asset-detail-slide",
     title: "Detail slide",
     type: "image",
+    sourceType: "upload",
     mimeType: "image/jpeg",
     fileName: "detail-slide.jpg",
     sizeBytes: 1_200_000,
@@ -244,6 +273,7 @@ export const mockManifest: DeviceManifest = {
     id: item.id,
     assetId: item.asset.id,
     assetType: item.asset.type,
+    sourceType: item.asset.sourceType,
     title: item.asset.title,
     url: item.asset.previewUrl,
     checksum: item.asset.checksum,
@@ -315,4 +345,3 @@ export const acceptedMimeTypes = new Set([
 ]);
 
 export const maxMediaBytes = 250 * 1024 * 1024;
-

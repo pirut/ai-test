@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { MediaAsset } from "@showroom/contracts";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +52,9 @@ async function getMediaMetadata(file: File) {
 }
 
 function prettyBytes(bytes: number) {
+  if (bytes <= 0) {
+    return "remote";
+  }
   return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
 }
 
@@ -69,8 +73,10 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
   const [queuedFile, setQueuedFile] = useState<File | null>(null);
+  const [youtubeUrl, setYouTubeUrl] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isImportingYouTube, setIsImportingYouTube] = useState(false);
 
   async function finalizeUpload(uploaded: UploadedFile) {
     try {
@@ -115,6 +121,48 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
       });
     } finally {
       setIsFinalizing(false);
+    }
+  }
+
+  async function importYouTubeVideo() {
+    try {
+      setIsImportingYouTube(true);
+      setStatus({ ok: true, text: "Registering YouTube source…" });
+      const response = await fetch("/api/media/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: youtubeUrl.trim(),
+          title: title.trim() || undefined,
+          tags: tags
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to import YouTube video");
+      }
+
+      const nextAsset = payload.asset as MediaAsset;
+      setAssets((current) => [nextAsset, ...current]);
+      setYouTubeUrl("");
+      setTitle("");
+      setTags("");
+      setStatus({
+        ok: true,
+        text: `Imported ${nextAsset.title}. Devices will cache the video locally on next sync.`,
+      });
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "YouTube import failed",
+      });
+    } finally {
+      setIsImportingYouTube(false);
     }
   }
 
@@ -263,6 +311,61 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
         </Card>
       </section>
 
+      <Card className="border border-border/70 bg-card/95">
+        <CardHeader className="border-b border-border/60">
+          <CardTitle className="text-[0.92rem] font-semibold">YouTube import</CardTitle>
+          <p className="text-[0.78rem] text-muted-foreground">
+            Save a YouTube video as a library asset. Devices will resolve the best compatible
+            stream during sync, convert it to a local MP4, and play from cache.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-4 pt-5 md:grid-cols-[1.4fr_1fr_auto]">
+          <div className="flex flex-col gap-1.5 md:col-span-3">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="youtube-url">
+              YouTube URL
+            </Label>
+            <Input
+              id="youtube-url"
+              onChange={(event) => setYouTubeUrl(event.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              value={youtubeUrl}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="youtube-title">
+              Override title
+            </Label>
+            <Input
+              id="youtube-title"
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Optional"
+              value={title}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="youtube-tags">
+              Tags
+            </Label>
+            <Input
+              id="youtube-tags"
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="youtube, campaign"
+              value={tags}
+            />
+          </div>
+          <div className="flex items-end">
+            <Button
+              disabled={!youtubeUrl.trim() || isImportingYouTube || isFinalizing}
+              onClick={() => {
+                void importYouTubeVideo();
+              }}
+            >
+              {isImportingYouTube ? "Importing…" : "Import video"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
         {assets.map((asset) => (
           <article
@@ -280,7 +383,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
               <p className="truncate text-[0.85rem] font-medium text-card-foreground">{asset.title}</p>
               <p className="truncate text-[0.75rem] text-muted-foreground">{asset.fileName}</p>
               <div className="flex items-center justify-between pt-1 text-[0.72rem] font-mono text-muted-foreground">
-                <span>{asset.mimeType}</span>
+                <span>{asset.sourceType === "youtube" ? "youtube" : asset.mimeType}</span>
                 <span>{prettyBytes(asset.sizeBytes)}</span>
               </div>
             </div>

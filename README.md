@@ -45,4 +45,5 @@ npm run dev --workspace @showroom/player
 - The production backend is Convex. Set `NEXT_PUBLIC_CONVEX_URL` and run `npx convex dev` to activate it.
 - Clerk Organizations are required for team access.
 - Clerk webhook sync is available at `/api/webhooks/clerk` to mirror org and user records into Convex.
+- YouTube video sources can be added from the media library; Pi devices resolve and cache them locally with `yt-dlp` and `ffmpeg`.
 - The Go agent source is included, but this machine does not currently have `go` installed, so the agent is not compiled as part of local verification.

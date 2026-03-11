@@ -1,7 +1,8 @@
 [Unit]
 Description=Showroom Chromium kiosk
-After=showroom-agent.service graphical.target
-Wants=showroom-agent.service
+After=network-online.target showroom-agent.service systemd-user-sessions.service
+Wants=network-online.target showroom-agent.service
+Conflicts=getty@tty1.service
 
 [Service]
 ExecStart=/usr/local/bin/showroom-start-kiosk
@@ -9,7 +10,13 @@ Restart=always
 RestartSec=5
 User=pi
 Environment=DISPLAY=:0
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 
 [Install]
-WantedBy=graphical.target
-
+WantedBy=multi-user.target

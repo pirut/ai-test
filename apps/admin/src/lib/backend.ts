@@ -243,6 +243,23 @@ export async function finalizeMediaUpload(input: {
   );
 }
 
+export async function createYouTubeMediaAsset(input: {
+  title: string;
+  sourceUrl: string;
+  previewUrl: string;
+  fileName: string;
+  durationSeconds?: number;
+  tags: string[];
+}) {
+  if (!hasConvexBackend()) {
+    return mock.createYouTubeMediaAsset(input);
+  }
+
+  return mediaAssetSchema.parse(
+    await convexMutation(api.admin.createYouTubeMediaAsset, input),
+  );
+}
+
 export async function claimDevice(input: {
   orgId: string;
   claimCode: string;
