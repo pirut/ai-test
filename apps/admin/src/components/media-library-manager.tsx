@@ -153,6 +153,9 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
             </div>
             <div className="md:col-span-2">
               <UploadDropzone
+                config={{
+                  mode: "auto",
+                }}
                 appearance={{
                   allowedContent: "text-[0.72rem] font-mono text-muted-foreground",
                   button:
@@ -186,7 +189,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                   const nextFile = files[0] ?? null;
                   setQueuedFile(nextFile);
                   if (nextFile) {
-                    setStatus({ ok: true, text: `Queued ${nextFile.name}` });
+                    setStatus({ ok: true, text: `Preparing ${nextFile.name}…` });
                   }
                 }}
                 onClientUploadComplete={(result) => {

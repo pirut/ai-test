@@ -97,6 +97,15 @@ function toDateValue(parts: { day: string; month: string; year: string }) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+function clampDayForMonth(day: string, month: string, year: string) {
+  if (!day || !month || !year) {
+    return "";
+  }
+
+  const total = new Date(Number(year), Number(month), 0).getDate();
+  return Number(day) > total ? "" : day;
+}
+
 function daysInMonth(year: string, month: string) {
   if (!year || !month) {
     return [];
@@ -133,6 +142,7 @@ function DateTimeField({
   year: string;
 }) {
   const dayOptions = daysInMonth(year, month);
+  const isDayDisabled = dayOptions.length === 0;
 
   return (
     <div className="grid gap-2">
@@ -151,9 +161,14 @@ function DateTimeField({
               ))}
             </SelectContent>
           </Select>
-          <Select items={dayOptions} onValueChange={(value) => onDayChange(value ?? "")} value={day || null}>
+          <Select
+            disabled={isDayDisabled}
+            items={dayOptions}
+            onValueChange={(value) => onDayChange(value ?? "")}
+            value={day || null}
+          >
             <SelectTrigger>
-              <SelectValue placeholder="Day" />
+              <SelectValue placeholder={isDayDisabled ? "Pick month first" : "Day"} />
             </SelectTrigger>
             <SelectContent>
               {dayOptions.map((option) => (
@@ -231,6 +246,7 @@ export function ScheduleManager({
       })),
     [playlists],
   );
+  const hasPlaylists = playlistOptions.length > 0;
   const deviceOptions = useMemo(
     () => [
       { label: "All screens", value: ALL_SCREENS_VALUE },
@@ -241,6 +257,26 @@ export function ScheduleManager({
     ],
     [devices],
   );
+
+  function handleStartMonthChange(value: string) {
+    setStartMonth(value);
+    setStartDay((current) => clampDayForMonth(current, value, startYear));
+  }
+
+  function handleStartYearChange(value: string) {
+    setStartYear(value);
+    setStartDay((current) => clampDayForMonth(current, startMonth, value));
+  }
+
+  function handleEndMonthChange(value: string) {
+    setEndMonth(value);
+    setEndDay((current) => clampDayForMonth(current, value, endYear));
+  }
+
+  function handleEndYearChange(value: string) {
+    setEndYear(value);
+    setEndDay((current) => clampDayForMonth(current, endMonth, value));
+  }
 
   async function handleSave() {
     const startDate = toDateValue({ day: startDay, month: startMonth, year: startYear });
@@ -335,9 +371,9 @@ export function ScheduleManager({
             label="Starts"
             month={startMonth}
             onDayChange={setStartDay}
-            onMonthChange={setStartMonth}
+            onMonthChange={handleStartMonthChange}
             onTimeChange={setStartTime}
-            onYearChange={setStartYear}
+            onYearChange={handleStartYearChange}
             time={startTime}
             year={startYear}
           />
@@ -348,9 +384,9 @@ export function ScheduleManager({
             label="Ends"
             month={endMonth}
             onDayChange={setEndDay}
-            onMonthChange={setEndMonth}
+            onMonthChange={handleEndMonthChange}
             onTimeChange={setEndTime}
-            onYearChange={setEndYear}
+            onYearChange={handleEndYearChange}
             time={endTime}
             year={endYear}
           />
@@ -373,9 +409,14 @@ export function ScheduleManager({
 
           <div className="flex flex-col gap-1.5">
             <Label className="text-[0.8rem] text-muted-foreground">Playlist</Label>
-            <Select items={playlistOptions} onValueChange={(value) => setPlaylistId(value ?? "")} value={playlistId}>
+            <Select
+              disabled={!hasPlaylists}
+              items={playlistOptions}
+              onValueChange={(value) => setPlaylistId(value ?? "")}
+              value={playlistId || null}
+            >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder={hasPlaylists ? "Choose playlist" : "No playlists available"} />
               </SelectTrigger>
               <SelectContent>
                 {playlistOptions.map((playlist) => (
@@ -407,12 +448,16 @@ export function ScheduleManager({
             </Select>
           </div>
 
-          <Button disabled={saving} onClick={() => void handleSave()} type="button">
+          <Button disabled={saving || !hasPlaylists} onClick={() => void handleSave()} type="button">
             {saving ? "Saving…" : "Save schedule"}
           </Button>
           {status ? (
             <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
               {status.text}
+            </p>
+          ) : !hasPlaylists ? (
+            <p className="text-[0.8rem] font-mono text-muted-foreground">
+              Create a playlist before building a schedule window.
             </p>
           ) : null}
         </CardContent>

@@ -10,8 +10,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+
+const DWELL_OPTIONS = [5, 10, 15, 20, 30, 45, 60].map((value) => ({
+  label: `${value}s`,
+  value: String(value),
+}));
+const DWELL_DEFAULT_VALUE = "__default__";
 
 export function PlaylistManager({
   initialPlaylists,
@@ -30,6 +43,7 @@ export function PlaylistManager({
   const [saving, setSaving] = useState(false);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const hasMedia = mediaAssets.length > 0;
 
   function toggleAsset(assetId: string) {
     setSelectedIds((current) =>
@@ -141,12 +155,16 @@ export function PlaylistManager({
             </Button>
           </div>
 
-          <Button disabled={saving} onClick={() => void handleSave()} type="button">
+          <Button disabled={saving || !hasMedia} onClick={() => void handleSave()} type="button">
             {saving ? "Saving…" : "Save playlist"}
           </Button>
           {status ? (
             <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
               {status.text}
+            </p>
+          ) : !hasMedia ? (
+            <p className="text-[0.8rem] font-mono text-muted-foreground">
+              Upload media before building a playlist.
             </p>
           ) : null}
         </CardContent>
@@ -161,8 +179,18 @@ export function PlaylistManager({
             </p>
           </CardHeader>
           <CardContent className="grid gap-3 pt-5 md:grid-cols-2">
+            {!hasMedia ? (
+              <div className="md:col-span-2 rounded-xl border border-dashed border-border/80 bg-muted/15 p-5">
+                <p className="text-sm font-medium text-foreground">No approved media yet</p>
+                <p className="mt-1 text-[0.78rem] text-muted-foreground">
+                  The media picker stays inactive until the library has at least one uploaded asset.
+                </p>
+              </div>
+            ) : null}
             {mediaAssets.map((asset) => {
               const isSelected = selectedSet.has(asset.id);
+              const dwellValue = dwellByAsset[asset.id] ?? null;
+              const dwellDisabled = !isSelected || asset.type === "video";
               return (
                 <button
                   key={asset.id}
@@ -195,21 +223,50 @@ export function PlaylistManager({
                         Override the default image dwell on selected image assets.
                       </p>
                     </div>
-                    <Input
-                      className="h-8 w-24 font-mono"
-                      disabled={!isSelected || asset.type === "video"}
-                      min="1"
-                      onChange={(event) =>
-                        setDwellByAsset((current) => ({
-                          ...current,
-                          [asset.id]: event.target.value,
-                        }))
-                      }
-                      onClick={(event) => event.stopPropagation()}
-                      placeholder="10"
-                      type="number"
-                      value={dwellByAsset[asset.id] ?? ""}
-                    />
+                    <div className="w-28" onClick={(event) => event.stopPropagation()}>
+                      <Select
+                        disabled={dwellDisabled}
+                        items={[
+                          { label: "Default", value: DWELL_DEFAULT_VALUE },
+                          ...DWELL_OPTIONS,
+                        ]}
+                        onValueChange={(value) =>
+                          setDwellByAsset((current) => {
+                            if (!value || value === DWELL_DEFAULT_VALUE) {
+                              const next = { ...current };
+                              delete next[asset.id];
+                              return next;
+                            }
+
+                            return {
+                              ...current,
+                              [asset.id]: value,
+                            };
+                          })
+                        }
+                        value={dwellValue}
+                        >
+                        <SelectTrigger className="h-8 font-mono">
+                          <SelectValue
+                            placeholder={
+                              asset.type === "video"
+                                ? "Video only"
+                                : isSelected
+                                  ? "Default"
+                                  : "Select item"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={DWELL_DEFAULT_VALUE}>Default</SelectItem>
+                          {DWELL_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </button>
               );
