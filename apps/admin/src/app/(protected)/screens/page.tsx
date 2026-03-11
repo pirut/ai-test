@@ -24,16 +24,18 @@ export default async function ScreensPage() {
             <div className="screenPreview">
               {device.screenshotUrl ? <img alt={device.name} src={device.screenshotUrl} /> : null}
             </div>
-            <div className="screenMeta">
-              <div>
-                <strong>{device.name}</strong>
-                <p>{device.siteName}</p>
+            <div className="screenCardBody">
+              <div className="screenMeta">
+                <div>
+                  <strong>{device.name}</strong>
+                  <p>{device.siteName}</p>
+                </div>
+                <StatusPill label={device.status} status={device.status} />
               </div>
-              <StatusPill label={device.status} status={device.status} />
-            </div>
-            <div className="screenMetaRow">
-              <span>{device.currentPlaylistName ?? "No active playlist"}</span>
-              <span>{formatRelativeTimestamp(device.lastHeartbeatAt)}</span>
+              <div className="screenMetaRow">
+                <span>{device.currentPlaylistName ?? "No active playlist"}</span>
+                <span>{formatRelativeTimestamp(device.lastHeartbeatAt)}</span>
+              </div>
             </div>
           </Link>
         ))}

@@ -19,18 +19,43 @@ export default async function DashboardPage() {
           <p className="eyebrow">Control room</p>
           <h1>Fleet overview</h1>
           <p>
-            Watch live screen health, verify what is on display, and claim new
+            Watch live screen health, verify what&apos;s on display, and claim new
             hardware as it comes online.
           </p>
         </div>
       </header>
 
       <section className="metricsGrid">
-        <MetricCard label="Online" value={stats.online} hint="Healthy screens reporting in." />
-        <MetricCard label="Stale" value={stats.stale} hint="Needs a heartbeat check." />
-        <MetricCard label="Offline" value={stats.offline} hint="No response in 5+ minutes." />
-        <MetricCard label="Unclaimed" value={stats.unclaimed} hint="Awaiting operator assignment." />
-        <MetricCard label="Queued" value={stats.pendingCommands} hint="Pending command executions." />
+        <MetricCard
+          label="Online"
+          value={stats.online}
+          hint="Healthy screens reporting in."
+          tone="signal"
+        />
+        <MetricCard
+          label="Stale"
+          value={stats.stale}
+          hint="Needs a heartbeat check."
+          tone="warning"
+        />
+        <MetricCard
+          label="Offline"
+          value={stats.offline}
+          hint="No response in 5+ minutes."
+          tone="danger"
+        />
+        <MetricCard
+          label="Unclaimed"
+          value={stats.unclaimed}
+          hint="Awaiting operator assignment."
+          tone="unclaimed"
+        />
+        <MetricCard
+          label="Queued"
+          value={stats.pendingCommands}
+          hint="Pending command executions."
+          tone="queue"
+        />
       </section>
 
       <div className="splitGrid">
@@ -48,16 +73,18 @@ export default async function DashboardPage() {
                     <img alt={device.name} src={device.screenshotUrl} />
                   ) : null}
                 </div>
-                <div className="screenMeta">
-                  <div>
-                    <strong>{device.name}</strong>
-                    <p>{device.siteName}</p>
+                <div className="screenCardBody">
+                  <div className="screenMeta">
+                    <div>
+                      <strong>{device.name}</strong>
+                      <p>{device.siteName}</p>
+                    </div>
+                    <StatusPill label={device.status} status={device.status} />
                   </div>
-                  <StatusPill label={device.status} status={device.status} />
-                </div>
-                <div className="screenMetaRow">
-                  <span>{device.currentPlaylistName ?? "No playlist assigned"}</span>
-                  <span>{formatRelativeTimestamp(device.lastHeartbeatAt)}</span>
+                  <div className="screenMetaRow">
+                    <span>{device.currentPlaylistName ?? "No playlist"}</span>
+                    <span>{formatRelativeTimestamp(device.lastHeartbeatAt)}</span>
+                  </div>
                 </div>
               </Link>
             ))}

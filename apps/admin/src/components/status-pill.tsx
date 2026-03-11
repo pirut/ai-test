@@ -1,9 +1,9 @@
 import { classNames } from "@/lib/utils";
 
 const toneMap = {
-  online: "statusOnline",
-  stale: "statusStale",
-  offline: "statusOffline",
+  online:    "statusOnline",
+  stale:     "statusStale",
+  offline:   "statusOffline",
   unclaimed: "statusUnclaimed",
 } as const;
 
@@ -16,8 +16,8 @@ export function StatusPill({
 }) {
   return (
     <span className={classNames("statusPill", toneMap[status])}>
+      <span className="statusDot" aria-hidden="true" />
       {label}
     </span>
   );
 }
-
