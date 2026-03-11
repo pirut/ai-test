@@ -74,15 +74,18 @@ async function adminConvexClient() {
 
   const client = new ConvexHttpClient(env.convexUrl);
   const session = await auth();
-  const token =
-    (await session.getToken({ template: "convex" }).catch(() => null)) ??
-    (await session.getToken().catch(() => null));
+  const token = await session
+    .getToken({
+      template: "convex",
+    })
+    .catch(() => null);
 
   if (token) {
     client.setAuth(token);
+    return client;
   }
 
-  return client;
+  throw new Error("Unable to mint Clerk token for Convex.");
 }
 
 async function convexQuery(

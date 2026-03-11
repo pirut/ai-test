@@ -27,6 +27,31 @@ function extractClaim(identity: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function extractOrgClaims(identity: Record<string, unknown>) {
+  const compactOrg =
+    identity.o && typeof identity.o === "object"
+      ? (identity.o as Record<string, unknown>)
+      : null;
+
+  const orgId =
+    extractClaim(identity, ["orgId", "org_id", "organization_id"]) ??
+    (compactOrg && typeof compactOrg.id === "string" ? compactOrg.id : null);
+
+  const rawRole =
+    extractClaim(identity, ["orgRole", "org_role", "role"]) ??
+    (compactOrg && typeof compactOrg.rol === "string" ? compactOrg.rol : null) ??
+    "org:member";
+
+  const role =
+    rawRole === "admin"
+      ? "org:admin"
+      : rawRole === "member"
+        ? "org:member"
+        : rawRole;
+
+  return { orgId, role };
+}
+
 export async function requireOrgIdentity(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -34,8 +59,7 @@ export async function requireOrgIdentity(ctx: QueryCtx | MutationCtx) {
   }
 
   const claims = identity as unknown as Record<string, unknown>;
-  const orgId = extractClaim(claims, ["orgId", "org_id", "organization_id"]);
-  const role = extractClaim(claims, ["orgRole", "org_role", "role"]) ?? "org:member";
+  const { orgId, role } = extractOrgClaims(claims);
 
   if (!orgId) {
     throw new ConvexError("Organization context required");
