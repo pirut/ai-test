@@ -39,6 +39,24 @@ type DeviceOption = {
 };
 
 const ALL_SCREENS_VALUE = "__all__";
+const MONTH_OPTIONS = [
+  { label: "January", value: "01" },
+  { label: "February", value: "02" },
+  { label: "March", value: "03" },
+  { label: "April", value: "04" },
+  { label: "May", value: "05" },
+  { label: "June", value: "06" },
+  { label: "July", value: "07" },
+  { label: "August", value: "08" },
+  { label: "September", value: "09" },
+  { label: "October", value: "10" },
+  { label: "November", value: "11" },
+  { label: "December", value: "12" },
+];
+const YEAR_OPTIONS = Array.from({ length: 7 }, (_, index) => {
+  const year = String(new Date().getFullYear() - 1 + index);
+  return { label: year, value: year };
+});
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   const hours = String(Math.floor(index / 2)).padStart(2, "0");
   const minutes = index % 2 === 0 ? "00" : "30";
@@ -48,6 +66,10 @@ const TIME_OPTION_ITEMS = TIME_OPTIONS.map((option) => ({
   label: option,
   value: option,
 }));
+const PRIORITY_OPTIONS = [0, 5, 10, 20, 30, 40, 50].map((value) => ({
+  label: `P${value}`,
+  value: String(value),
+}));
 
 function toLocalDateTime(value: string) {
   return value.slice(0, 16);
@@ -55,43 +77,105 @@ function toLocalDateTime(value: string) {
 
 function toDateParts(value: string) {
   if (!value) {
-    return { date: "", time: "09:00" };
+    return { day: "", month: "", time: "09:00", year: YEAR_OPTIONS[1]?.value ?? String(new Date().getFullYear()) };
   }
 
   const local = toLocalDateTime(value);
   return {
-    date: local.slice(0, 10),
+    day: local.slice(8, 10),
+    month: local.slice(5, 7),
     time: local.slice(11, 16),
+    year: local.slice(0, 4),
   };
 }
 
+function toDateValue(parts: { day: string; month: string; year: string }) {
+  if (!parts.year || !parts.month || !parts.day) {
+    return "";
+  }
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function daysInMonth(year: string, month: string) {
+  if (!year || !month) {
+    return [];
+  }
+
+  const total = new Date(Number(year), Number(month), 0).getDate();
+  return Array.from({ length: total }, (_, index) => {
+    const day = String(index + 1).padStart(2, "0");
+    return { label: day, value: day };
+  });
+}
+
 function DateTimeField({
-  date,
+  day,
   id,
   label,
-  onDateChange,
+  month,
+  onDayChange,
+  onMonthChange,
   onTimeChange,
+  onYearChange,
   time,
+  year,
 }: {
-  date: string;
+  day: string;
   id: string;
   label: string;
-  onDateChange: (value: string) => void;
+  month: string;
+  onDayChange: (value: string) => void;
+  onMonthChange: (value: string) => void;
   onTimeChange: (value: string) => void;
+  onYearChange: (value: string) => void;
   time: string;
+  year: string;
 }) {
+  const dayOptions = daysInMonth(year, month);
+
   return (
     <div className="grid gap-2">
-      <Label className="text-[0.8rem] text-muted-foreground" htmlFor={`${id}-date`}>
-        {label}
-      </Label>
-      <div className="grid gap-2 sm:grid-cols-[1fr_132px]">
-        <Input
-          id={`${id}-date`}
-          onChange={(event) => onDateChange(event.target.value)}
-          type="date"
-          value={date}
-        />
+      <Label className="text-[0.8rem] text-muted-foreground">{label}</Label>
+      <div className="grid gap-2">
+        <div className="grid gap-2 sm:grid-cols-[1.2fr_0.9fr_0.8fr]">
+          <Select items={MONTH_OPTIONS} onValueChange={(value) => onMonthChange(value ?? "")} value={month || null}>
+            <SelectTrigger>
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTH_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select items={dayOptions} onValueChange={(value) => onDayChange(value ?? "")} value={day || null}>
+            <SelectTrigger>
+              <SelectValue placeholder="Day" />
+            </SelectTrigger>
+            <SelectContent>
+              {dayOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select items={YEAR_OPTIONS} onValueChange={(value) => onYearChange(value ?? "")} value={year || null}>
+            <SelectTrigger>
+              <SelectValue placeholder="Year" />
+            </SelectTrigger>
+            <SelectContent>
+              {YEAR_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Select
           items={TIME_OPTION_ITEMS}
           onValueChange={(value) => onTimeChange(value ?? "09:00")}
@@ -125,9 +209,13 @@ export function ScheduleManager({
   const router = useRouter();
   const [schedules, setSchedules] = useState(initialSchedules);
   const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState("");
+  const [startMonth, setStartMonth] = useState("");
+  const [startDay, setStartDay] = useState("");
+  const [startYear, setStartYear] = useState(YEAR_OPTIONS[1]?.value ?? String(new Date().getFullYear()));
   const [startTime, setStartTime] = useState("09:00");
-  const [endDate, setEndDate] = useState("");
+  const [endMonth, setEndMonth] = useState("");
+  const [endDay, setEndDay] = useState("");
+  const [endYear, setEndYear] = useState(YEAR_OPTIONS[1]?.value ?? String(new Date().getFullYear()));
   const [endTime, setEndTime] = useState("17:00");
   const [priority, setPriority] = useState("10");
   const [playlistId, setPlaylistId] = useState(playlists[0]?.id ?? "");
@@ -155,6 +243,9 @@ export function ScheduleManager({
   );
 
   async function handleSave() {
+    const startDate = toDateValue({ day: startDay, month: startMonth, year: startYear });
+    const endDate = toDateValue({ day: endDay, month: endMonth, year: endYear });
+
     if (!name.trim() || !startDate || !endDate || !playlistId) {
       setStatus({ ok: false, text: "Complete the schedule name, window, and playlist." });
       return;
@@ -196,8 +287,10 @@ export function ScheduleManager({
       const nextSchedule = payload.schedule as ScheduleSummary;
       setSchedules((current) => [nextSchedule, ...current.filter((item) => item.id !== nextSchedule.id)]);
       setName("");
-      setStartDate("");
-      setEndDate("");
+      setStartMonth("");
+      setStartDay("");
+      setEndMonth("");
+      setEndDay("");
       setStartTime("09:00");
       setEndTime("17:00");
       setPriority("10");
@@ -237,34 +330,45 @@ export function ScheduleManager({
           </div>
 
           <DateTimeField
-            date={startDate}
+            day={startDay}
             id="schedule-start"
             label="Starts"
-            onDateChange={setStartDate}
+            month={startMonth}
+            onDayChange={setStartDay}
+            onMonthChange={setStartMonth}
             onTimeChange={setStartTime}
+            onYearChange={setStartYear}
             time={startTime}
+            year={startYear}
           />
 
           <DateTimeField
-            date={endDate}
+            day={endDay}
             id="schedule-end"
             label="Ends"
-            onDateChange={setEndDate}
+            month={endMonth}
+            onDayChange={setEndDay}
+            onMonthChange={setEndMonth}
             onTimeChange={setEndTime}
+            onYearChange={setEndYear}
             time={endTime}
+            year={endYear}
           />
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-priority">
-              Priority
-            </Label>
-            <Input
-              id="schedule-priority"
-              min="0"
-              onChange={(event) => setPriority(event.target.value)}
-              type="number"
-              value={priority}
-            />
+            <Label className="text-[0.8rem] text-muted-foreground">Priority</Label>
+            <Select items={PRIORITY_OPTIONS} onValueChange={(value) => setPriority(value ?? "10")} value={priority}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -332,8 +436,8 @@ export function ScheduleManager({
                 {[
                   { label: "Playlist", value: window.playlistName ?? "Unassigned" },
                   { label: "Target", value: window.targetLabel },
-                  { label: "Starts", value: `${starts.date} ${starts.time}` },
-                  { label: "Ends", value: `${ends.date} ${ends.time}` },
+                  { label: "Starts", value: `${starts.year}-${starts.month}-${starts.day} ${starts.time}` },
+                  { label: "Ends", value: `${ends.year}-${ends.month}-${ends.day} ${ends.time}` },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-center justify-between gap-4 py-2.5 text-sm">
                     <span className="text-muted-foreground">{label}</span>
