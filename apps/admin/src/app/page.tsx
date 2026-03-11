@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default function LandingPage() {
@@ -22,12 +21,18 @@ export default function LandingPage() {
           to inbound network traffic.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Button asChild size="lg">
-            <Link href="/dashboard">Open control room</Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
+          <Link
+            href="/dashboard"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Open control room
+          </Link>
+          <Link
+            href="/sign-in"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            Sign in
+          </Link>
         </div>
       </section>
 
