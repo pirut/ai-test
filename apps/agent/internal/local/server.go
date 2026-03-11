@@ -2,27 +2,30 @@ package local
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
 )
 
 type Server struct {
 	config config.Config
+	store  *state.Store
 }
 
-func NewServer(cfg config.Config) *Server {
-	return &Server{config: cfg}
+func NewServer(cfg config.Config, store *state.Store) *Server {
+	return &Server{config: cfg, store: store}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/local/manifest", s.handleManifest)
-	mux.Handle("/", http.FileServer(http.Dir(s.config.PlayerDistPath)))
+	mux.HandleFunc("/local/status", s.handleStatus)
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(s.config.StorageRoot))))
+	mux.HandleFunc("/", s.handlePlayer)
 	return mux
 }
 
@@ -42,5 +45,20 @@ func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
 	defer file.Close()
 
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.Copy(w, file)
+	_, _ = file.WriteTo(w)
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.store.PlayerStatus())
+}
+
+func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if path == "/" || path == "/player" || path == "/player/" {
+		http.ServeFile(w, r, filepath.Join(s.config.PlayerDistPath, "index.html"))
+		return
+	}
+
+	http.FileServer(http.Dir(s.config.PlayerDistPath)).ServeHTTP(w, r)
 }

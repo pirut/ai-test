@@ -2,6 +2,7 @@ import { query } from "./_generated/server";
 import { v } from "convex/values";
 
 import { requireOrgIdentity } from "./lib";
+import { deriveDeviceStatus } from "./showroom";
 
 export const getOverview = query({
   args: {},
@@ -25,14 +26,16 @@ export const getOverview = query({
     const commands = await ctx.db
       .query("deviceCommands")
       .collect();
+    const orgCommands = commands.filter((command) => command.organizationId === orgId);
+    const statuses = devices.map((device) => deriveDeviceStatus(device));
 
     return {
       stats: {
-        online: devices.filter((device) => device.status === "online").length,
-        stale: devices.filter((device) => device.status === "stale").length,
-        offline: devices.filter((device) => device.status === "offline").length,
-        unclaimed: devices.filter((device) => device.status === "unclaimed").length,
-        pendingCommands: commands.filter((command) => command.status === "queued").length,
+        online: statuses.filter((status) => status === "online").length,
+        stale: statuses.filter((status) => status === "stale").length,
+        offline: statuses.filter((status) => status === "offline").length,
+        unclaimed: statuses.filter((status) => status === "unclaimed").length,
+        pendingCommands: orgCommands.filter((command) => command.status === "queued").length,
       },
       devices,
     };

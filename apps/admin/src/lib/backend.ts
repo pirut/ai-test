@@ -34,6 +34,31 @@ const uploadDraftSchema = z.object({
   expiresInSeconds: z.number(),
 });
 
+const deviceDetailSchema = deviceSummarySchema.extend({
+  timezone: z.string(),
+  orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+  volume: z.number(),
+  defaultPlaylistId: z.string().nullable(),
+});
+
+const adminCommandSchema = deviceCommandSchema.extend({
+  status: z.enum(["queued", "in_progress", "succeeded", "failed"]).optional(),
+  completedAt: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
+});
+
+const scheduleSummarySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  priority: z.number(),
+  playlistId: z.string().nullable(),
+  playlistName: z.string().nullable(),
+  targetDeviceId: z.string().nullable(),
+  targetLabel: z.string(),
+});
+
 function publicConvexClient() {
   if (!env.convexUrl) {
     throw new Error("NEXT_PUBLIC_CONVEX_URL is required for Convex mode.");
@@ -116,13 +141,7 @@ export async function getDevice(orgId: string, deviceId: string) {
   }
 
   const result = await convexQuery(api.admin.getScreenDetail, { deviceId });
-  return result
-    ? deviceSummarySchema.extend({
-        timezone: z.string(),
-        orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
-        volume: z.number(),
-      }).parse(result)
-    : null;
+  return result ? deviceDetailSchema.parse(result) : null;
 }
 
 export async function listCommands(deviceId?: string) {
@@ -133,7 +152,7 @@ export async function listCommands(deviceId?: string) {
   const result = await convexQuery(api.admin.listDeviceCommands, {
     deviceId: deviceId ?? undefined,
   });
-  return z.array(deviceCommandSchema).parse(result);
+  return z.array(adminCommandSchema).parse(result);
 }
 
 export async function latestScreenshot(deviceId: string) {
@@ -172,19 +191,17 @@ export async function listSchedules() {
         startsAt: "2026-03-11T09:00:00.000Z",
         endsAt: "2026-03-11T16:00:00.000Z",
         priority: 10,
+        playlistId: "playlist-main-showroom",
+        playlistName: "Main showroom loop",
+        targetDeviceId: null,
+        targetLabel: "All screens",
       },
     ];
   }
 
-  return z.array(
-    z.object({
-      id: z.string(),
-      label: z.string(),
-      startsAt: z.string(),
-      endsAt: z.string(),
-      priority: z.number(),
-    }),
-  ).parse(await convexQuery(api.admin.listSchedules, {}));
+  return z.array(scheduleSummarySchema).parse(
+    await convexQuery(api.admin.listSchedules, {}),
+  );
 }
 
 export async function createUploadDraft(input: {
@@ -198,6 +215,28 @@ export async function createUploadDraft(input: {
 
   const result = await convexMutation(api.admin.generateMediaUploadUrl, input);
   return uploadDraftSchema.parse(result);
+}
+
+export async function finalizeMediaUpload(input: {
+  title: string;
+  fileName: string;
+  mimeType: string;
+  bytes: number;
+  storageId: string;
+  storagePath: string;
+  checksum: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  tags: string[];
+}) {
+  if (!hasConvexBackend()) {
+    return mock.listMediaAssets().at(0) ?? null;
+  }
+
+  return mediaAssetSchema.parse(
+    await convexMutation(api.admin.finalizeMediaUpload, input),
+  );
 }
 
 export async function claimDevice(input: {
@@ -247,6 +286,66 @@ export async function compileManifests(orgId: string) {
       manifestVersion: z.string(),
     })
     .parse(await convexMutation(api.admin.compileManifests, {}));
+}
+
+export async function savePlaylist(input: {
+  playlistId?: string;
+  name: string;
+  itemIds: Array<{
+    mediaAssetId: string;
+    dwellSeconds?: number;
+  }>;
+  makeDefault?: boolean;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.listPlaylists()[0];
+  }
+
+  return playlistSchema.parse(await convexMutation(api.admin.savePlaylist, input));
+}
+
+export async function saveSchedule(input: {
+  scheduleId?: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  priority: number;
+  playlistId: string;
+  deviceId?: string;
+}) {
+  if (!hasConvexBackend()) {
+    return {
+      id: "schedule-opening",
+      label: input.name,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      priority: input.priority,
+      playlistId: input.playlistId,
+      playlistName: "Mock playlist",
+      targetDeviceId: input.deviceId ?? null,
+      targetLabel: input.deviceId ?? "All screens",
+    };
+  }
+
+  return scheduleSummarySchema.parse(
+    await convexMutation(api.admin.saveSchedule, input),
+  );
+}
+
+export async function updateScreen(input: {
+  deviceId: string;
+  name: string;
+  siteName: string;
+  timezone: string;
+  orientation: 0 | 90 | 180 | 270;
+  volume: number;
+  defaultPlaylistId?: string | null;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.getDevice("org-demo", input.deviceId);
+  }
+
+  return deviceDetailSchema.parse(await convexMutation(api.admin.updateScreen, input));
 }
 
 export async function registerTemporaryDevice() {
@@ -316,7 +415,7 @@ export async function getCommandsForCredential(credential: string | null) {
 
   return z
     .array(deviceCommandSchema)
-    .parse(await publicConvexQuery(api.device.pullCommands, { credential }));
+    .parse(await publicConvexMutation(api.device.claimCommands, { credential }));
 }
 
 export async function recordHeartbeatForCredential(
@@ -340,7 +439,7 @@ export async function recordHeartbeatForCredential(
 
 export async function recordScreenshotForCredential(
   credential: string | null,
-  payload: ScreenshotUploadPayload,
+  payload: ScreenshotUploadPayload & { storageId?: string },
 ) {
   if (!credential) {
     return null;
@@ -364,6 +463,28 @@ export async function recordScreenshotForCredential(
       payload,
     }),
   );
+}
+
+export async function generateDeviceScreenshotUploadUrl(credential: string | null) {
+  if (!credential) {
+    return null;
+  }
+
+  if (!hasConvexBackend()) {
+    return {
+      uploadUrl: "/api/device/mock-screenshot-upload",
+    };
+  }
+
+  return z
+    .object({
+      uploadUrl: z.string(),
+    })
+    .parse(
+      await publicConvexMutation(api.device.generateScreenshotUploadUrl, {
+        credential,
+      }),
+    );
 }
 
 export async function recordCommandResultForCredential(

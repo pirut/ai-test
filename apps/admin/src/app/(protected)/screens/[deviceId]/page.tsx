@@ -2,9 +2,10 @@ import { notFound } from "next/navigation";
 
 import { CommandPanel } from "@/components/command-panel";
 import { PageHeader } from "@/components/page-header";
+import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
 import { requireOrgId } from "@/lib/auth";
-import { getDevice, latestScreenshot, listCommands } from "@/lib/backend";
+import { getDevice, latestScreenshot, listCommands, listPlaylists } from "@/lib/backend";
 
 export default async function ScreenDetailPage({
   params,
@@ -17,9 +18,10 @@ export default async function ScreenDetailPage({
 
   if (!device) notFound();
 
-  const [screenshot, commands] = await Promise.all([
+  const [screenshot, commands, playlists] = await Promise.all([
     latestScreenshot(device.id),
     listCommands(device.id),
+    listPlaylists(),
   ]);
 
   return (
@@ -67,6 +69,21 @@ export default async function ScreenDetailPage({
 
           {/* Right: commands + log */}
           <div className="flex flex-col gap-4">
+            <ScreenSettingsPanel
+              device={{
+                deviceId: device.id,
+                name: device.name,
+                siteName: device.siteName,
+                timezone: device.timezone,
+                orientation: device.orientation,
+                volume: device.volume,
+                defaultPlaylistId: device.defaultPlaylistId ?? null,
+              }}
+              playlists={playlists.map((playlist) => ({
+                id: playlist.id,
+                name: playlist.name,
+              }))}
+            />
             <CommandPanel deviceId={device.id} />
 
             {/* Command log */}
@@ -83,7 +100,12 @@ export default async function ScreenDetailPage({
                       key={cmd.id}
                       className={`flex items-center justify-between gap-4 px-4 py-2.5 text-sm ${i < commands.length - 1 ? "border-b border-border" : ""}`}
                     >
-                      <span className="font-mono text-[0.8rem] text-foreground">{cmd.commandType}</span>
+                      <div className="flex flex-col">
+                        <span className="font-mono text-[0.8rem] text-foreground">{cmd.commandType}</span>
+                        {cmd.status ? (
+                          <span className="font-mono text-[0.72rem] text-muted-foreground">{cmd.status}</span>
+                        ) : null}
+                      </div>
                       <span className="font-mono text-[0.75rem] text-muted-foreground">{cmd.issuedAt}</span>
                     </div>
                   ))}

@@ -12,7 +12,10 @@ import (
 
 func main() {
 	cfg := config.Load()
-	service := agent.New(cfg)
+	service, err := agent.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -21,4 +24,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-

@@ -3,20 +3,38 @@ import {
   type DeviceManifest,
   type ManifestPlaylistItem,
   deviceManifestSchema,
-  mockManifest,
 } from "@showroom/contracts";
 
+type PlayerStatus = {
+  claimed: boolean;
+  deviceId?: string;
+  claimCode?: string;
+  manifestVersion?: string;
+  lastSyncAt?: string;
+  lastError?: string;
+};
+
 type PlaybackState = {
-  manifest: DeviceManifest;
+  manifest: DeviceManifest | null;
   activeItem: ManifestPlaylistItem | null;
   index: number;
-  status: "loading" | "ready" | "offline";
+  status: "loading" | "ready" | "offline" | "unclaimed";
+  playerStatus: PlayerStatus | null;
 };
+
+async function loadPlayerStatus() {
+  const response = await fetch("/local/status");
+  if (!response.ok) {
+    throw new Error("Unable to load local status");
+  }
+
+  return (await response.json()) as PlayerStatus;
+}
 
 async function loadManifest() {
   const response = await fetch("/local/manifest");
   if (!response.ok) {
-    throw new Error("Unable to load manifest");
+    return null;
   }
 
   const payload = await response.json();
@@ -38,10 +56,11 @@ function chooseSchedule(manifest: DeviceManifest) {
 
 export function PlayerApp() {
   const [state, setState] = useState<PlaybackState>({
-    manifest: mockManifest,
-    activeItem: mockManifest.defaultPlaylist[0] ?? null,
+    manifest: null,
+    activeItem: null,
     index: 0,
     status: "loading",
+    playerStatus: null,
   });
 
   useEffect(() => {
@@ -49,8 +68,32 @@ export function PlayerApp() {
 
     const refresh = async () => {
       try {
-        const manifest = await loadManifest();
+        const [playerStatus, manifest] = await Promise.all([
+          loadPlayerStatus(),
+          loadManifest(),
+        ]);
+
         if (cancelled) {
+          return;
+        }
+
+        if (!playerStatus.claimed && !manifest) {
+          setState((current) => ({
+            ...current,
+            manifest: null,
+            activeItem: null,
+            playerStatus,
+            status: "unclaimed",
+          }));
+          return;
+        }
+
+        if (!manifest) {
+          setState((current) => ({
+            ...current,
+            playerStatus,
+            status: "offline",
+          }));
           return;
         }
 
@@ -60,19 +103,20 @@ export function PlayerApp() {
           activeItem: playlist[0] ?? null,
           index: 0,
           status: "ready",
+          playerStatus,
         });
       } catch {
         if (!cancelled) {
           setState((current) => ({
             ...current,
-            status: "offline",
+            status: current.manifest ? "offline" : "loading",
           }));
         }
       }
     };
 
     void refresh();
-    const interval = window.setInterval(refresh, 60_000);
+    const interval = window.setInterval(refresh, 15_000);
 
     return () => {
       cancelled = true;
@@ -81,8 +125,13 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
+    if (!state.manifest) {
+      return;
+    }
+
     const playlist = chooseSchedule(state.manifest);
     if (!playlist.length) {
+      setState((current) => ({ ...current, activeItem: null }));
       return;
     }
 
@@ -106,45 +155,60 @@ export function PlayerApp() {
     return () => window.clearTimeout(timeout);
   }, [state.index, state.manifest]);
 
+  if (state.status === "unclaimed") {
+    return (
+      <main className="playerRoot">
+        <section className="fallbackScreen">
+          <p className="label">Claim this screen</p>
+          <h1>{state.playerStatus?.claimCode ?? "......"}</h1>
+          <p>Open Signal Room, claim this code, and the player will switch automatically.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!state.manifest || !state.activeItem) {
+    return (
+      <main className="playerRoot">
+        <section className="fallbackScreen">
+          <p className="label">Waiting for content</p>
+          <h1>No active manifest</h1>
+          <p>The device is online but no playlist has been assigned yet.</p>
+        </section>
+      </main>
+    );
+  }
+
   const playlist = chooseSchedule(state.manifest);
 
   return (
     <main className="playerRoot" style={{ rotate: `${state.manifest.orientation}deg` }}>
       <div className="playerOverlay">
-        <span>{state.status === "ready" ? "LIVE MANIFEST" : "OFFLINE CACHE"}</span>
+        <span>{state.status === "ready" ? "LIVE CACHE" : "OFFLINE CACHE"}</span>
         <span>{state.manifest.manifestVersion}</span>
       </div>
-      {state.activeItem ? (
-        state.activeItem.assetType === "video" ? (
-          <video
-            autoPlay
-            className="playerMedia"
-            controls={false}
-            muted={state.manifest.volume === 0}
-            onEnded={() =>
-              setState((current) => ({
-                ...current,
-                index: (current.index + 1) % Math.max(playlist.length, 1),
-              }))
-            }
-            playsInline
-            src={state.activeItem.url}
-          />
-        ) : (
-          <img
-            alt={state.activeItem.title}
-            className="playerMedia"
-            src={state.activeItem.url}
-          />
-        )
+      {state.activeItem.assetType === "video" ? (
+        <video
+          autoPlay
+          className="playerMedia"
+          controls={false}
+          muted={state.manifest.volume === 0}
+          onEnded={() =>
+            setState((current) => ({
+              ...current,
+              index: (current.index + 1) % Math.max(playlist.length, 1),
+            }))
+          }
+          playsInline
+          src={state.activeItem.url}
+        />
       ) : (
-        <section className="fallbackScreen">
-          <p className="label">No content assigned</p>
-          <h1>Waiting for first manifest</h1>
-          <p>Claim this screen in the admin dashboard to start playback.</p>
-        </section>
+        <img
+          alt={state.activeItem.title}
+          className="playerMedia"
+          src={state.activeItem.url}
+        />
       )}
     </main>
   );
 }
-

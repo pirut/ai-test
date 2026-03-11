@@ -41,6 +41,7 @@ type DeviceRecord = DeviceSummary & {
   orgId: string;
   claimCode?: string;
   credential?: string;
+  defaultPlaylistId?: string | null;
   timezone: string;
   orientation: 0 | 90 | 180 | 270;
   volume: number;
@@ -66,6 +67,7 @@ function buildState(): MockState {
     devices: mockDevices.map((device) => ({
       ...device,
       orgId: "org_demo",
+      defaultPlaylistId: mockPlaylist.id,
       timezone: "America/New_York",
       orientation: 0,
       volume: 0,
@@ -138,7 +140,15 @@ export function listPlaylists() {
 }
 
 export function listCommands(deviceId?: string) {
-  return state().commands.filter((command) => (deviceId ? command.deviceId === deviceId : true));
+  return state()
+    .commands
+    .filter((command) => (deviceId ? command.deviceId === deviceId : true))
+    .map((command) => ({
+      ...command,
+      status: "queued" as const,
+      completedAt: null,
+      message: null,
+    }));
 }
 
 export function latestScreenshot(deviceId: string) {
@@ -194,6 +204,7 @@ export function claimDevice(input: {
     orgId: input.orgId,
     claimCode: input.claimCode,
     credential,
+    defaultPlaylistId: mockPlaylist.id,
     timezone: "America/New_York",
     orientation: 0,
     volume: 0,
@@ -352,4 +363,3 @@ export function recordScreenshot(input: {
 export function recordCommandResult(result: DeviceCommandResult) {
   return deviceCommandResultSchema.parse(result);
 }
-

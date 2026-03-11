@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import { mutation, query } from "./_generated/server";
 import { hashValue, randomToken, resolveDeviceByCredential } from "./lib";
+import { buildManifestForDevice } from "./showroom";
 
 export const registerTemporary = mutation({
   args: {},
@@ -134,22 +135,15 @@ export const getManifest = query({
       return manifest.payload;
     }
 
-    return {
-      manifestVersion: device.manifestVersion ?? `manifest-${device._id}`,
-      deviceId: device._id,
-      generatedAt: new Date().toISOString(),
-      timezone: device.timezone,
-      orientation: device.orientation,
-      volume: device.volume,
-      defaultPlaylist: [],
-      scheduleWindows: [],
-      assetBaseUrl: "",
-      assetChecksums: {},
-    };
+    return buildManifestForDevice(
+      ctx,
+      device,
+      device.manifestVersion ?? `manifest-${device._id}`,
+    );
   },
 });
 
-export const pullCommands = query({
+export const claimCommands = mutation({
   args: {
     credential: v.string(),
   },
@@ -166,6 +160,15 @@ export const pullCommands = query({
       .filter((q) => q.eq(q.field("status"), "queued"))
       .collect();
 
+    await Promise.all(
+      commands.map((command) =>
+        ctx.db.patch(command._id, {
+          status: "in_progress",
+          startedAt: Date.now(),
+        }),
+      ),
+    );
+
     return commands.map((command) => ({
       id: command._id,
       deviceId: device._id,
@@ -173,6 +176,25 @@ export const pullCommands = query({
       issuedAt: new Date(command.queuedAt).toISOString(),
       payload: command.payload ?? {},
     }));
+  },
+});
+
+export const generateScreenshotUploadUrl = mutation({
+  args: {
+    credential: v.string(),
+  },
+  returns: v.object({
+    uploadUrl: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const device = await resolveDeviceByCredential(ctx, args.credential);
+    if (!device) {
+      throw new ConvexError("Unauthorized device");
+    }
+
+    return {
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+    };
   },
 });
 
@@ -222,7 +244,12 @@ export const recordHeartbeat = mutation({
 export const recordScreenshot = mutation({
   args: {
     credential: v.string(),
-    payload: v.any(),
+    payload: v.object({
+      capturedAt: v.string(),
+      mimeType: v.string(),
+      bytes: v.number(),
+      storageId: v.optional(v.id("_storage")),
+    }),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -231,10 +258,14 @@ export const recordScreenshot = mutation({
       throw new ConvexError("Unauthorized device");
     }
 
-    const publicUrl = `https://picsum.photos/seed/${device._id}/1280/720`;
+    const publicUrl = args.payload.storageId
+      ? (await ctx.storage.getUrl(args.payload.storageId)) ?? device.screenshotUrl ?? ""
+      : device.screenshotUrl ?? "";
+
     await ctx.db.insert("deviceScreenshots", {
       organizationId: device.organizationId,
       deviceId: device._id,
+      storageId: args.payload.storageId,
       publicUrl,
       capturedAt: Date.parse(args.payload.capturedAt),
       bytes: args.payload.bytes,
@@ -284,10 +315,17 @@ export const recordCommandResult = mutation({
 
     await ctx.db.patch(command._id, {
       status: args.payload.status,
+      startedAt:
+        args.payload.status === "in_progress"
+          ? Date.now()
+          : command.startedAt,
       resultMessage: args.payload.message,
-      completedAt: args.payload.completedAt
-        ? Date.parse(args.payload.completedAt)
-        : Date.now(),
+      completedAt:
+        args.payload.status === "succeeded" || args.payload.status === "failed"
+          ? args.payload.completedAt
+            ? Date.parse(args.payload.completedAt)
+            : Date.now()
+          : command.completedAt,
     });
 
     return {

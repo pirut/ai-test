@@ -70,6 +70,7 @@ export default defineSchema({
     siteName: v.optional(v.string()),
     groupName: v.optional(v.string()),
     name: v.optional(v.string()),
+    defaultPlaylistId: v.optional(v.id("playlists")),
     serialNumber: v.optional(v.string()),
     claimCode: v.optional(v.string()),
     claimTokenHash: v.optional(v.string()),
@@ -198,7 +199,9 @@ export default defineSchema({
     playlistId: v.id("playlists"),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_schedule", ["scheduleId"]),
+  })
+    .index("by_schedule", ["scheduleId"])
+    .index("by_org", ["organizationId"]),
 
   compiledManifests: defineTable({
     organizationId: v.optional(v.string()),
@@ -259,4 +262,3 @@ export default defineSchema({
     metadata: v.optional(v.any()),
   }).index("by_device", ["deviceId"]),
 });
-

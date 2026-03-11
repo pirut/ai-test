@@ -12,6 +12,7 @@ import type * as admin from "../admin.js";
 import type * as dashboard from "../dashboard.js";
 import type * as device from "../device.js";
 import type * as lib from "../lib.js";
+import type * as showroom from "../showroom.js";
 import type * as sync from "../sync.js";
 
 import type {
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   dashboard: typeof dashboard;
   device: typeof device;
   lib: typeof lib;
+  showroom: typeof showroom;
   sync: typeof sync;
 }>;
 

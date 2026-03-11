@@ -11,6 +11,3 @@ Go system service for Raspberry Pi devices.
 - Poll remote commands
 - Send heartbeats and screenshot metadata
 - Restart Chromium or reboot the Pi on approved commands
-
-The machine running this repository does not currently have `go` installed, so this package is provided as source only in this scaffold.
-

@@ -2,24 +2,55 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/local"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
 )
+
+const screenshotPath = "/tmp/showroom-screenshot.jpg"
 
 type Service struct {
 	config config.Config
+	client *remote.Client
+	store  *state.Store
+	start  time.Time
 }
 
-func New(cfg config.Config) *Service {
-	return &Service{config: cfg}
+func New(cfg config.Config) (*Service, error) {
+	if err := os.MkdirAll(cfg.StorageRoot, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(cfg.StateRoot, 0o755); err != nil {
+		return nil, err
+	}
+
+	store, err := state.Open(cfg.StateRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Service{
+		config: cfg,
+		client: remote.New(cfg.APIBaseURL),
+		store:  store,
+		start:  time.Now(),
+	}, nil
 }
 
 func (s *Service) Run(ctx context.Context) error {
-	server := local.NewServer(s.config)
+	server := local.NewServer(s.config, s.store)
 	httpServer := &http.Server{
 		Addr:    s.config.ListenAddr,
 		Handler: server.Routes(),
@@ -32,7 +63,11 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
-	ticker := time.NewTicker(15 * time.Second)
+	if err := s.poll(ctx); err != nil {
+		log.Printf("initial poll failed: %v", err)
+	}
+
+	ticker := time.NewTicker(s.config.PollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -42,8 +77,332 @@ func (s *Service) Run(ctx context.Context) error {
 			defer cancel()
 			return httpServer.Shutdown(shutdownCtx)
 		case <-ticker.C:
-			log.Printf("heartbeat tick to %s", s.config.APIBaseURL)
+			if err := s.poll(ctx); err != nil {
+				log.Printf("poll failed: %v", err)
+			}
 		}
 	}
 }
 
+func (s *Service) poll(ctx context.Context) error {
+	current := s.store.Snapshot()
+	if current.Credential == "" {
+		if err := s.ensureClaimFlow(ctx, current); err != nil {
+			s.recordError(err)
+			return err
+		}
+		return nil
+	}
+
+	if err := s.syncManifest(ctx, current.Credential); err != nil {
+		s.recordError(err)
+	} else {
+		_ = s.store.Update(func(next *state.DeviceState) {
+			next.LastError = ""
+		})
+	}
+
+	if err := s.processCommands(ctx, current.Credential); err != nil {
+		s.recordError(err)
+	}
+
+	snapshot := s.store.Snapshot()
+	if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
+		s.recordError(err)
+	}
+	if err := s.maybeUploadScreenshot(ctx, snapshot, false); err != nil {
+		s.recordError(err)
+	}
+
+	return nil
+}
+
+func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState) error {
+	if current.DeviceSessionID == "" || current.ClaimToken == "" {
+		registration, err := s.client.RegisterTemporary(ctx)
+		if err != nil {
+			return err
+		}
+
+		return s.store.Update(func(next *state.DeviceState) {
+			next.DeviceSessionID = registration.DeviceSessionID
+			next.ClaimCode = registration.ClaimCode
+			next.ClaimToken = registration.ClaimToken
+			next.LastError = ""
+		})
+	}
+
+	status, err := s.client.ClaimStatus(ctx, current.DeviceSessionID, current.ClaimToken)
+	if err != nil {
+		return err
+	}
+	if !status.Claimed {
+		return nil
+	}
+
+	if err := s.store.Update(func(next *state.DeviceState) {
+		next.DeviceID = status.DeviceID
+		next.Credential = status.Credential
+		next.LastError = ""
+	}); err != nil {
+		return err
+	}
+
+	return s.syncManifest(ctx, status.Credential)
+}
+
+func (s *Service) syncManifest(ctx context.Context, credential string) error {
+	manifest, err := s.client.FetchManifest(ctx, credential)
+	if err != nil {
+		return err
+	}
+
+	cachedAssets, localManifest, err := s.cacheManifest(ctx, manifest)
+	if err != nil {
+		return err
+	}
+
+	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
+	if err := writeJSONFile(manifestPath, localManifest); err != nil {
+		return err
+	}
+
+	return s.store.Update(func(next *state.DeviceState) {
+		next.DeviceID = manifest.DeviceID
+		next.ManifestVersion = manifest.ManifestVersion
+		next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
+		next.CachedAssets = cachedAssets
+	})
+}
+
+func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceManifest) (map[string]state.AssetRecord, *remote.DeviceManifest, error) {
+	current := s.store.Snapshot()
+	cachedAssets := map[string]state.AssetRecord{}
+	for assetID, record := range current.CachedAssets {
+		cachedAssets[assetID] = record
+	}
+
+	localManifest := *manifest
+	localManifest.DefaultPlaylist = clonePlaylist(manifest.DefaultPlaylist)
+	localManifest.ScheduleWindows = make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
+
+	rewrite := func(item remote.ManifestPlaylistItem) (remote.ManifestPlaylistItem, error) {
+		fileName := remote.AssetFileName(item)
+		destPath := filepath.Join(s.config.StorageRoot, fileName)
+		expectedChecksum := manifest.AssetChecksums[item.AssetID]
+		existing, ok := cachedAssets[item.AssetID]
+		if !ok || existing.Checksum != expectedChecksum || !fileExists(filepath.Join(s.config.StorageRoot, existing.FileName)) {
+			if err := s.client.DownloadFile(ctx, item.URL, destPath); err != nil {
+				return item, err
+			}
+			cachedAssets[item.AssetID] = state.AssetRecord{
+				FileName: fileName,
+				Checksum: expectedChecksum,
+			}
+		} else {
+			fileName = existing.FileName
+		}
+
+		item.URL = "/assets/" + fileName
+		return item, nil
+	}
+
+	for index, item := range localManifest.DefaultPlaylist {
+		nextItem, err := rewrite(item)
+		if err != nil {
+			return nil, nil, err
+		}
+		localManifest.DefaultPlaylist[index] = nextItem
+	}
+
+	for _, window := range manifest.ScheduleWindows {
+		nextWindow := window
+		nextWindow.Playlist = clonePlaylist(window.Playlist)
+		for index, item := range nextWindow.Playlist {
+			nextItem, err := rewrite(item)
+			if err != nil {
+				return nil, nil, err
+			}
+			nextWindow.Playlist[index] = nextItem
+		}
+		localManifest.ScheduleWindows = append(localManifest.ScheduleWindows, nextWindow)
+	}
+
+	return cachedAssets, &localManifest, nil
+}
+
+func (s *Service) processCommands(ctx context.Context, credential string) error {
+	commands, err := s.client.FetchCommands(ctx, credential)
+	if err != nil {
+		return err
+	}
+
+	for _, command := range commands {
+		command := command
+		if err := s.executeCommand(ctx, credential, command); err != nil {
+			log.Printf("command %s failed: %v", command.CommandType, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) executeCommand(ctx context.Context, credential string, command remote.DeviceCommand) error {
+	var err error
+	switch command.CommandType {
+	case "sync_now":
+		err = s.syncManifest(ctx, credential)
+	case "take_screenshot":
+		err = s.maybeUploadScreenshot(ctx, s.store.Snapshot(), true)
+	case "restart_player":
+		err = s.runShell(ctx, s.config.RestartPlayerCommand)
+	case "reboot_device":
+		err = s.runShell(ctx, s.config.RebootCommand)
+	case "blank_screen":
+		err = s.runShell(ctx, s.config.BlankScreenCommand)
+	case "unblank_screen":
+		err = s.runShell(ctx, s.config.UnblankScreenCommand)
+	default:
+		err = fmt.Errorf("unsupported command: %s", command.CommandType)
+	}
+
+	payload := map[string]interface{}{
+		"commandId": command.ID,
+		"status":    "succeeded",
+	}
+	if err != nil {
+		payload["status"] = "failed"
+		payload["message"] = err.Error()
+	}
+	payload["completedAt"] = time.Now().UTC().Format(time.RFC3339)
+
+	if postErr := s.client.PostCommandResult(ctx, credential, payload); postErr != nil {
+		return fmt.Errorf("command result post failed: %w", postErr)
+	}
+
+	return err
+}
+
+func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceState) error {
+	if current.Credential == "" || current.DeviceID == "" {
+		return nil
+	}
+
+	if current.LastHeartbeatAt != "" {
+		lastHeartbeatAt, err := time.Parse(time.RFC3339, current.LastHeartbeatAt)
+		if err == nil && time.Since(lastHeartbeatAt) < s.config.HeartbeatInterval {
+			return nil
+		}
+	}
+
+	freeBytes, totalBytes := diskUsage(s.config.StorageRoot)
+	payload := map[string]interface{}{
+		"deviceId":         current.DeviceID,
+		"manifestVersion":  current.ManifestVersion,
+		"appVersion":       "player-v1",
+		"agentVersion":     "agent-v1",
+		"uptimeSeconds":    int(time.Since(s.start).Seconds()),
+		"storageFreeBytes": freeBytes,
+		"storageTotalBytes": totalBytes,
+		"currentAssetId":   current.CurrentAssetID,
+		"currentPlaylistId": current.CurrentPlaylistID,
+		"lastSeenAt":       time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if err := s.client.PostHeartbeat(ctx, current.Credential, payload); err != nil {
+		return err
+	}
+
+	return s.store.Update(func(next *state.DeviceState) {
+		next.LastHeartbeatAt = time.Now().UTC().Format(time.RFC3339)
+	})
+}
+
+func (s *Service) maybeUploadScreenshot(ctx context.Context, current state.DeviceState, force bool) error {
+	if current.Credential == "" || current.DeviceID == "" {
+		return nil
+	}
+
+	if !force && current.LastScreenshotAt != "" {
+		lastScreenshotAt, err := time.Parse(time.RFC3339, current.LastScreenshotAt)
+		if err == nil && time.Since(lastScreenshotAt) < s.config.ScreenshotInterval {
+			return nil
+		}
+	}
+
+	if err := s.captureScreenshot(ctx); err != nil {
+		return err
+	}
+
+	capturedAt := time.Now().UTC().Format(time.RFC3339)
+	if err := s.client.UploadScreenshot(ctx, current.Credential, current.DeviceID, capturedAt, screenshotPath); err != nil {
+		return err
+	}
+
+	return s.store.Update(func(next *state.DeviceState) {
+		next.LastScreenshotAt = capturedAt
+	})
+}
+
+func (s *Service) captureScreenshot(ctx context.Context) error {
+	return s.runShell(ctx, s.config.ScreenshotCommand)
+}
+
+func (s *Service) runShell(ctx context.Context, command string) error {
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+
+	cmd := exec.CommandContext(ctx, "sh", "-lc", command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", command, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (s *Service) recordError(err error) {
+	if err == nil {
+		return
+	}
+
+	_ = s.store.Update(func(next *state.DeviceState) {
+		next.LastError = err.Error()
+	})
+}
+
+func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylistItem {
+	copyItems := make([]remote.ManifestPlaylistItem, len(items))
+	copy(copyItems, items)
+	return copyItems
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func writeJSONFile(path string, value interface{}) error {
+	payload, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, payload, 0o644); err != nil {
+		return err
+	}
+
+	return os.Rename(tempPath, path)
+}
+
+func diskUsage(path string) (freeBytes int64, totalBytes int64) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, 0
+	}
+
+	freeBytes = int64(stat.Bavail) * int64(stat.Bsize)
+	totalBytes = int64(stat.Blocks) * int64(stat.Bsize)
+	return freeBytes, totalBytes
+}
