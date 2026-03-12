@@ -8,6 +8,7 @@ import {
   type DeviceSummary,
   type MediaAsset,
   type Playlist,
+  type ReleaseSummary,
   claimStatusResponseSchema,
   commandTypeSchema,
   deviceCommandResultSchema,
@@ -51,6 +52,7 @@ type MockState = {
   devices: DeviceRecord[];
   mediaAssets: MediaAsset[];
   playlists: Playlist[];
+  releases: ReleaseSummary[];
   manifests: Record<string, DeviceManifest>;
   screenshots: ScreenshotRecord[];
   commands: DeviceCommand[];
@@ -75,6 +77,7 @@ function buildState(): MockState {
     })),
     mediaAssets: mockMediaAssets,
     playlists: [mockPlaylist],
+    releases: [],
     manifests: {
       [mockManifest.deviceId]: deviceManifestSchema.parse(mockManifest),
     },
@@ -139,6 +142,10 @@ export function listPlaylists() {
   return state().playlists;
 }
 
+export function listReleases() {
+  return state().releases;
+}
+
 export function listCommands(deviceId?: string) {
   return state()
     .commands
@@ -199,6 +206,96 @@ export function createYouTubeMediaAsset(input: {
 
   state().mediaAssets.unshift(asset);
   return asset;
+}
+
+export function createRelease(input: {
+  name: string;
+  version: string;
+  notes?: string;
+  playerUrl?: string;
+  playerSha256?: string;
+  agentUrl?: string;
+  agentSha256?: string;
+}) {
+  const now = new Date().toISOString();
+  const release: ReleaseSummary = {
+    id: crypto.randomUUID(),
+    name: input.name,
+    version: input.version,
+    notes: input.notes ?? null,
+    playerUrl: input.playerUrl ?? null,
+    playerSha256: input.playerSha256 ?? null,
+    agentUrl: input.agentUrl ?? null,
+    agentSha256: input.agentSha256 ?? null,
+    createdAt: now,
+    updatedAt: now,
+    rolloutSummary: {
+      total: 0,
+      queued: 0,
+      inProgress: 0,
+      succeeded: 0,
+      failed: 0,
+    },
+    latestRollouts: [],
+  };
+
+  state().releases.unshift(release);
+  return release;
+}
+
+export function deployRelease(input: {
+  releaseId: string;
+  deviceIds?: string[];
+}) {
+  const release = state().releases.find((entry) => entry.id === input.releaseId);
+  if (!release) {
+    throw new Error("Release not found");
+  }
+
+  const targetDevices = (input.deviceIds?.length
+    ? state().devices.filter((device) => input.deviceIds!.includes(device.id))
+    : state().devices
+  ).map((device) => ({
+    id: crypto.randomUUID(),
+    deviceId: device.id,
+    deviceName: device.name,
+    status: "queued" as const,
+    queuedAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null,
+    message: null,
+  }));
+
+  release.latestRollouts = [...targetDevices, ...release.latestRollouts].slice(0, 8);
+  release.rolloutSummary = {
+    total: release.rolloutSummary.total + targetDevices.length,
+    queued: release.rolloutSummary.queued + targetDevices.length,
+    inProgress: release.rolloutSummary.inProgress,
+    succeeded: release.rolloutSummary.succeeded,
+    failed: release.rolloutSummary.failed,
+  };
+  release.updatedAt = new Date().toISOString();
+
+  for (const device of targetDevices) {
+    state().commands.unshift({
+      id: crypto.randomUUID(),
+      deviceId: device.deviceId,
+      commandType: "update_release",
+      issuedAt: device.queuedAt,
+      payload: {
+        version: release.version,
+        playerUrl: release.playerUrl ?? undefined,
+        playerSha256: release.playerSha256 ?? undefined,
+        agentUrl: release.agentUrl ?? undefined,
+        agentSha256: release.agentSha256 ?? undefined,
+      },
+    });
+  }
+
+  return {
+    queuedDeviceCount: targetDevices.length,
+    releaseId: release.id,
+  };
 }
 
 export function claimDevice(input: {
@@ -390,4 +487,26 @@ export function recordScreenshot(input: {
 
 export function recordCommandResult(result: DeviceCommandResult) {
   return deviceCommandResultSchema.parse(result);
+}
+
+export function deletePlaylist(id: string) {
+  const idx = state().playlists.findIndex((p) => p.id === id);
+  if (idx !== -1) state().playlists.splice(idx, 1);
+}
+
+export function deleteSchedule(_id: string) {
+  // No schedules in mock state — nothing to remove
+}
+
+export function deleteMediaAsset(id: string) {
+  const idx = state().mediaAssets.findIndex((a) => a.id === id);
+  if (idx !== -1) state().mediaAssets.splice(idx, 1);
+}
+
+export function updateMediaAsset(id: string, title: string, tags: string[]) {
+  const asset = state().mediaAssets.find((a) => a.id === id);
+  if (!asset) return null;
+  asset.title = title;
+  asset.tags = tags;
+  return asset;
 }

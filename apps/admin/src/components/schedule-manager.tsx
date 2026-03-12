@@ -235,8 +235,11 @@ export function ScheduleManager({
   const [priority, setPriority] = useState("10");
   const [playlistId, setPlaylistId] = useState(playlists[0]?.id ?? "");
   const [deviceId, setDeviceId] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const playlistOptions = useMemo(
     () =>
@@ -278,6 +281,42 @@ export function ScheduleManager({
     setEndDay((current) => clampDayForMonth(current, endMonth, value));
   }
 
+  function startEditing(schedule: ScheduleSummary) {
+    setEditingId(schedule.id);
+    setName(schedule.label);
+    setPriority(String(schedule.priority));
+    setPlaylistId(schedule.playlistId ?? playlists[0]?.id ?? "");
+    setDeviceId(schedule.targetDeviceId ?? "");
+
+    const start = toDateParts(schedule.startsAt);
+    const end = toDateParts(schedule.endsAt);
+    setStartYear(start.year);
+    setStartMonth(start.month);
+    setStartDay(start.day);
+    setStartTime(start.time);
+    setEndYear(end.year);
+    setEndMonth(end.month);
+    setEndDay(end.day);
+    setEndTime(end.time);
+    setStatus(null);
+    setConfirmDeleteId(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setName("");
+    setStartMonth("");
+    setStartDay("");
+    setEndMonth("");
+    setEndDay("");
+    setStartTime("09:00");
+    setEndTime("17:00");
+    setPriority("10");
+    setDeviceId("");
+    setStatus(null);
+  }
+
   async function handleSave() {
     const startDate = toDateValue({ day: startDay, month: startMonth, year: startYear });
     const endDate = toDateValue({ day: endDay, month: endMonth, year: endYear });
@@ -296,7 +335,7 @@ export function ScheduleManager({
     }
 
     if (endsAt <= startsAt) {
-      setStatus({ ok: false, text: "Schedule end must be later than the start window." });
+      setStatus({ ok: false, text: "Schedule end must be later than the start." });
       return;
     }
 
@@ -306,6 +345,7 @@ export function ScheduleManager({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          scheduleId: editingId ?? undefined,
           name: name.trim(),
           startsAt: startsAt.toISOString(),
           endsAt: endsAt.toISOString(),
@@ -321,17 +361,12 @@ export function ScheduleManager({
       }
 
       const nextSchedule = payload.schedule as ScheduleSummary;
-      setSchedules((current) => [nextSchedule, ...current.filter((item) => item.id !== nextSchedule.id)]);
-      setName("");
-      setStartMonth("");
-      setStartDay("");
-      setEndMonth("");
-      setEndDay("");
-      setStartTime("09:00");
-      setEndTime("17:00");
-      setPriority("10");
-      setDeviceId("");
-      setStatus({ ok: true, text: `Saved ${nextSchedule.label}` });
+      setSchedules((current) => [
+        nextSchedule,
+        ...current.filter((s) => s.id !== nextSchedule.id),
+      ]);
+      setStatus({ ok: true, text: `Saved "${nextSchedule.label}"` });
+      cancelEditing();
       router.refresh();
     } catch (error) {
       setStatus({
@@ -343,13 +378,45 @@ export function ScheduleManager({
     }
   }
 
+  async function handleDelete(scheduleId: string) {
+    if (confirmDeleteId !== scheduleId) {
+      setConfirmDeleteId(scheduleId);
+      return;
+    }
+
+    setDeleting(true);
+    setConfirmDeleteId(null);
+    try {
+      const response = await fetch(`/api/schedules/${scheduleId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error ?? "Unable to delete schedule");
+      }
+
+      setSchedules((current) => current.filter((s) => s.id !== scheduleId));
+      if (editingId === scheduleId) cancelEditing();
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to delete schedule",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
       <Card className="border border-border/70 bg-card/95">
         <CardHeader className="border-b border-border/60">
-          <CardTitle className="text-[0.92rem] font-semibold">Create schedule</CardTitle>
+          <CardTitle className="text-[0.92rem] font-semibold">
+            {editingId ? "Edit schedule" : "Create schedule"}
+          </CardTitle>
           <p className="text-[0.78rem] text-muted-foreground">
-            Compose a window from shadcn-styled date fields and time selectors, then target a playlist and screen scope.
+            {editingId
+              ? "Update the window, playlist, and target, then save."
+              : "Set a time window, assign a playlist, and choose a target."}
           </p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-5">
@@ -448,51 +515,107 @@ export function ScheduleManager({
             </Select>
           </div>
 
-          <Button disabled={saving || !hasPlaylists} onClick={() => void handleSave()} type="button">
-            {saving ? "Saving…" : "Save schedule"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={saving || !hasPlaylists}
+              onClick={() => void handleSave()}
+              type="button"
+            >
+              {saving ? "Saving…" : editingId ? "Update schedule" : "Save schedule"}
+            </Button>
+            {editingId ? (
+              <Button onClick={cancelEditing} type="button" variant="outline">
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+
           {status ? (
             <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
               {status.text}
             </p>
           ) : !hasPlaylists ? (
             <p className="text-[0.8rem] font-mono text-muted-foreground">
-              Create a playlist before building a schedule window.
+              Create a playlist before building a schedule.
             </p>
           ) : null}
         </CardContent>
       </Card>
 
-      <section className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-        {schedules.map((window) => {
-          const starts = toDateParts(window.startsAt);
-          const ends = toDateParts(window.endsAt);
-          return (
-            <Card key={window.id} className="border border-border/70 bg-card/95">
-              <CardHeader className="border-b border-border/60">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-[0.88rem] font-semibold">{window.label}</CardTitle>
-                  <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
-                    P{window.priority}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="divide-y divide-border/60 pt-2">
-                {[
-                  { label: "Playlist", value: window.playlistName ?? "Unassigned" },
-                  { label: "Target", value: window.targetLabel },
-                  { label: "Starts", value: `${starts.year}-${starts.month}-${starts.day} ${starts.time}` },
-                  { label: "Ends", value: `${ends.year}-${ends.month}-${ends.day} ${ends.time}` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between gap-4 py-2.5 text-sm">
-                    <span className="text-muted-foreground">{label}</span>
-                    <span className="font-mono text-[0.8rem] text-foreground">{value}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
+      <section>
+        {schedules.length > 0 ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+            {schedules.map((window) => {
+              const starts = toDateParts(window.startsAt);
+              const ends = toDateParts(window.endsAt);
+              return (
+                <Card
+                  key={window.id}
+                  className={cn(
+                    "border bg-card/95 transition-colors",
+                    editingId === window.id
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-border/70",
+                  )}
+                >
+                  <CardHeader className="border-b border-border/60 pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="truncate text-[0.88rem] font-semibold">
+                            {window.label}
+                          </CardTitle>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
+                            P{window.priority}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          disabled={deleting}
+                          onClick={() => startEditing(window)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          className={confirmDeleteId === window.id ? "border-destructive/30 text-destructive hover:bg-destructive/10" : ""}
+                          disabled={deleting}
+                          onClick={() => void handleDelete(window.id)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          {confirmDeleteId === window.id ? "Confirm?" : "Delete"}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="divide-y divide-border/60 pt-1">
+                    {[
+                      { label: "Playlist", value: window.playlistName ?? "Unassigned" },
+                      { label: "Target", value: window.targetLabel },
+                      { label: "Starts", value: `${starts.year}-${starts.month}-${starts.day} ${starts.time}` },
+                      { label: "Ends", value: `${ends.year}-${ends.month}-${ends.day} ${ends.time}` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-center justify-between gap-4 py-2 text-sm">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-mono text-[0.8rem] text-foreground">{value}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center">
+            <p className="text-[0.85rem] text-muted-foreground">No schedules yet. Create one on the left.</p>
+          </div>
+        )}
       </section>
     </div>
   );

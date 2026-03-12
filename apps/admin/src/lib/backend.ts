@@ -8,6 +8,7 @@ import {
   deviceSummarySchema,
   mediaAssetSchema,
   playlistSchema,
+  releaseSummarySchema,
   temporaryRegistrationResponseSchema,
   claimStatusResponseSchema,
   deviceCommandSchema,
@@ -176,6 +177,15 @@ export async function listMediaAssets() {
   return z.array(mediaAssetSchema).parse(result);
 }
 
+export async function listReleases() {
+  if (!hasConvexBackend()) {
+    return mock.listReleases();
+  }
+
+  const result = await convexQuery(api.admin.listReleases, {});
+  return z.array(releaseSummarySchema).parse(result);
+}
+
 export async function listPlaylists() {
   if (!hasConvexBackend()) {
     return mock.listPlaylists();
@@ -258,6 +268,38 @@ export async function createYouTubeMediaAsset(input: {
   return mediaAssetSchema.parse(
     await convexMutation(api.admin.createYouTubeMediaAsset, input),
   );
+}
+
+export async function createRelease(input: {
+  name: string;
+  version: string;
+  notes?: string;
+  playerUrl?: string;
+  playerSha256?: string;
+  agentUrl?: string;
+  agentSha256?: string;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.createRelease(input);
+  }
+
+  return releaseSummarySchema.parse(await convexMutation(api.admin.createRelease, input));
+}
+
+export async function deployRelease(input: {
+  releaseId: string;
+  deviceIds?: string[];
+}) {
+  if (!hasConvexBackend()) {
+    return mock.deployRelease(input);
+  }
+
+  return z
+    .object({
+      queuedDeviceCount: z.number(),
+      releaseId: z.string(),
+    })
+    .parse(await convexMutation(api.admin.deployRelease, input));
 }
 
 export async function claimDevice(input: {
@@ -460,7 +502,10 @@ export async function recordHeartbeatForCredential(
 
 export async function recordScreenshotForCredential(
   credential: string | null,
-  payload: ScreenshotUploadPayload & { storageId?: string },
+  payload: Omit<ScreenshotUploadPayload, "deviceId"> & {
+    deviceId?: string;
+    storageId?: string;
+  },
 ) {
   if (!credential) {
     return null;
@@ -524,6 +569,43 @@ export async function recordCommandResultForCredential(
     credential,
     payload,
   });
+}
+
+export async function deletePlaylist(id: string) {
+  if (!hasConvexBackend()) {
+    mock.deletePlaylist(id);
+    return;
+  }
+
+  await convexMutation(api.admin.deletePlaylist, { playlistId: id as never });
+}
+
+export async function deleteSchedule(id: string) {
+  if (!hasConvexBackend()) {
+    mock.deleteSchedule(id);
+    return;
+  }
+
+  await convexMutation(api.admin.deleteSchedule, { scheduleId: id as never });
+}
+
+export async function deleteMediaAsset(id: string) {
+  if (!hasConvexBackend()) {
+    mock.deleteMediaAsset(id);
+    return;
+  }
+
+  await convexMutation(api.admin.deleteMediaAsset, { assetId: id as never });
+}
+
+export async function updateMediaAsset(id: string, title: string, tags: string[]) {
+  if (!hasConvexBackend()) {
+    return mock.updateMediaAsset(id, title, tags);
+  }
+
+  return mediaAssetSchema.parse(
+    await convexMutation(api.admin.updateMediaAsset, { assetId: id as never, title, tags }),
+  );
 }
 
 export async function upsertOrganizationFromClerkWebhook(input: {

@@ -78,6 +78,14 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isImportingYouTube, setIsImportingYouTube] = useState(false);
 
+  // Per-asset inline edit state
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   async function finalizeUpload(uploaded: UploadedFile) {
     try {
       setIsFinalizing(true);
@@ -112,7 +120,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
       setQueuedFile(null);
       setTitle("");
       setTags("");
-      setStatus({ ok: true, text: `Uploaded ${nextAsset.title}` });
+      setStatus({ ok: true, text: `Uploaded "${nextAsset.title}"` });
       router.refresh();
     } catch (error) {
       setStatus({
@@ -153,7 +161,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
       setTags("");
       setStatus({
         ok: true,
-        text: `Imported ${nextAsset.title}. Devices will cache the video locally on next sync.`,
+        text: `Imported "${nextAsset.title}". Devices will cache on next sync.`,
       });
       router.refresh();
     } catch (error) {
@@ -166,6 +174,82 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
     }
   }
 
+  function startEditingAsset(asset: MediaAsset) {
+    setEditingAssetId(asset.id);
+    setEditTitle(asset.title);
+    setEditTags(asset.tags.join(", "));
+    setConfirmDeleteId(null);
+  }
+
+  function cancelEditingAsset() {
+    setEditingAssetId(null);
+    setEditTitle("");
+    setEditTags("");
+  }
+
+  async function saveAssetEdit(assetId: string) {
+    if (!editTitle.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      const response = await fetch(`/api/media/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          tags: editTags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to update asset");
+      }
+
+      const updatedAsset = payload.asset as MediaAsset;
+      setAssets((current) => current.map((a) => (a.id === assetId ? updatedAsset : a)));
+      cancelEditingAsset();
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to update asset",
+      });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function deleteAsset(assetId: string) {
+    if (confirmDeleteId !== assetId) {
+      setConfirmDeleteId(assetId);
+      return;
+    }
+
+    setIsDeleting(true);
+    setConfirmDeleteId(null);
+    try {
+      const response = await fetch(`/api/media/${assetId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error ?? "Unable to delete asset");
+      }
+
+      setAssets((current) => current.filter((a) => a.id !== assetId));
+      if (editingAssetId === assetId) cancelEditingAsset();
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to delete asset",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 xl:grid-cols-[1.15fr_420px]">
@@ -173,7 +257,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
           <CardHeader className="border-b border-border/60">
             <CardTitle className="text-[0.92rem] font-semibold">Media ingest</CardTitle>
             <p className="text-[0.78rem] text-muted-foreground">
-              Use UploadThing&apos;s dropzone for approved files. Title and tags apply to the next asset you drop.
+              Drop a file onto the zone below. Title and tags apply to the next upload.
             </p>
           </CardHeader>
           <CardContent className="grid gap-4 pt-5 md:grid-cols-2">
@@ -215,7 +299,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                 }}
                 content={{
                   allowedContent() {
-                    return "JPG, PNG, WEBP, MP4 • Max 256 MB";
+                    return "JPG, PNG, WEBP, MP4 · Max 256 MB";
                   },
                   button({ isUploading }) {
                     return isUploading ? "Uploading…" : "Choose or drop file";
@@ -263,7 +347,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
           <CardHeader className="border-b border-border/60">
             <CardTitle className="text-[0.92rem] font-semibold">Upload state</CardTitle>
             <p className="text-[0.78rem] text-muted-foreground">
-              A live readout for the next media ingest and metadata finalization step.
+              Live readout for the current ingest and finalization step.
             </p>
           </CardHeader>
           <CardContent className="flex h-full flex-col gap-4 pt-5">
@@ -284,7 +368,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                 </div>
               ) : (
                 <p className="mt-3 text-[0.82rem] text-muted-foreground">
-                  No file selected. Drop a file onto the UploadThing dropzone to stage the next asset.
+                  No file selected. Drop a file onto the dropzone to stage it.
                 </p>
               )}
             </div>
@@ -303,7 +387,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
               </p>
               {isFinalizing ? (
                 <p className="mt-2 text-[0.75rem] text-muted-foreground">
-                  Persisting metadata and folding the asset into the remote manifest store…
+                  Persisting metadata to the asset store…
                 </p>
               ) : null}
             </div>
@@ -315,8 +399,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
         <CardHeader className="border-b border-border/60">
           <CardTitle className="text-[0.92rem] font-semibold">YouTube import</CardTitle>
           <p className="text-[0.78rem] text-muted-foreground">
-            Save a YouTube video as a library asset. Devices will resolve the best compatible
-            stream during sync, convert it to a local MP4, and play from cache.
+            Save a YouTube video as a library asset. Devices resolve and cache the stream locally on sync.
           </p>
         </CardHeader>
         <CardContent className="grid gap-4 pt-5 md:grid-cols-[1.4fr_1fr_auto]">
@@ -366,30 +449,114 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-        {assets.map((asset) => (
-          <article
-            key={asset.id}
-            className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
-          >
-            <div className="aspect-[16/10] overflow-hidden bg-muted">
-              {asset.type === "video" ? (
-                <video className="h-full w-full object-cover" muted src={asset.previewUrl} />
-              ) : (
-                <img alt={asset.title} className="h-full w-full object-cover" src={asset.previewUrl} />
-              )}
-            </div>
-            <div className="flex flex-col gap-1 p-3">
-              <p className="truncate text-[0.85rem] font-medium text-card-foreground">{asset.title}</p>
-              <p className="truncate text-[0.75rem] text-muted-foreground">{asset.fileName}</p>
-              <div className="flex items-center justify-between pt-1 text-[0.72rem] font-mono text-muted-foreground">
-                <span>{asset.sourceType === "youtube" ? "youtube" : asset.mimeType}</span>
-                <span>{prettyBytes(asset.sizeBytes)}</span>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
+      {/* Asset grid */}
+      {assets.length > 0 ? (
+        <section>
+          <h2 className="mb-3 text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Library · {assets.length} asset{assets.length !== 1 ? "s" : ""}
+          </h2>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+            {assets.map((asset) => {
+              const isEditing = editingAssetId === asset.id;
+              return (
+                <article
+                  key={asset.id}
+                  className={cn(
+                    "flex flex-col overflow-hidden rounded-xl border bg-card transition-colors",
+                    isEditing ? "border-primary/50" : "border-border",
+                  )}
+                >
+                  <div className="aspect-[16/10] overflow-hidden bg-muted">
+                    {asset.type === "video" ? (
+                      <video className="h-full w-full object-cover" muted src={asset.previewUrl} />
+                    ) : (
+                      <img alt={asset.title} className="h-full w-full object-cover" src={asset.previewUrl} />
+                    )}
+                  </div>
+
+                  {isEditing ? (
+                    <div className="flex flex-col gap-2 p-3">
+                      <Input
+                        autoFocus
+                        className="h-7 text-[0.82rem]"
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Title"
+                        value={editTitle}
+                      />
+                      <Input
+                        className="h-7 text-[0.78rem]"
+                        onChange={(e) => setEditTags(e.target.value)}
+                        placeholder="Tags (comma separated)"
+                        value={editTags}
+                      />
+                      <div className="flex gap-1.5">
+                        <Button
+                          className="flex-1"
+                          disabled={isSavingEdit || !editTitle.trim()}
+                          onClick={() => void saveAssetEdit(asset.id)}
+                          size="sm"
+                          type="button"
+                        >
+                          {isSavingEdit ? "Saving…" : "Save"}
+                        </Button>
+                        <Button
+                          onClick={cancelEditingAsset}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1 p-3">
+                      <p className="truncate text-[0.85rem] font-medium text-card-foreground">
+                        {asset.title}
+                      </p>
+                      <p className="truncate text-[0.75rem] text-muted-foreground">{asset.fileName}</p>
+                      <div className="flex items-center justify-between pt-1 text-[0.72rem] font-mono text-muted-foreground">
+                        <span>{asset.sourceType === "youtube" ? "youtube" : asset.mimeType}</span>
+                        <span>{prettyBytes(asset.sizeBytes)}</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <Button
+                          className="flex-1"
+                          onClick={() => startEditingAsset(asset)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Rename
+                        </Button>
+                        <Button
+                          className={cn(
+                            "flex-1 text-[0.75rem]",
+                            confirmDeleteId === asset.id
+                              ? "border-destructive/30 text-destructive hover:bg-destructive/10"
+                              : "",
+                          )}
+                          disabled={isDeleting}
+                          onClick={() => void deleteAsset(asset.id)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          {confirmDeleteId === asset.id ? "Confirm?" : "Delete"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-8 text-center">
+          <p className="text-[0.85rem] text-muted-foreground">No assets yet. Upload or import a video above.</p>
+        </div>
+      )}
     </div>
   );
 }

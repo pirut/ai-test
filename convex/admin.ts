@@ -170,6 +170,68 @@ export const listMediaAssets = query({
   },
 });
 
+export const listReleases = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgIdentity(ctx);
+    const [releases, devices, rollouts] = await Promise.all([
+      ctx.db
+        .query("releases")
+        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+        .order("desc")
+        .collect(),
+      ctx.db
+        .query("devices")
+        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+        .collect(),
+      ctx.db
+        .query("releaseRollouts")
+        .withIndex("by_org_and_queued_at", (q) => q.eq("organizationId", orgId))
+        .order("desc")
+        .collect(),
+    ]);
+
+    const deviceNameById = new Map(
+      devices.map((device) => [device._id, device.name ?? device.siteName ?? "Unnamed screen"]),
+    );
+
+    return releases.map((release) => {
+      const releaseRollouts = rollouts.filter((entry) => entry.releaseId === release._id);
+
+      return {
+        id: release._id,
+        name: release.name,
+        version: release.version,
+        notes: release.notes ?? null,
+        playerUrl: release.playerUrl ?? null,
+        playerSha256: release.playerSha256 ?? null,
+        agentUrl: release.agentUrl ?? null,
+        agentSha256: release.agentSha256 ?? null,
+        createdAt: new Date(release.createdAt).toISOString(),
+        updatedAt: new Date(release.updatedAt).toISOString(),
+        rolloutSummary: {
+          total: releaseRollouts.length,
+          queued: releaseRollouts.filter((entry) => entry.status === "queued").length,
+          inProgress: releaseRollouts.filter((entry) => entry.status === "in_progress").length,
+          succeeded: releaseRollouts.filter((entry) => entry.status === "succeeded").length,
+          failed: releaseRollouts.filter((entry) => entry.status === "failed").length,
+        },
+        latestRollouts: releaseRollouts.slice(0, 8).map((entry) => ({
+          id: entry._id,
+          deviceId: entry.deviceId,
+          deviceName: deviceNameById.get(entry.deviceId) ?? "Unknown screen",
+          status: entry.status,
+          queuedAt: new Date(entry.queuedAt).toISOString(),
+          startedAt: entry.startedAt ? new Date(entry.startedAt).toISOString() : null,
+          completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : null,
+          message: entry.message ?? null,
+        })),
+      };
+    });
+  },
+});
+
 export const listPlaylists = query({
   args: {},
   returns: v.array(v.any()),
@@ -331,6 +393,132 @@ export const createYouTubeMediaAsset = mutation({
     }
 
     return serializeAsset(ctx, asset);
+  },
+});
+
+export const createRelease = mutation({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    notes: v.optional(v.string()),
+    playerUrl: v.optional(v.string()),
+    playerSha256: v.optional(v.string()),
+    agentUrl: v.optional(v.string()),
+    agentSha256: v.optional(v.string()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const identity = await requireAdmin(ctx);
+    if (!args.playerUrl && !args.agentUrl) {
+      throw new ConvexError("Provide a player URL and/or agent URL");
+    }
+
+    const releaseId = await ctx.db.insert("releases", {
+      organizationId: identity.orgId,
+      name: args.name,
+      version: args.version,
+      notes: args.notes,
+      playerUrl: args.playerUrl,
+      playerSha256: args.playerSha256,
+      agentUrl: args.agentUrl,
+      agentSha256: args.agentSha256,
+      createdByUserId: identity.userId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return {
+      id: releaseId,
+      name: args.name,
+      version: args.version,
+      notes: args.notes ?? null,
+      playerUrl: args.playerUrl ?? null,
+      playerSha256: args.playerSha256 ?? null,
+      agentUrl: args.agentUrl ?? null,
+      agentSha256: args.agentSha256 ?? null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      rolloutSummary: {
+        total: 0,
+        queued: 0,
+        inProgress: 0,
+        succeeded: 0,
+        failed: 0,
+      },
+      latestRollouts: [],
+    };
+  },
+});
+
+export const deployRelease = mutation({
+  args: {
+    releaseId: v.id("releases"),
+    deviceIds: v.optional(v.array(v.id("devices"))),
+  },
+  returns: v.object({
+    queuedDeviceCount: v.number(),
+    releaseId: v.id("releases"),
+  }),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.organizationId !== orgId) {
+      throw new ConvexError("Release not found");
+    }
+
+    const orgDevices = await ctx.db
+      .query("devices")
+      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+      .collect();
+
+    const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
+    const targetDevices = requestedIds
+      ? orgDevices.filter((device) => requestedIds.has(device._id))
+      : orgDevices;
+
+    if (!targetDevices.length) {
+      throw new ConvexError("No target devices selected");
+    }
+
+    const now = Date.now();
+    for (const device of targetDevices) {
+      const commandId = await ctx.db.insert("deviceCommands", {
+        organizationId: orgId,
+        deviceId: device._id,
+        commandType: "update_release",
+        status: "queued",
+        payload: {
+          version: release.version,
+          agentVersion: release.agentUrl ? release.version : undefined,
+          agentUrl: release.agentUrl,
+          agentSha256: release.agentSha256,
+          playerVersion: release.playerUrl ? release.version : undefined,
+          playerUrl: release.playerUrl,
+          playerSha256: release.playerSha256,
+        },
+        queuedAt: now,
+      });
+
+      await ctx.db.insert("releaseRollouts", {
+        organizationId: orgId,
+        releaseId: release._id,
+        deviceId: device._id,
+        commandId,
+        status: "queued",
+        queuedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await ctx.db.patch(release._id, {
+      updatedAt: now,
+    });
+
+    return {
+      queuedDeviceCount: targetDevices.length,
+      releaseId: release._id,
+    };
   },
 });
 
@@ -691,5 +879,111 @@ export const compileManifests = mutation({
       affectedDeviceCount: devices.length,
       manifestVersion,
     };
+  },
+});
+
+export const deletePlaylist = mutation({
+  args: {
+    playlistId: v.id("playlists"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const playlist = await ctx.db.get(args.playlistId);
+    if (!playlist || playlist.organizationId !== orgId) {
+      throw new ConvexError("Playlist not found");
+    }
+
+    const items = await ctx.db
+      .query("playlistItems")
+      .withIndex("by_playlist_and_order", (q) => q.eq("playlistId", args.playlistId))
+      .collect();
+    await Promise.all(items.map((item) => ctx.db.delete(item._id)));
+
+    const targets = await ctx.db
+      .query("scheduleTargets")
+      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+      .collect();
+    await Promise.all(
+      targets.filter((t) => t.playlistId === args.playlistId).map((t) => ctx.db.delete(t._id)),
+    );
+
+    await ctx.db.delete(args.playlistId);
+    await compileOrgManifests(ctx, orgId);
+    return null;
+  },
+});
+
+export const deleteSchedule = mutation({
+  args: {
+    scheduleId: v.id("schedules"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const schedule = await ctx.db.get(args.scheduleId);
+    if (!schedule || schedule.organizationId !== orgId) {
+      throw new ConvexError("Schedule not found");
+    }
+
+    const targets = await ctx.db
+      .query("scheduleTargets")
+      .withIndex("by_schedule", (q) => q.eq("scheduleId", args.scheduleId))
+      .collect();
+    await Promise.all(targets.map((t) => ctx.db.delete(t._id)));
+
+    await ctx.db.delete(args.scheduleId);
+    await compileOrgManifests(ctx, orgId);
+    return null;
+  },
+});
+
+export const deleteMediaAsset = mutation({
+  args: {
+    assetId: v.id("mediaAssets"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const asset = await ctx.db.get(args.assetId);
+    if (!asset || asset.organizationId !== orgId) {
+      throw new ConvexError("Media asset not found");
+    }
+
+    const items = await ctx.db
+      .query("playlistItems")
+      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+      .collect();
+    await Promise.all(
+      items.filter((i) => i.mediaAssetId === args.assetId).map((i) => ctx.db.delete(i._id)),
+    );
+
+    await ctx.db.delete(args.assetId);
+    return null;
+  },
+});
+
+export const updateMediaAsset = mutation({
+  args: {
+    assetId: v.id("mediaAssets"),
+    title: v.string(),
+    tags: v.array(v.string()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const asset = await ctx.db.get(args.assetId);
+    if (!asset || asset.organizationId !== orgId) {
+      throw new ConvexError("Media asset not found");
+    }
+
+    await ctx.db.patch(args.assetId, {
+      title: args.title,
+      tags: args.tags,
+      updatedAt: Date.now(),
+    });
+
+    const updated = await ctx.db.get(args.assetId);
+    return serializeAsset(ctx, updated!);
   },
 });
