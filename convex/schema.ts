@@ -25,6 +25,13 @@ const commandStatusValidator = v.union(
   v.literal("failed"),
 );
 
+const releaseRolloutStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("in_progress"),
+  v.literal("succeeded"),
+  v.literal("failed"),
+);
+
 export default defineSchema({
   organizations: defineTable({
     clerkOrgId: v.string(),
@@ -159,6 +166,38 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_org", ["organizationId"]),
+
+  releases: defineTable({
+    organizationId: v.string(),
+    name: v.string(),
+    version: v.string(),
+    notes: v.optional(v.string()),
+    playerUrl: v.optional(v.string()),
+    playerSha256: v.optional(v.string()),
+    agentUrl: v.optional(v.string()),
+    agentSha256: v.optional(v.string()),
+    createdByUserId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+
+  releaseRollouts: defineTable({
+    organizationId: v.string(),
+    releaseId: v.id("releases"),
+    deviceId: v.id("devices"),
+    commandId: v.id("deviceCommands"),
+    status: releaseRolloutStatusValidator,
+    queuedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    message: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org_and_queued_at", ["organizationId", "queuedAt"])
+    .index("by_release_and_queued_at", ["releaseId", "queuedAt"])
+    .index("by_command", ["commandId"])
+    .index("by_device_and_queued_at", ["deviceId", "queuedAt"]),
 
   playlists: defineTable({
     organizationId: v.string(),

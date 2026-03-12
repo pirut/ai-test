@@ -44,7 +44,6 @@ export async function POST(request: Request) {
 
     const uploadPayload = (await uploadResponse.json()) as { storageId?: string };
     const screenshot = await recordScreenshotForCredential(credential, {
-      deviceId,
       capturedAt,
       mimeType: file.type === "image/jpeg" ? "image/jpeg" : "image/jpeg",
       bytes: file.size,

@@ -63,6 +63,15 @@ const navItems = [
     ),
   },
   {
+    href: "/releases",
+    label: "Releases",
+    icon: (
+      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+        <path d="M3 13.5h10M8 2v8.5M5.5 5.5L8 3l2.5 2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/team",
     label: "Team",
     icon: (

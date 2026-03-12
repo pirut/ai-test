@@ -160,13 +160,26 @@ export const claimCommands = mutation({
       .filter((q) => q.eq(q.field("status"), "queued"))
       .collect();
 
+    const startedAt = Date.now();
     await Promise.all(
-      commands.map((command) =>
-        ctx.db.patch(command._id, {
+      commands.map(async (command) => {
+        await ctx.db.patch(command._id, {
           status: "in_progress",
-          startedAt: Date.now(),
-        }),
-      ),
+          startedAt,
+        });
+
+        const rollout = await ctx.db
+          .query("releaseRollouts")
+          .withIndex("by_command", (q) => q.eq("commandId", command._id))
+          .unique();
+        if (rollout) {
+          await ctx.db.patch(rollout._id, {
+            status: "in_progress",
+            startedAt,
+            updatedAt: startedAt,
+          });
+        }
+      }),
     );
 
     return commands.map((command) => ({
@@ -327,6 +340,28 @@ export const recordCommandResult = mutation({
             : Date.now()
           : command.completedAt,
     });
+
+    const rollout = await ctx.db
+      .query("releaseRollouts")
+      .withIndex("by_command", (q) => q.eq("commandId", command._id))
+      .unique();
+    if (rollout) {
+      await ctx.db.patch(rollout._id, {
+        status: args.payload.status,
+        startedAt:
+          args.payload.status === "in_progress"
+            ? Date.now()
+            : rollout.startedAt,
+        completedAt:
+          args.payload.status === "succeeded" || args.payload.status === "failed"
+            ? args.payload.completedAt
+              ? Date.parse(args.payload.completedAt)
+              : Date.now()
+            : rollout.completedAt,
+        message: args.payload.message,
+        updatedAt: Date.now(),
+      });
+    }
 
     return {
       ...args.payload,
