@@ -113,7 +113,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
   async function finalizeUpload(uploaded: UploadedFile, sourceFile?: File) {
     try {
       setIsFinalizing(true);
-      setStatus({ ok: true, text: `Finalizing "${uploaded.name}"…` });
+      setStatus({ ok: true, text: `Finalizing "${uploaded.name}"...` });
       const metadata = sourceFile ? await getMediaMetadata(sourceFile) : {};
       const finalizeResponse = await fetch("/api/media/finalize", {
         method: "POST",
@@ -148,6 +148,8 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
         text: error instanceof Error ? error.message : "Upload failed",
       });
       return null;
+    } finally {
+      setIsFinalizing(false);
     }
   }
 
@@ -322,10 +324,10 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                 return "JPG, PNG, WEBP, MP4 · Max 256 MB per file";
               },
               button({ isUploading }) {
-                return isUploading ? "Uploading…" : "Choose or drop files";
+                return isUploading ? "Uploading..." : "Choose or drop files";
               },
               label({ isDragActive, ready }) {
-                if (!ready) return "Preparing upload…";
+                if (!ready) return "Preparing upload...";
                 return isDragActive ? "Release to upload" : "Drop media files here";
               },
             }}
@@ -341,7 +343,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
               setQueuedFiles(files);
               if (files.length > 0) {
                 setUploadProgress(`Selected ${files.length} file${files.length !== 1 ? "s" : ""}`);
-                setStatus({ ok: true, text: `Preparing ${files.length} file${files.length !== 1 ? "s" : ""}…` });
+                setStatus({ ok: true, text: `Preparing ${files.length} file${files.length !== 1 ? "s" : ""}...` });
               }
             }}
             onClientUploadComplete={async (result) => {
@@ -371,7 +373,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
               }
             }}
             onUploadBegin={(fileName) => {
-              setStatus({ ok: true, text: `Uploading ${fileName}…` });
+              setStatus({ ok: true, text: `Uploading ${fileName}...` });
             }}
             onUploadError={(error) => {
               setStatus({ ok: false, text: error.message });

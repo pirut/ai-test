@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
+import { extractRouterConfig } from "uploadthing/server";
 
+import { uploadRouter } from "@/app/api/uploadthing/core";
 import { AuthProviders } from "@/components/auth-providers";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +39,7 @@ export default function RootLayout({
       className={cn(ibmPlexSans.variable, ibmPlexMono.variable)}
     >
       <body>
+        <NextSSRPlugin routerConfig={extractRouterConfig(uploadRouter)} />
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
