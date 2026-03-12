@@ -31,6 +31,13 @@ type QueueItem = {
   dwellSeconds: string | null;
 };
 
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
+  return `0:${String(s).padStart(2, "0")}`;
+}
+
 export function PlaylistManager({
   initialPlaylists,
   mediaAssets,
@@ -96,7 +103,6 @@ export function PlaylistManager({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // Auto-clear confirm delete after 3s
   useEffect(() => {
     if (!confirmDeleteId) return;
     const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
@@ -119,20 +125,20 @@ export function PlaylistManager({
     setSaving(true);
     try {
       const response = await fetch("/api/playlists", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            playlistId: editingId ?? undefined,
-            name: name.trim(),
-            makeDefault,
-            itemIds: queue.map(({ assetId, dwellSeconds }) => {
-              const dwell = Number(dwellSeconds);
-              return {
-                mediaAssetId: assetId,
-                dwellSeconds: Number.isFinite(dwell) && dwell > 0 ? dwell : undefined,
-              };
-            }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playlistId: editingId ?? undefined,
+          name: name.trim(),
+          makeDefault,
+          itemIds: queue.map(({ assetId, dwellSeconds }) => {
+            const dwell = Number(dwellSeconds);
+            return {
+              mediaAssetId: assetId,
+              dwellSeconds: Number.isFinite(dwell) && dwell > 0 ? dwell : undefined,
+            };
           }),
+        }),
       });
 
       const payload = await response.json();
@@ -208,6 +214,9 @@ export function PlaylistManager({
             <Input
               id="playlist-name"
               onChange={(event) => setName(event.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && name.trim() && queue.length > 0) void handleSave();
+              }}
               placeholder="Main showroom loop"
               value={name}
             />
@@ -274,13 +283,13 @@ export function PlaylistManager({
                         >
                           <Select
                             items={[{ label: "Default", value: DWELL_DEFAULT_VALUE }, ...DWELL_OPTIONS]}
+                            value={item.dwellSeconds ?? DWELL_DEFAULT_VALUE}
                             onValueChange={(value) =>
                               setDwell(
                                 item.assetId,
                                 !value || value === DWELL_DEFAULT_VALUE ? null : value,
                               )
                             }
-                            value={item.dwellSeconds ?? null}
                           >
                             <SelectTrigger className="h-7 text-[0.75rem] font-mono">
                               <SelectValue placeholder="Default" />
@@ -297,7 +306,9 @@ export function PlaylistManager({
                         </div>
                       ) : (
                         <span className="shrink-0 font-mono text-[0.72rem] text-muted-foreground">
-                          {asset.durationSeconds ? `${asset.durationSeconds}s` : "video"}
+                          {asset.durationSeconds
+                            ? formatDuration(Math.ceil(asset.durationSeconds))
+                            : "video"}
                         </span>
                       )}
 
@@ -328,7 +339,7 @@ export function PlaylistManager({
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              disabled={saving || !hasMedia}
+              disabled={saving || !name.trim() || queue.length === 0}
               onClick={() => void handleSave()}
               type="button"
             >
@@ -385,7 +396,11 @@ export function PlaylistManager({
                   onClick={() => toggleAsset(asset.id)}
                   type="button"
                 >
-                  <Checkbox checked={isSelected} className="pointer-events-none shrink-0" />
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleAsset(asset.id)}
+                    className="shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">{asset.title}</p>
                     <p className="truncate font-mono text-[0.72rem] text-muted-foreground">
@@ -395,7 +410,7 @@ export function PlaylistManager({
                   <Badge variant="outline" className="shrink-0">
                     {asset.type === "video"
                       ? asset.durationSeconds
-                        ? `${asset.durationSeconds}s`
+                        ? formatDuration(Math.ceil(asset.durationSeconds))
                         : "video"
                       : "image"}
                   </Badge>
@@ -453,16 +468,29 @@ export function PlaylistManager({
                     </div>
                   </CardHeader>
                   <CardContent className="divide-y divide-border/60 pt-1">
-                    {playlist.items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                        <span className="truncate text-[0.82rem] text-foreground">
-                          {item.asset.title}
-                        </span>
-                        <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">
-                          {item.dwellSeconds ?? item.asset.durationSeconds ?? 10}s
-                        </span>
-                      </div>
-                    ))}
+                    {[...playlist.items]
+                      .sort((a, b) => a.order - b.order)
+                      .map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[0.72rem] font-mono text-muted-foreground/60 w-4 shrink-0 text-center">
+                              {item.order + 1}
+                            </span>
+                            <span className="truncate text-[0.82rem] text-foreground">
+                              {item.asset.title}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">
+                            {item.asset.type === "video"
+                              ? item.asset.durationSeconds
+                                ? formatDuration(Math.ceil(item.asset.durationSeconds))
+                                : "video"
+                              : item.dwellSeconds
+                                ? `${item.dwellSeconds}s`
+                                : "default"}
+                          </span>
+                        </div>
+                      ))}
                   </CardContent>
                 </Card>
               ))}

@@ -9,11 +9,11 @@ const f = createUploadthing();
 export const uploadRouter = {
   mediaUploader: f({
     image: {
-      maxFileCount: 1,
+      maxFileCount: 10,
       maxFileSize: "16MB",
     },
     video: {
-      maxFileCount: 1,
+      maxFileCount: 10,
       maxFileSize: "256MB",
     },
   })
