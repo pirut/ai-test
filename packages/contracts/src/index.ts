@@ -39,6 +39,12 @@ export const releaseUpdatePayloadSchema = z
 
 export const mediaTypeSchema = z.enum(["image", "video"]);
 export const assetSourceTypeSchema = z.enum(["upload", "youtube"]);
+export const releaseRolloutStatusSchema = z.enum([
+  "queued",
+  "in_progress",
+  "succeeded",
+  "failed",
+]);
 
 export const manifestPlaylistItemSchema = z.object({
   id: z.string(),
@@ -166,6 +172,38 @@ export const playlistSchema = z.object({
   items: z.array(playlistItemSchema),
 });
 
+export const releaseRolloutSchema = z.object({
+  id: z.string(),
+  deviceId: z.string(),
+  deviceName: z.string(),
+  status: releaseRolloutStatusSchema,
+  queuedAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  message: z.string().nullable(),
+});
+
+export const releaseSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  notes: z.string().nullable(),
+  playerUrl: z.string().url().nullable(),
+  playerSha256: z.string().nullable(),
+  agentUrl: z.string().url().nullable(),
+  agentSha256: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  rolloutSummary: z.object({
+    total: z.number().int().nonnegative(),
+    queued: z.number().int().nonnegative(),
+    inProgress: z.number().int().nonnegative(),
+    succeeded: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+  latestRollouts: z.array(releaseRolloutSchema),
+});
+
 export const dashboardStatsSchema = z.object({
   online: z.number().int().nonnegative(),
   stale: z.number().int().nonnegative(),
@@ -187,6 +225,8 @@ export type MediaAsset = z.infer<typeof mediaAssetSchema>;
 export type Playlist = z.infer<typeof playlistSchema>;
 export type DashboardStats = z.infer<typeof dashboardStatsSchema>;
 export type ReleaseUpdatePayload = z.infer<typeof releaseUpdatePayloadSchema>;
+export type ReleaseSummary = z.infer<typeof releaseSummarySchema>;
+export type ReleaseRollout = z.infer<typeof releaseRolloutSchema>;
 
 export const mockMediaAssets: MediaAsset[] = [
   {
