@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type DeviceManifest,
   type ManifestPlaylistItem,
@@ -90,6 +90,7 @@ function chooseSchedule(manifest: DeviceManifest) {
 
 export function PlayerApp() {
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [wifiForm, setWifiForm] = useState({
     ssid: "",
     password: "",
@@ -216,6 +217,72 @@ export function PlayerApp() {
 
     return () => window.clearTimeout(timeout);
   }, [state.index, state.manifest]);
+
+  useEffect(() => {
+    if (!state.manifest || state.activeItem?.assetType !== "video") {
+      return;
+    }
+
+    const getVideo = () =>
+      videoRef.current ?? document.querySelector<HTMLVideoElement>("video.playerMedia");
+
+    const video = getVideo();
+    if (!video) {
+      return;
+    }
+
+    const playlist = chooseSchedule(state.manifest);
+    if (playlist.length !== 1) {
+      return;
+    }
+
+    video.loop = true;
+    video.onended = () => {
+      video.currentTime = 0;
+      void video.play().catch(() => {});
+    };
+
+    if (video.ended) {
+      video.currentTime = 0;
+      void video.play().catch(() => {});
+    }
+
+    const interval = window.setInterval(() => {
+      const currentVideo = getVideo();
+      if (!currentVideo) {
+        return;
+      }
+
+      currentVideo.loop = true;
+      currentVideo.onended = () => {
+        currentVideo.currentTime = 0;
+        void currentVideo.play().catch(() => {});
+      };
+
+      const nearEnd =
+        Number.isFinite(currentVideo.duration) &&
+        currentVideo.duration > 0 &&
+        currentVideo.currentTime >= currentVideo.duration - 0.25;
+
+      if (currentVideo.ended || (nearEnd && currentVideo.paused)) {
+        currentVideo.currentTime = 0;
+        void currentVideo.play().catch(() => {});
+        return;
+      }
+
+      if (currentVideo.paused && currentVideo.readyState >= 2) {
+        void currentVideo.play().catch(() => {});
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+      const currentVideo = getVideo();
+      if (currentVideo) {
+        currentVideo.onended = null;
+      }
+    };
+  }, [state.activeItem, state.manifest]);
 
   if (state.status === "unclaimed") {
     return (
@@ -344,14 +411,28 @@ export function PlayerApp() {
           autoPlay
           className="playerMedia"
           controls={false}
+          key={`${state.activeItem.assetId}-${state.manifest.manifestVersion}`}
+          loop={playlist.length === 1}
           muted={state.manifest.volume === 0}
-          onEnded={() =>
+          onEnded={(event) => {
+            if (playlist.length <= 1) {
+              event.currentTarget.currentTime = 0;
+              void event.currentTarget.play().catch(() => {});
+              return;
+            }
+
             setState((current) => ({
               ...current,
-              index: (current.index + 1) % Math.max(playlist.length, 1),
-            }))
-          }
+              index: (current.index + 1) % playlist.length,
+            }));
+          }}
+          onLoadedMetadata={(event) => {
+            if (playlist.length === 1) {
+              event.currentTarget.loop = true;
+            }
+          }}
           playsInline
+          ref={videoRef}
           src={state.activeItem.url}
         />
       ) : (

@@ -1,7 +1,10 @@
+xinit
 xserver-xorg
 openbox
 chromium
+mpv
 scrot
 unclutter
 ffmpeg
 yt-dlp
+python3-xdg

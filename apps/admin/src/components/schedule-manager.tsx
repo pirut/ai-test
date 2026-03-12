@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -303,6 +303,13 @@ export function ScheduleManager({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Auto-clear confirm delete after 3s
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
+
   function cancelEditing() {
     setEditingId(null);
     setName("");
@@ -314,7 +321,6 @@ export function ScheduleManager({
     setEndTime("17:00");
     setPriority("10");
     setDeviceId("");
-    setStatus(null);
   }
 
   async function handleSave() {

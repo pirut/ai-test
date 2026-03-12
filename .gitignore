@@ -15,5 +15,6 @@ packages/*/node_modules
 .vercel
 infra/artifacts
 infra/pi-image/artifacts
+infra/pi-image/out
 infra/pi-image/boot/network.env
 infra/pi-image/boot/network-config

@@ -54,7 +54,7 @@ func Load() Config {
 		ScreenshotInterval:   getduration("SHOWROOM_SCREENSHOT_INTERVAL", "15m"),
 		ScreenshotCommand:    getenv("SHOWROOM_SCREENSHOT_COMMAND", "scrot -q 85 -o /tmp/showroom-screenshot.jpg"),
 		YouTubeDLBinary:      getenv("SHOWROOM_YTDLP_BINARY", "yt-dlp"),
-		YouTubeFormat:        getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/best"),
+		YouTubeFormat:        getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo*[height<=2160]+bestaudio/best[height<=2160]/best"),
 		RestartPlayerCommand: getenv("SHOWROOM_RESTART_PLAYER_COMMAND", "systemctl restart showroom-kiosk.service"),
 		RestartAgentCommand:  getenv("SHOWROOM_RESTART_AGENT_COMMAND", "systemctl restart showroom-agent.service"),
 		RebootCommand:        getenv("SHOWROOM_REBOOT_COMMAND", "shutdown -r now"),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MediaAsset } from "@showroom/contracts";
 
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +85,12 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   async function finalizeUpload(uploaded: UploadedFile) {
     try {
@@ -480,12 +486,20 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                         autoFocus
                         className="h-7 text-[0.82rem]"
                         onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && editTitle.trim()) void saveAssetEdit(asset.id);
+                          if (e.key === "Escape") cancelEditingAsset();
+                        }}
                         placeholder="Title"
                         value={editTitle}
                       />
                       <Input
                         className="h-7 text-[0.78rem]"
                         onChange={(e) => setEditTags(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && editTitle.trim()) void saveAssetEdit(asset.id);
+                          if (e.key === "Escape") cancelEditingAsset();
+                        }}
                         placeholder="Tags (comma separated)"
                         value={editTags}
                       />

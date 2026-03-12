@@ -1,7 +1,7 @@
 [Unit]
 Description=Showroom Chromium kiosk
-After=network-online.target showroom-agent.service systemd-user-sessions.service
-Wants=network-online.target showroom-agent.service
+After=showroom-agent.service systemd-user-sessions.service
+Wants=showroom-agent.service
 Conflicts=getty@tty1.service
 
 [Service]

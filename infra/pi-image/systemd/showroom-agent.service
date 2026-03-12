@@ -1,7 +1,5 @@
 [Unit]
 Description=Showroom device agent
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/showroom-agent/config.env
@@ -12,4 +10,3 @@ User=root
 
 [Install]
 WantedBy=multi-user.target
-

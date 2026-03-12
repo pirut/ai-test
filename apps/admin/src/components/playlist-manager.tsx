@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MediaAsset, Playlist } from "@showroom/contracts";
 
 import { Badge } from "@/components/ui/badge";
@@ -96,12 +96,18 @@ export function PlaylistManager({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Auto-clear confirm delete after 3s
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
+
   function cancelEditing() {
     setEditingId(null);
     setName("");
     setQueue([]);
     setMakeDefault(false);
-    setStatus(null);
   }
 
   async function handleSave() {
@@ -112,9 +118,7 @@ export function PlaylistManager({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        editingId ? `/api/playlists` : `/api/playlists`,
-        {
+      const response = await fetch("/api/playlists", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -129,8 +133,7 @@ export function PlaylistManager({
               };
             }),
           }),
-        },
-      );
+      });
 
       const payload = await response.json();
       if (!response.ok) {
@@ -270,6 +273,7 @@ export function PlaylistManager({
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Select
+                            items={[{ label: "Default", value: DWELL_DEFAULT_VALUE }, ...DWELL_OPTIONS]}
                             onValueChange={(value) =>
                               setDwell(
                                 item.assetId,
