@@ -482,7 +482,7 @@ export function MediaLibraryManager({ initialAssets }: { initialAssets: MediaAss
                   )}
                 >
                   <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-                    {asset.type === "video" ? (
+                    {asset.type === "video" && asset.sourceType !== "youtube" && asset.mimeType.startsWith("video/") ? (
                       <video
                         className="h-full w-full object-cover"
                         muted

@@ -398,8 +398,8 @@ export function PlaylistManager({
                 >
                   <Checkbox
                     checked={isSelected}
-                    onCheckedChange={() => toggleAsset(asset.id)}
-                    className="shrink-0"
+                    onCheckedChange={() => {}}
+                    className="pointer-events-none shrink-0"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">{asset.title}</p>
