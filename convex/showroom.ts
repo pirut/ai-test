@@ -84,6 +84,7 @@ export async function serializePlaylist(ctx: Ctx, playlist: Doc<"playlists">) {
   return {
     id: playlist._id,
     name: playlist.name,
+    isDefault: playlist.isDefault,
     items: await Promise.all(
       itemPairs.map(async ({ item, asset }) => ({
         id: item._id,

@@ -89,7 +89,7 @@ export function PlaylistManager({
   function startEditing(playlist: Playlist) {
     setEditingId(playlist.id);
     setName(playlist.name);
-    setMakeDefault(false);
+    setMakeDefault(playlist.isDefault);
     setQueue(
       [...playlist.items]
         .sort((a, b) => a.order - b.order)
@@ -230,7 +230,7 @@ export function PlaylistManager({
                   Use whenever no schedule window is active.
                 </p>
               </div>
-              <Switch checked={makeDefault} onCheckedChange={setMakeDefault} />
+              <Switch checked={makeDefault} onCheckedChange={(checked) => setMakeDefault(checked)} />
             </div>
           </div>
 
@@ -440,9 +440,16 @@ export function PlaylistManager({
                         <CardTitle className="truncate text-[0.88rem] font-semibold">
                           {playlist.name}
                         </CardTitle>
-                        <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
-                          {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
-                        </p>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <p className="text-[0.75rem] text-muted-foreground">
+                            {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
+                          </p>
+                          {playlist.isDefault ? (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[0.62rem] uppercase tracking-[0.14em]">
+                              Default
+                            </Badge>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <Button
