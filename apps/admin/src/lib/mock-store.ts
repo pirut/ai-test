@@ -142,6 +142,24 @@ export function listPlaylists() {
   return state().playlists;
 }
 
+export function setDefaultPlaylist(id: string) {
+  let target: Playlist | null = null;
+  state().playlists = state().playlists.map((playlist) => {
+    const next = {
+      ...playlist,
+      isDefault: playlist.id === id,
+    };
+
+    if (next.isDefault) {
+      target = next;
+    }
+
+    return next;
+  });
+
+  return target;
+}
+
 export function listReleases() {
   return state().releases;
 }
@@ -490,8 +508,20 @@ export function recordCommandResult(result: DeviceCommandResult) {
 }
 
 export function deletePlaylist(id: string) {
-  const idx = state().playlists.findIndex((p) => p.id === id);
-  if (idx !== -1) state().playlists.splice(idx, 1);
+  const idx = state().playlists.findIndex((playlist) => playlist.id === id);
+  if (idx === -1) {
+    return;
+  }
+
+  const [removed] = state().playlists.splice(idx, 1);
+  if (!removed?.isDefault || state().playlists.length === 0) {
+    return;
+  }
+
+  state().playlists = state().playlists.map((playlist, index) => ({
+    ...playlist,
+    isDefault: index === 0,
+  }));
 }
 
 export function deleteSchedule(_id: string) {

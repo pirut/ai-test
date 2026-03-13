@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 
+import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import {
   compileOrgManifests,
@@ -9,6 +10,89 @@ import {
   serializePlaylist,
 } from "./showroom";
 import { requireAdmin, requireOrgIdentity, hashValue, randomToken } from "./lib";
+
+async function listOrgPlaylists(ctx: any, orgId: string) {
+  return ctx.db
+    .query("playlists")
+    .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+    .collect() as Promise<Array<Doc<"playlists">>>;
+}
+
+function sortPlaylistsForFallback(playlists: Array<Doc<"playlists">>) {
+  return [...playlists].sort((a, b) => {
+    const createdAtDiff = a.createdAt - b.createdAt;
+    if (createdAtDiff !== 0) {
+      return createdAtDiff;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+async function assignOrgDefaultPlaylist(
+  ctx: any,
+  orgId: string,
+  playlistId: Id<"playlists">,
+) {
+  const playlists = await listOrgPlaylists(ctx, orgId);
+  const now = Date.now();
+
+  await Promise.all(
+    playlists.flatMap((playlist) => {
+      if (playlist._id === playlistId) {
+        return playlist.isDefault
+          ? []
+          : [
+              ctx.db.patch(playlist._id, {
+                isDefault: true,
+                updatedAt: now,
+              }),
+            ];
+      }
+
+      return playlist.isDefault
+        ? [
+            ctx.db.patch(playlist._id, {
+              isDefault: false,
+              updatedAt: now,
+            }),
+          ]
+        : [];
+    }),
+  );
+}
+
+async function ensureOrgHasDefaultPlaylist(
+  ctx: any,
+  orgId: string,
+  options?: { excludePlaylistId?: Id<"playlists"> },
+) {
+  const playlists = await listOrgPlaylists(ctx, orgId);
+  if (!playlists.length) {
+    return null;
+  }
+
+  const currentDefault = playlists.find((playlist) => playlist.isDefault);
+  if (currentDefault) {
+    return currentDefault._id;
+  }
+
+  const candidates = options?.excludePlaylistId
+    ? playlists.filter((playlist) => playlist._id !== options.excludePlaylistId)
+    : playlists;
+  const nextDefault = sortPlaylistsForFallback(candidates)[0] ?? sortPlaylistsForFallback(playlists)[0];
+
+  if (!nextDefault) {
+    return null;
+  }
+
+  await ctx.db.patch(nextDefault._id, {
+    isDefault: true,
+    updatedAt: Date.now(),
+  });
+
+  return nextDefault._id;
+}
 
 export const listScreens = query({
   args: {},
@@ -551,43 +635,39 @@ export const savePlaylist = mutation({
     }
 
     let playlistId = args.playlistId;
+    let existing: Doc<"playlists"> | null = null;
     if (playlistId) {
-      const existing = await ctx.db.get(playlistId);
+      existing = await ctx.db.get(playlistId);
       if (!existing || existing.organizationId !== orgId) {
         throw new ConvexError("Playlist not found");
       }
 
+      const shouldBeDefault = args.makeDefault ?? existing.isDefault;
       await ctx.db.patch(playlistId, {
         name: args.name,
-        isDefault: args.makeDefault ?? existing.isDefault,
+        isDefault: shouldBeDefault,
         updatedAt: Date.now(),
       });
     } else {
+      const orgPlaylists = await listOrgPlaylists(ctx, orgId);
+      const shouldBeDefault = args.makeDefault ?? orgPlaylists.length === 0;
       playlistId = await ctx.db.insert("playlists", {
         organizationId: orgId,
         name: args.name,
         description: undefined,
-        isDefault: Boolean(args.makeDefault),
+        isDefault: shouldBeDefault,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
 
-    if (args.makeDefault) {
-      const allPlaylists = await ctx.db
-        .query("playlists")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect();
-      await Promise.all(
-        allPlaylists
-          .filter((playlist) => playlist._id !== playlistId && playlist.isDefault)
-          .map((playlist) =>
-            ctx.db.patch(playlist._id, {
-              isDefault: false,
-              updatedAt: Date.now(),
-            }),
-          ),
-      );
+    const nextIsDefault = args.makeDefault ?? existing?.isDefault ?? false;
+    if (nextIsDefault) {
+      await assignOrgDefaultPlaylist(ctx, orgId, playlistId);
+    } else {
+      await ensureOrgHasDefaultPlaylist(ctx, orgId, {
+        excludePlaylistId: playlistId,
+      });
     }
 
     const existingItems = await ctx.db
@@ -617,7 +697,34 @@ export const savePlaylist = mutation({
     }
     return {
       ...(await serializePlaylist(ctx, playlist)),
-      isDefault: args.makeDefault ?? playlist.isDefault,
+      isDefault: playlist.isDefault,
+    };
+  },
+});
+
+export const setDefaultPlaylist = mutation({
+  args: {
+    playlistId: v.id("playlists"),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const playlist = await ctx.db.get(args.playlistId);
+    if (!playlist || playlist.organizationId !== orgId) {
+      throw new ConvexError("Playlist not found");
+    }
+
+    await assignOrgDefaultPlaylist(ctx, orgId, args.playlistId);
+    await compileOrgManifests(ctx, orgId);
+
+    const updated = await ctx.db.get(args.playlistId);
+    if (!updated) {
+      throw new ConvexError("Playlist not found after update");
+    }
+
+    return {
+      ...(await serializePlaylist(ctx, updated)),
+      isDefault: updated.isDefault,
     };
   },
 });
@@ -917,6 +1024,11 @@ export const deletePlaylist = mutation({
     );
 
     await ctx.db.delete(args.playlistId);
+    if (playlist.isDefault) {
+      await ensureOrgHasDefaultPlaylist(ctx, orgId, {
+        excludePlaylistId: args.playlistId,
+      });
+    }
     await compileOrgManifests(ctx, orgId);
     return null;
   },

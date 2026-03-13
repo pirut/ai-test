@@ -367,6 +367,16 @@ export async function savePlaylist(input: {
   return playlistSchema.parse(await convexMutation(api.admin.savePlaylist, input));
 }
 
+export async function setDefaultPlaylist(playlistId: string) {
+  if (!hasConvexBackend()) {
+    return mock.setDefaultPlaylist(playlistId);
+  }
+
+  return playlistSchema.parse(
+    await convexMutation(api.admin.setDefaultPlaylist, { playlistId: playlistId as never }),
+  );
+}
+
 export async function saveSchedule(input: {
   scheduleId?: string;
   name: string;

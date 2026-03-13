@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ShieldCheck, Sparkles } from "lucide-react";
 import type { MediaAsset, Playlist } from "@showroom/contracts";
 
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,16 @@ type QueueItem = {
   dwellSeconds: string | null;
 };
 
+function sortPlaylists(playlists: Playlist[]) {
+  return [...playlists].sort((a, b) => {
+    if (a.isDefault !== b.isDefault) {
+      return Number(b.isDefault) - Number(a.isDefault);
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -55,11 +65,17 @@ export function PlaylistManager({
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [defaultingId, setDefaultingId] = useState<string | null>(null);
 
   const assetMap = useMemo(() => new Map(mediaAssets.map((a) => [a.id, a])), [mediaAssets]);
   const selectedSet = useMemo(() => new Set(queue.map((i) => i.assetId)), [queue]);
   const hasMedia = mediaAssets.length > 0;
   const isEditing = editingId !== null;
+  const currentDefault = useMemo(
+    () => playlists.find((playlist) => playlist.isDefault) ?? null,
+    [playlists],
+  );
+  const orderedPlaylists = useMemo(() => sortPlaylists(playlists), [playlists]);
 
   function toggleAsset(assetId: string) {
     setQueue((current) => {
@@ -147,10 +163,26 @@ export function PlaylistManager({
       }
 
       const nextPlaylist = payload.playlist as Playlist;
-      setPlaylists((current) => [
-        nextPlaylist,
-        ...current.filter((p) => p.id !== nextPlaylist.id),
-      ]);
+      setPlaylists((current) => {
+        const priorPlaylist = current.find((playlist) => playlist.id === nextPlaylist.id) ?? null;
+        const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
+        let merged = [nextPlaylist, ...remaining];
+
+        if (nextPlaylist.isDefault) {
+          merged = merged.map((playlist) => ({
+            ...playlist,
+            isDefault: playlist.id === nextPlaylist.id,
+          }));
+        } else if (priorPlaylist?.isDefault) {
+          const replacement = sortPlaylists(remaining)[0] ?? nextPlaylist;
+          merged = merged.map((playlist) => ({
+            ...playlist,
+            isDefault: playlist.id === replacement.id,
+          }));
+        }
+
+        return merged;
+      });
       setStatus({ ok: true, text: `Saved "${nextPlaylist.name}"` });
       cancelEditing();
       router.refresh();
@@ -161,6 +193,41 @@ export function PlaylistManager({
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSetDefault(playlist: Playlist) {
+    if (playlist.isDefault) {
+      return;
+    }
+
+    setDefaultingId(playlist.id);
+    setStatus(null);
+    try {
+      const response = await fetch(`/api/playlists/${playlist.id}`, {
+        method: "PATCH",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to change fallback playlist");
+      }
+
+      const nextPlaylist = payload.playlist as Playlist;
+      setPlaylists((current) =>
+        current.map((entry) => ({
+          ...entry,
+          isDefault: entry.id === nextPlaylist.id,
+        })),
+      );
+      setStatus({ ok: true, text: `"${nextPlaylist.name}" is now the fallback playlist.` });
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to change fallback playlist",
+      });
+    } finally {
+      setDefaultingId(null);
     }
   }
 
@@ -179,7 +246,20 @@ export function PlaylistManager({
         throw new Error(payload.error ?? "Unable to delete playlist");
       }
 
-      setPlaylists((current) => current.filter((p) => p.id !== playlistId));
+      setPlaylists((current) => {
+        const removed = current.find((playlist) => playlist.id === playlistId) ?? null;
+        const remaining = current.filter((playlist) => playlist.id !== playlistId);
+
+        if (!removed?.isDefault || remaining.length === 0) {
+          return remaining;
+        }
+
+        const replacement = sortPlaylists(remaining)[0] ?? null;
+        return remaining.map((playlist) => ({
+          ...playlist,
+          isDefault: playlist.id === replacement?.id,
+        }));
+      });
       if (editingId === playlistId) cancelEditing();
       router.refresh();
     } catch (error) {
@@ -225,9 +305,18 @@ export function PlaylistManager({
           <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-[0.82rem] font-medium text-foreground">Default fallback</p>
+                <p className="text-[0.82rem] font-medium text-foreground">Fallback playlist</p>
                 <p className="text-[0.75rem] text-muted-foreground">
-                  Use whenever no schedule window is active.
+                  Only one playlist can be active here. It plays whenever no schedule window is active.
+                </p>
+                <p className="text-[0.72rem] font-medium text-foreground/85">
+                  {makeDefault
+                    ? currentDefault && currentDefault.id !== editingId
+                      ? `Saving will replace "${currentDefault.name}" as the fallback.`
+                      : "This playlist will be the fallback."
+                    : currentDefault
+                      ? `Current fallback: "${currentDefault.name}".`
+                      : "No fallback is assigned yet. The first saved playlist becomes the fallback automatically."}
                 </p>
               </div>
               <Switch checked={makeDefault} onCheckedChange={(checked) => setMakeDefault(checked)} />
@@ -429,16 +518,35 @@ export function PlaylistManager({
         {/* Existing playlists */}
         {playlists.length > 0 ? (
           <section>
-            <h2 className="mb-3 text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Saved playlists
-            </h2>
+            <div className="mb-3 flex flex-col gap-3">
+              <h2 className="text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Saved playlists
+              </h2>
+              <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/8 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-primary" />
+                    <p className="text-[0.78rem] font-semibold text-foreground">Current fallback</p>
+                  </div>
+                  <p className="mt-1 truncate text-sm text-foreground">
+                    {currentDefault?.name ?? "No fallback playlist assigned"}
+                  </p>
+                </div>
+                <Badge className="shrink-0 gap-1">
+                  <Sparkles className="size-3" />
+                  One active
+                </Badge>
+              </div>
+            </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
-              {playlists.map((playlist) => (
+              {orderedPlaylists.map((playlist) => (
                 <Card key={playlist.id} className={cn(
                   "border bg-card/95 transition-colors",
                   editingId === playlist.id
                     ? "border-primary/50 bg-primary/5"
-                    : "border-border/70",
+                    : playlist.isDefault
+                      ? "border-primary/35 bg-primary/6"
+                      : "border-border/70",
                 )}>
                   <CardHeader className="border-b border-border/60 pb-3">
                     <div className="flex items-start justify-between gap-2">
@@ -451,13 +559,26 @@ export function PlaylistManager({
                             {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
                           </p>
                           {playlist.isDefault ? (
-                            <Badge variant="outline" className="h-5 px-1.5 text-[0.62rem] uppercase tracking-[0.14em]">
-                              Default
+                            <Badge className="h-5 px-1.5 text-[0.62rem] uppercase tracking-[0.14em]">
+                              Current fallback
                             </Badge>
                           ) : null}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          disabled={deleting || defaultingId !== null || playlist.isDefault}
+                          onClick={() => void handleSetDefault(playlist)}
+                          size="sm"
+                          type="button"
+                          variant={playlist.isDefault ? "secondary" : "outline"}
+                        >
+                          {playlist.isDefault
+                            ? "Fallback"
+                            : defaultingId === playlist.id
+                              ? "Setting..."
+                              : "Set fallback"}
+                        </Button>
                         <Button
                           disabled={deleting}
                           onClick={() => startEditing(playlist)}
