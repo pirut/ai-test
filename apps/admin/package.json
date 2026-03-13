@@ -12,6 +12,7 @@
   "dependencies": {
     "@base-ui/react": "^1.2.0",
     "@clerk/nextjs": "^6.14.0",
+    "@radix-ui/react-switch": "^1.2.6",
     "@sentry/nextjs": "^9.9.0",
     "@showroom/contracts": "*",
     "@tailwindcss/postcss": "^4.2.1",
