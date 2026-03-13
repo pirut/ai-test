@@ -2,12 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { Check } from "lucide-react";
 import type { MediaAsset, Playlist } from "@showroom/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -396,11 +396,17 @@ export function PlaylistManager({
                   onClick={() => toggleAsset(asset.id)}
                   type="button"
                 >
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => {}}
-                    className="pointer-events-none shrink-0"
-                  />
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                      isSelected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-background dark:bg-input/40",
+                    )}
+                  >
+                    {isSelected ? <Check className="size-3" /> : null}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">{asset.title}</p>
                     <p className="truncate font-mono text-[0.72rem] text-muted-foreground">
