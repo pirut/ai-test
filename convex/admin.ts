@@ -242,7 +242,12 @@ export const listPlaylists = query({
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
       .collect();
 
-    return Promise.all(playlists.map((playlist) => serializePlaylist(ctx, playlist)));
+    return Promise.all(
+      playlists.map(async (playlist) => ({
+        ...(await serializePlaylist(ctx, playlist)),
+        isDefault: playlist.isDefault,
+      })),
+    );
   },
 });
 
@@ -610,7 +615,10 @@ export const savePlaylist = mutation({
     if (!playlist) {
       throw new ConvexError("Playlist not found after save");
     }
-    return serializePlaylist(ctx, playlist);
+    return {
+      ...(await serializePlaylist(ctx, playlist)),
+      isDefault: args.makeDefault ?? playlist.isDefault,
+    };
   },
 });
 
