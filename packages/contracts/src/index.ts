@@ -169,6 +169,7 @@ export const playlistItemSchema = z.object({
 export const playlistSchema = z.object({
   id: z.string(),
   name: z.string(),
+  isDefault: z.boolean().default(false),
   items: z.array(playlistItemSchema),
 });
 
@@ -280,6 +281,7 @@ export const mockMediaAssets: MediaAsset[] = [
 export const mockPlaylist: Playlist = {
   id: "playlist-main-showroom",
   name: "Main showroom loop",
+  isDefault: true,
   items: [
     {
       id: "item-1",
