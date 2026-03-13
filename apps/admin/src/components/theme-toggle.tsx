@@ -1,10 +1,34 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <button
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground",
+          "transition-colors",
+        )}
+        aria-hidden="true"
+        disabled
+        type="button"
+      >
+        <span className="size-[15px] shrink-0 opacity-50" />
+        Theme
+      </button>
+    );
+  }
+
   const isDark = resolvedTheme === "dark";
 
   return (
@@ -12,8 +36,9 @@ export function ThemeToggle() {
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground",
-        "transition-colors hover:bg-accent/60 hover:text-foreground"
+        "transition-colors hover:bg-accent/60 hover:text-foreground",
       )}
+      type="button"
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
     >
       {isDark ? (

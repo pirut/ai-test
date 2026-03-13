@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 
 import { cn } from "@/lib/utils";
@@ -85,9 +86,7 @@ const navItems = [
   },
 ];
 
-function useClerkAppearance() {
-  const { resolvedTheme } = useTheme();
-
+function useClerkAppearance(resolvedTheme?: string) {
   if (resolvedTheme === "light") {
     return {
       variables: {
@@ -123,7 +122,16 @@ function useClerkAppearance() {
 
 export function TopShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const clerkAppearance = useClerkAppearance();
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const clerkAppearance = useClerkAppearance(
+    mounted ? resolvedTheme : undefined,
+  );
 
   return (
     <div className="flex min-h-screen">
