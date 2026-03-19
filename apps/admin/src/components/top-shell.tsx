@@ -47,7 +47,7 @@ export function TopShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-background/95 backdrop-blur-xl">
-        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 md:pl-[18rem] md:pr-8">
+        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 md:pl-[17rem] md:pr-8">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <Link href="/dashboard" className="flex min-w-0 items-center gap-3 md:hidden">
               <div className="flex size-8 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[11px] font-bold text-primary-foreground">
@@ -86,6 +86,18 @@ export function TopShell({ children }: { children: React.ReactNode }) {
               <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_rgba(141,172,255,0.65)]" />
               Operational
             </div>
+            <div className="hidden md:block">
+              <OrganizationSwitcher
+                afterCreateOrganizationUrl="/dashboard"
+                afterLeaveOrganizationUrl="/"
+                afterSelectOrganizationUrl="/dashboard"
+                hidePersonal
+                appearance={clerkAppearance}
+              />
+            </div>
+            <div className="hidden md:block">
+              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+            </div>
             <div className="md:hidden">
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
             </div>
@@ -118,20 +130,20 @@ export function TopShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/90 px-4 py-6 backdrop-blur-xl md:flex">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/92 px-4 py-6 backdrop-blur-xl md:flex">
         <Link href="/dashboard" className="flex items-start gap-3 px-2 pb-8 pt-1">
-          <div className="flex size-10 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[12px] font-bold text-primary-foreground">
+          <div className="flex size-9 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[12px] font-bold text-primary-foreground">
             DC
           </div>
           <div>
             <p className="font-heading text-base font-bold text-foreground">Digital Curator</p>
             <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              Media manager
+              Enterprise control
             </p>
           </div>
         </Link>
 
-        <nav className="flex flex-1 flex-col gap-1">
+        <nav className="flex flex-1 flex-col gap-1 px-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -141,7 +153,7 @@ export function TopShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                  "flex items-center gap-3 rounded-r-full px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
                   isActive
                     ? "border-l-2 border-primary bg-accent text-primary"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -159,27 +171,18 @@ export function TopShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="mt-auto space-y-3">
-          <div className="rounded-xl border border-white/6 bg-card p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Workspace
-            </p>
-            <OrganizationSwitcher
-              afterCreateOrganizationUrl="/dashboard"
-              afterLeaveOrganizationUrl="/"
-              afterSelectOrganizationUrl="/dashboard"
-              hidePersonal
-              appearance={clerkAppearance}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-xl border border-white/6 bg-card px-3 py-2.5">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Account
-              </p>
-              <p className="mt-1 text-sm text-foreground">Signed in</p>
+        <div className="mt-auto space-y-3 px-1">
+          <Link
+            href="/media"
+            className="flex items-center justify-center rounded-lg bg-[linear-gradient(90deg,#296cf0,#8dacff)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary-foreground transition-[filter] hover:brightness-110"
+          >
+            Open media library
+          </Link>
+          <div className="border-t border-white/6 pt-3">
+            <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span>Navigation</span>
+              <span className="text-primary">Live</span>
             </div>
-            <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
           </div>
         </div>
       </aside>
