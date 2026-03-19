@@ -270,6 +270,30 @@ export async function createYouTubeMediaAsset(input: {
   );
 }
 
+export async function importYouTubePlaylist(input: {
+  makeDefault?: boolean;
+  name: string;
+  tags: string[];
+  videos: Array<{
+    durationSeconds?: number;
+    fileName: string;
+    previewUrl: string;
+    sourceUrl: string;
+    title: string;
+  }>;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.importYouTubePlaylist(input);
+  }
+
+  return z
+    .object({
+      assets: z.array(mediaAssetSchema),
+      playlist: playlistSchema,
+    })
+    .parse(await convexMutation(api.admin.importYouTubePlaylist, input));
+}
+
 export async function createRelease(input: {
   name: string;
   version: string;
@@ -361,7 +385,7 @@ export async function savePlaylist(input: {
   makeDefault?: boolean;
 }) {
   if (!hasConvexBackend()) {
-    return mock.listPlaylists()[0];
+    return mock.savePlaylist(input);
   }
 
   return playlistSchema.parse(await convexMutation(api.admin.savePlaylist, input));

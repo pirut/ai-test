@@ -18,6 +18,13 @@ async function listOrgPlaylists(ctx: any, orgId: string) {
     .collect() as Promise<Array<Doc<"playlists">>>;
 }
 
+async function listOrgMediaAssets(ctx: any, orgId: string) {
+  return ctx.db
+    .query("mediaAssets")
+    .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+    .collect() as Promise<Array<Doc<"mediaAssets">>>;
+}
+
 function sortPlaylistsForFallback(playlists: Array<Doc<"playlists">>) {
   return [...playlists].sort((a, b) => {
     const createdAtDiff = a.createdAt - b.createdAt;
@@ -92,6 +99,179 @@ async function ensureOrgHasDefaultPlaylist(
   });
 
   return nextDefault._id;
+}
+
+function mergeTags(current: string[], incoming: string[]) {
+  return [...new Set([...current, ...incoming])];
+}
+
+async function upsertYouTubeAsset(
+  ctx: any,
+  orgId: string,
+  args: {
+    title: string;
+    sourceUrl: string;
+    previewUrl: string;
+    fileName: string;
+    durationSeconds?: number;
+    tags: string[];
+  },
+  existingByChecksum?: Map<string, Doc<"mediaAssets">>,
+) {
+  const checksum = `youtube:${await hashValue(args.sourceUrl)}`;
+  let existing = existingByChecksum?.get(checksum);
+
+  if (!existing) {
+    const assets = existingByChecksum
+      ? [...existingByChecksum.values()]
+      : await listOrgMediaAssets(ctx, orgId);
+    existing = assets.find((asset) => asset.checksum === checksum) ?? undefined;
+  }
+
+  const now = Date.now();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      title: args.title,
+      sourceType: "youtube",
+      sourceUrl: args.sourceUrl,
+      mimeType: "video/mp4",
+      fileName: args.fileName,
+      storagePath: `youtube/${orgId}/${args.fileName}`,
+      previewUrl: args.previewUrl,
+      sizeBytes: 0,
+      durationSeconds: args.durationSeconds,
+      checksum,
+      tags: mergeTags(existing.tags, args.tags),
+      updatedAt: now,
+    });
+
+    const updated = await ctx.db.get(existing._id);
+    if (!updated) {
+      throw new ConvexError("YouTube media asset was not found after update");
+    }
+
+    existingByChecksum?.set(checksum, updated);
+    return updated;
+  }
+
+  const assetId = await ctx.db.insert("mediaAssets", {
+    organizationId: orgId,
+    title: args.title,
+    mediaType: "video",
+    sourceType: "youtube",
+    sourceUrl: args.sourceUrl,
+    mimeType: "video/mp4",
+    fileName: args.fileName,
+    storagePath: `youtube/${orgId}/${args.fileName}`,
+    previewUrl: args.previewUrl,
+    sizeBytes: 0,
+    durationSeconds: args.durationSeconds,
+    checksum,
+    tags: args.tags,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const asset = await ctx.db.get(assetId);
+  if (!asset) {
+    throw new ConvexError("YouTube media asset was not created");
+  }
+
+  existingByChecksum?.set(checksum, asset);
+  return asset;
+}
+
+async function savePlaylistRecord(
+  ctx: any,
+  orgId: string,
+  args: {
+    playlistId?: Id<"playlists">;
+    name: string;
+    itemIds: Array<{
+      mediaAssetId: Id<"mediaAssets">;
+      dwellSeconds?: number;
+    }>;
+    makeDefault?: boolean;
+  },
+) {
+  const assets = await Promise.all(args.itemIds.map((item) => ctx.db.get(item.mediaAssetId)));
+  for (const asset of assets) {
+    if (!asset || asset.organizationId !== orgId) {
+      throw new ConvexError("Playlist contains an invalid media asset");
+    }
+  }
+
+  let playlistId = args.playlistId;
+  let existing: Doc<"playlists"> | null = null;
+  if (playlistId) {
+    existing = await ctx.db.get(playlistId);
+    if (!existing || existing.organizationId !== orgId) {
+      throw new ConvexError("Playlist not found");
+    }
+
+    const shouldBeDefault = args.makeDefault ?? existing.isDefault;
+    await ctx.db.patch(playlistId, {
+      name: args.name,
+      isDefault: shouldBeDefault,
+      updatedAt: Date.now(),
+    });
+  } else {
+    const orgPlaylists = await listOrgPlaylists(ctx, orgId);
+    const shouldBeDefault = args.makeDefault ?? orgPlaylists.length === 0;
+    playlistId = await ctx.db.insert("playlists", {
+      organizationId: orgId,
+      name: args.name,
+      description: undefined,
+      isDefault: shouldBeDefault,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }
+
+  const nextIsDefault = args.makeDefault ?? existing?.isDefault ?? false;
+  if (!playlistId) {
+    throw new ConvexError("Playlist id was not created");
+  }
+
+  if (nextIsDefault) {
+    await assignOrgDefaultPlaylist(ctx, orgId, playlistId);
+  } else {
+    await ensureOrgHasDefaultPlaylist(ctx, orgId, {
+      excludePlaylistId: playlistId,
+    });
+  }
+
+  const existingItems = await ctx.db
+    .query("playlistItems")
+    .withIndex("by_playlist_and_order", (q: any) => q.eq("playlistId", playlistId))
+    .collect();
+  await Promise.all(existingItems.map((item: Doc<"playlistItems">) => ctx.db.delete(item._id)));
+
+  await Promise.all(
+    args.itemIds.map((item, index) =>
+      ctx.db.insert("playlistItems", {
+        organizationId: orgId,
+        playlistId,
+        mediaAssetId: item.mediaAssetId,
+        itemOrder: index,
+        dwellSeconds: item.dwellSeconds,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    ),
+  );
+
+  await compileOrgManifests(ctx, orgId);
+
+  const playlist = await ctx.db.get(playlistId);
+  if (!playlist) {
+    throw new ConvexError("Playlist not found after save");
+  }
+
+  return {
+    ...(await serializePlaylist(ctx, playlist)),
+    isDefault: playlist.isDefault,
+  };
 }
 
 export const listScreens = query({
@@ -456,32 +636,67 @@ export const createYouTubeMediaAsset = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    const checksum = `youtube:${await hashValue(args.sourceUrl)}`;
+    const asset = await upsertYouTubeAsset(ctx, orgId, args);
+    return serializeAsset(ctx, asset);
+  },
+});
 
-    const assetId = await ctx.db.insert("mediaAssets", {
-      organizationId: orgId,
-      title: args.title,
-      mediaType: "video",
-      sourceType: "youtube",
-      sourceUrl: args.sourceUrl,
-      mimeType: "video/mp4",
-      fileName: args.fileName,
-      storagePath: `youtube/${orgId}/${args.fileName}`,
-      previewUrl: args.previewUrl,
-      sizeBytes: 0,
-      durationSeconds: args.durationSeconds,
-      checksum,
-      tags: args.tags,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    const asset = await ctx.db.get(assetId);
-    if (!asset) {
-      throw new ConvexError("YouTube media asset was not created");
+export const importYouTubePlaylist = mutation({
+  args: {
+    makeDefault: v.optional(v.boolean()),
+    name: v.string(),
+    tags: v.array(v.string()),
+    videos: v.array(
+      v.object({
+        durationSeconds: v.optional(v.number()),
+        fileName: v.string(),
+        previewUrl: v.string(),
+        sourceUrl: v.string(),
+        title: v.string(),
+      }),
+    ),
+  },
+  returns: v.object({
+    assets: v.array(v.any()),
+    playlist: v.any(),
+  }),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    if (!args.videos.length) {
+      throw new ConvexError("Playlist import requires at least one video");
     }
 
-    return serializeAsset(ctx, asset);
+    const assetByChecksum = new Map(
+      (await listOrgMediaAssets(ctx, orgId)).map((asset) => [asset.checksum, asset]),
+    );
+    const assets = [];
+    for (const video of args.videos) {
+      assets.push(
+        await upsertYouTubeAsset(
+          ctx,
+          orgId,
+          {
+            ...video,
+            tags: args.tags,
+          },
+          assetByChecksum,
+        ),
+      );
+    }
+
+    const playlist = await savePlaylistRecord(ctx, orgId, {
+      itemIds: assets.map((asset) => ({
+        mediaAssetId: asset._id,
+      })),
+      makeDefault: args.makeDefault,
+      name: args.name,
+    });
+    const uniqueAssets = [...new Map(assets.map((asset) => [asset._id, asset])).values()];
+
+    return {
+      assets: await Promise.all(uniqueAssets.map((asset) => serializeAsset(ctx, asset))),
+      playlist,
+    };
   },
 });
 
@@ -626,79 +841,7 @@ export const savePlaylist = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-
-    const assets = await Promise.all(args.itemIds.map((item) => ctx.db.get(item.mediaAssetId)));
-    for (const asset of assets) {
-      if (!asset || asset.organizationId !== orgId) {
-        throw new ConvexError("Playlist contains an invalid media asset");
-      }
-    }
-
-    let playlistId = args.playlistId;
-    let existing: Doc<"playlists"> | null = null;
-    if (playlistId) {
-      existing = await ctx.db.get(playlistId);
-      if (!existing || existing.organizationId !== orgId) {
-        throw new ConvexError("Playlist not found");
-      }
-
-      const shouldBeDefault = args.makeDefault ?? existing.isDefault;
-      await ctx.db.patch(playlistId, {
-        name: args.name,
-        isDefault: shouldBeDefault,
-        updatedAt: Date.now(),
-      });
-    } else {
-      const orgPlaylists = await listOrgPlaylists(ctx, orgId);
-      const shouldBeDefault = args.makeDefault ?? orgPlaylists.length === 0;
-      playlistId = await ctx.db.insert("playlists", {
-        organizationId: orgId,
-        name: args.name,
-        description: undefined,
-        isDefault: shouldBeDefault,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    }
-
-    const nextIsDefault = args.makeDefault ?? existing?.isDefault ?? false;
-    if (nextIsDefault) {
-      await assignOrgDefaultPlaylist(ctx, orgId, playlistId);
-    } else {
-      await ensureOrgHasDefaultPlaylist(ctx, orgId, {
-        excludePlaylistId: playlistId,
-      });
-    }
-
-    const existingItems = await ctx.db
-      .query("playlistItems")
-      .withIndex("by_playlist_and_order", (q) => q.eq("playlistId", playlistId))
-      .collect();
-    await Promise.all(existingItems.map((item) => ctx.db.delete(item._id)));
-
-    await Promise.all(
-      args.itemIds.map((item, index) =>
-        ctx.db.insert("playlistItems", {
-          organizationId: orgId,
-          playlistId,
-          mediaAssetId: item.mediaAssetId,
-          itemOrder: index,
-          dwellSeconds: item.dwellSeconds,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        }),
-      ),
-    );
-
-    await compileOrgManifests(ctx, orgId);
-    const playlist = await ctx.db.get(playlistId);
-    if (!playlist) {
-      throw new ConvexError("Playlist not found after save");
-    }
-    return {
-      ...(await serializePlaylist(ctx, playlist)),
-      isDefault: playlist.isDefault,
-    };
+    return savePlaylistRecord(ctx, orgId, args);
   },
 });
 

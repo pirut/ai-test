@@ -206,6 +206,20 @@ export function createYouTubeMediaAsset(input: {
   durationSeconds?: number;
   tags: string[];
 }) {
+  const checksum = `youtube:${crypto.createHash("sha256").update(input.sourceUrl).digest("hex")}`;
+  const existing = state().mediaAssets.find((asset) => asset.checksum === checksum);
+  if (existing) {
+    existing.title = input.title;
+    existing.sourceType = "youtube";
+    existing.sourceUrl = input.sourceUrl;
+    existing.fileName = input.fileName;
+    existing.durationSeconds = input.durationSeconds;
+    existing.storagePath = `youtube/org_demo/${input.fileName}`;
+    existing.previewUrl = input.previewUrl;
+    existing.tags = [...new Set([...existing.tags, ...input.tags])];
+    return existing;
+  }
+
   const asset: MediaAsset = {
     id: crypto.randomUUID(),
     title: input.title,
@@ -218,12 +232,102 @@ export function createYouTubeMediaAsset(input: {
     durationSeconds: input.durationSeconds,
     storagePath: `youtube/org_demo/${input.fileName}`,
     previewUrl: input.previewUrl,
-    checksum: `youtube:${crypto.createHash("sha256").update(input.sourceUrl).digest("hex")}`,
+    checksum,
     tags: input.tags,
   };
 
   state().mediaAssets.unshift(asset);
   return asset;
+}
+
+export function savePlaylist(input: {
+  playlistId?: string;
+  name: string;
+  itemIds: Array<{
+    mediaAssetId: string;
+    dwellSeconds?: number;
+  }>;
+  makeDefault?: boolean;
+}) {
+  const items = input.itemIds.map((item, index) => {
+    const asset = state().mediaAssets.find((entry) => entry.id === item.mediaAssetId);
+    if (!asset) {
+      throw new Error("Playlist contains an invalid media asset");
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      order: index,
+      dwellSeconds: item.dwellSeconds ?? null,
+      asset,
+    };
+  });
+
+  const existingIndex = input.playlistId
+    ? state().playlists.findIndex((playlist) => playlist.id === input.playlistId)
+    : -1;
+  const existing = existingIndex >= 0 ? state().playlists[existingIndex] : null;
+  const shouldBeDefault =
+    input.makeDefault ?? existing?.isDefault ?? state().playlists.length === 0;
+
+  const playlist: Playlist = {
+    id: existing?.id ?? crypto.randomUUID(),
+    name: input.name,
+    isDefault: shouldBeDefault,
+    items,
+  };
+
+  if (existingIndex >= 0) {
+    state().playlists[existingIndex] = playlist;
+  } else {
+    state().playlists.unshift(playlist);
+  }
+
+  if (shouldBeDefault) {
+    state().playlists = state().playlists.map((entry) => ({
+      ...entry,
+      isDefault: entry.id === playlist.id,
+    }));
+  } else if (!state().playlists.some((entry) => entry.isDefault)) {
+    state().playlists = state().playlists.map((entry, index) => ({
+      ...entry,
+      isDefault: index === 0,
+    }));
+  }
+
+  return state().playlists.find((entry) => entry.id === playlist.id) ?? playlist;
+}
+
+export function importYouTubePlaylist(input: {
+  makeDefault?: boolean;
+  name: string;
+  tags: string[];
+  videos: Array<{
+    durationSeconds?: number;
+    fileName: string;
+    previewUrl: string;
+    sourceUrl: string;
+    title: string;
+  }>;
+}) {
+  const assets = input.videos.map((video) =>
+    createYouTubeMediaAsset({
+      ...video,
+      tags: input.tags,
+    }),
+  );
+  const uniqueAssets = [...new Map(assets.map((asset) => [asset.id, asset])).values()];
+
+  return {
+    assets: uniqueAssets,
+    playlist: savePlaylist({
+      itemIds: assets.map((asset) => ({
+        mediaAssetId: asset.id,
+      })),
+      makeDefault: input.makeDefault,
+      name: input.name,
+    }),
+  };
 }
 
 export function createRelease(input: {

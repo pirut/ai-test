@@ -57,6 +57,7 @@ export function PlaylistManager({
 }) {
   const router = useRouter();
   const [playlists, setPlaylists] = useState(initialPlaylists);
+  const [assets, setAssets] = useState(mediaAssets);
   const [name, setName] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [makeDefault, setMakeDefault] = useState(false);
@@ -66,10 +67,19 @@ export function PlaylistManager({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [defaultingId, setDefaultingId] = useState<string | null>(null);
+  const [youtubePlaylistUrl, setYoutubePlaylistUrl] = useState("");
+  const [youtubePlaylistName, setYoutubePlaylistName] = useState("");
+  const [youtubePlaylistTags, setYoutubePlaylistTags] = useState("");
+  const [youtubePlaylistDefault, setYoutubePlaylistDefault] = useState(false);
+  const [youtubePlaylistStatus, setYoutubePlaylistStatus] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  const [isImportingYouTubePlaylist, setIsImportingYouTubePlaylist] = useState(false);
 
-  const assetMap = useMemo(() => new Map(mediaAssets.map((a) => [a.id, a])), [mediaAssets]);
+  const assetMap = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
   const selectedSet = useMemo(() => new Set(queue.map((i) => i.assetId)), [queue]);
-  const hasMedia = mediaAssets.length > 0;
+  const hasMedia = assets.length > 0;
   const isEditing = editingId !== null;
   const currentDefault = useMemo(
     () => playlists.find((playlist) => playlist.isDefault) ?? null,
@@ -102,6 +112,15 @@ export function PlaylistManager({
     );
   }
 
+  function mergeAssets(nextAssets: MediaAsset[]) {
+    setAssets((current) => {
+      return [
+        ...nextAssets,
+        ...current.filter((asset) => !nextAssets.some((next) => next.id === asset.id)),
+      ];
+    });
+  }
+
   function startEditing(playlist: Playlist) {
     setEditingId(playlist.id);
     setName(playlist.name);
@@ -130,6 +149,64 @@ export function PlaylistManager({
     setName("");
     setQueue([]);
     setMakeDefault(false);
+  }
+
+  async function handleImportYouTubePlaylist() {
+    try {
+      setIsImportingYouTubePlaylist(true);
+      setYoutubePlaylistStatus({ ok: true, text: "Loading playlist from YouTube…" });
+      const response = await fetch("/api/playlists/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          makeDefault: youtubePlaylistDefault,
+          name: youtubePlaylistName.trim() || undefined,
+          tags: youtubePlaylistTags
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+          url: youtubePlaylistUrl.trim(),
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to import YouTube playlist");
+      }
+
+      const nextPlaylist = payload.playlist as Playlist;
+      const nextAssets = payload.assets as MediaAsset[];
+
+      mergeAssets(nextAssets);
+      setPlaylists((current) => {
+        const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
+        let merged = [nextPlaylist, ...remaining];
+        if (nextPlaylist.isDefault) {
+          merged = merged.map((playlist) => ({
+            ...playlist,
+            isDefault: playlist.id === nextPlaylist.id,
+          }));
+        }
+        return merged;
+      });
+
+      setYoutubePlaylistUrl("");
+      setYoutubePlaylistName("");
+      setYoutubePlaylistTags("");
+      setYoutubePlaylistDefault(false);
+      setYoutubePlaylistStatus({
+        ok: true,
+        text: `Imported "${nextPlaylist.name}" with ${nextPlaylist.items.length} videos.`,
+      });
+      router.refresh();
+    } catch (error) {
+      setYoutubePlaylistStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to import YouTube playlist",
+      });
+    } finally {
+      setIsImportingYouTubePlaylist(false);
+    }
   }
 
   async function handleSave() {
@@ -274,184 +351,276 @@ export function PlaylistManager({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
-      {/* Create / Edit panel */}
-      <Card className="border border-border/70 bg-card/95">
-        <CardHeader className="border-b border-border/60">
-          <CardTitle className="text-[0.92rem] font-semibold">
-            {isEditing ? "Edit playlist" : "Create playlist"}
-          </CardTitle>
-          <p className="text-[0.78rem] text-muted-foreground">
-            {isEditing
-              ? "Reorder items, update dwell times, then save."
-              : "Select media below, arrange the queue, and save."}
-          </p>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 pt-5">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="playlist-name">
-              Name
-            </Label>
-            <Input
-              id="playlist-name"
-              onChange={(event) => setName(event.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && name.trim() && queue.length > 0) void handleSave();
-              }}
-              placeholder="Main showroom loop"
-              value={name}
-            />
-          </div>
-
-          <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-[0.82rem] font-medium text-foreground">Fallback playlist</p>
-                <p className="text-[0.75rem] text-muted-foreground">
-                  Only one playlist can be active here. It plays whenever no schedule window is active.
-                </p>
-                <p className="text-[0.72rem] font-medium text-foreground/85">
-                  {makeDefault
-                    ? currentDefault && currentDefault.id !== editingId
-                      ? `Saving will replace "${currentDefault.name}" as the fallback.`
-                      : "This playlist will be the fallback."
-                    : currentDefault
-                      ? `Current fallback: "${currentDefault.name}".`
-                      : "No fallback is assigned yet. The first saved playlist becomes the fallback automatically."}
-                </p>
-              </div>
-              <Switch checked={makeDefault} onCheckedChange={(checked) => setMakeDefault(checked)} />
+      <div className="flex flex-col gap-6">
+        <Card className="border border-border/70 bg-card/95">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-[0.92rem] font-semibold">Import YouTube playlist</CardTitle>
+            <p className="text-[0.78rem] text-muted-foreground">
+              Paste a public YouTube playlist URL to create a playlist and register every video in Media.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 pt-5">
+            <div className="flex flex-col gap-1.5">
+              <Label
+                className="text-[0.8rem] text-muted-foreground"
+                htmlFor="youtube-playlist-url"
+              >
+                Playlist URL
+              </Label>
+              <Input
+                id="youtube-playlist-url"
+                onChange={(event) => setYoutubePlaylistUrl(event.target.value)}
+                placeholder="https://www.youtube.com/playlist?list=..."
+                value={youtubePlaylistUrl}
+              />
             </div>
-          </div>
 
-          {/* Ordered queue */}
-          {queue.length > 0 ? (
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-              <p className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary">
-                Queue · {queue.length} item{queue.length !== 1 ? "s" : ""}
-              </p>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
               <div className="flex flex-col gap-1.5">
-                {queue.map((item, index) => {
-                  const asset = assetMap.get(item.assetId);
-                  if (!asset) return null;
-                  return (
-                    <div
-                      key={item.assetId}
-                      className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/80 px-2 py-1.5"
-                    >
-                      {/* Reorder arrows */}
-                      <div className="flex flex-col">
-                        <button
-                          aria-label="Move up"
-                          className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
-                          disabled={index === 0}
-                          onClick={() => moveItem(index, "up")}
-                          type="button"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          aria-label="Move down"
-                          className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
-                          disabled={index === queue.length - 1}
-                          onClick={() => moveItem(index, "down")}
-                          type="button"
-                        >
-                          ▼
-                        </button>
-                      </div>
-
-                      <span className="flex-1 truncate text-[0.8rem] font-medium text-foreground">
-                        {asset.title}
-                      </span>
-
-                      {/* Dwell / duration */}
-                      {asset.type === "image" ? (
-                        <div
-                          className="w-24 shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Select
-                            items={[{ label: "Default", value: DWELL_DEFAULT_VALUE }, ...DWELL_OPTIONS]}
-                            value={item.dwellSeconds ?? DWELL_DEFAULT_VALUE}
-                            onValueChange={(value) =>
-                              setDwell(
-                                item.assetId,
-                                !value || value === DWELL_DEFAULT_VALUE ? null : value,
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-[0.75rem] font-mono">
-                              <SelectValue placeholder="Default" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={DWELL_DEFAULT_VALUE}>Default</SelectItem>
-                              {DWELL_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <span className="shrink-0 font-mono text-[0.72rem] text-muted-foreground">
-                          {asset.durationSeconds
-                            ? formatDuration(Math.ceil(asset.durationSeconds))
-                            : "video"}
-                        </span>
-                      )}
-
-                      {/* Remove */}
-                      <button
-                        aria-label="Remove"
-                        className="ml-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-destructive"
-                        onClick={() => toggleAsset(item.assetId)}
-                        type="button"
-                      >
-                        <svg className="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M3 3l10 10M13 3L3 13" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
+                <Label
+                  className="text-[0.8rem] text-muted-foreground"
+                  htmlFor="youtube-playlist-name"
+                >
+                  Playlist name (optional)
+                </Label>
+                <Input
+                  id="youtube-playlist-name"
+                  onChange={(event) => setYoutubePlaylistName(event.target.value)}
+                  placeholder="Use the YouTube playlist title"
+                  value={youtubePlaylistName}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  className="text-[0.8rem] text-muted-foreground"
+                  htmlFor="youtube-playlist-tags"
+                >
+                  Tags
+                </Label>
+                <Input
+                  id="youtube-playlist-tags"
+                  onChange={(event) => setYoutubePlaylistTags(event.target.value)}
+                  placeholder="youtube, campaign"
+                  value={youtubePlaylistTags}
+                />
               </div>
             </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-3">
-              <p className="text-[0.8rem] text-muted-foreground">
-                Click media cards below to add them to the queue.
-              </p>
-            </div>
-          )}
 
-          <div className="flex gap-2">
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-[0.82rem] font-medium text-foreground">Set as fallback</p>
+                  <p className="text-[0.75rem] text-muted-foreground">
+                    Make the imported playlist the default loop whenever no schedule is active.
+                  </p>
+                </div>
+                <Switch
+                  checked={youtubePlaylistDefault}
+                  onCheckedChange={(checked) => setYoutubePlaylistDefault(checked)}
+                />
+              </div>
+            </div>
+
             <Button
-              className="flex-1"
-              disabled={saving || !name.trim() || queue.length === 0}
-              onClick={() => void handleSave()}
+              disabled={!youtubePlaylistUrl.trim() || isImportingYouTubePlaylist}
+              onClick={() => void handleImportYouTubePlaylist()}
               type="button"
             >
-              {saving ? "Saving…" : isEditing ? "Update playlist" : "Save playlist"}
+              {isImportingYouTubePlaylist ? "Importing…" : "Import playlist"}
             </Button>
-            {isEditing ? (
-              <Button onClick={cancelEditing} type="button" variant="outline">
-                Cancel
-              </Button>
-            ) : null}
-          </div>
 
-          {status ? (
-            <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
-              {status.text}
+            {youtubePlaylistStatus ? (
+              <p
+                className={cn(
+                  "text-[0.8rem] font-mono",
+                  youtubePlaylistStatus.ok ? "text-primary" : "text-destructive",
+                )}
+              >
+                {youtubePlaylistStatus.text}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {/* Create / Edit panel */}
+        <Card className="border border-border/70 bg-card/95">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-[0.92rem] font-semibold">
+              {isEditing ? "Edit playlist" : "Create playlist"}
+            </CardTitle>
+            <p className="text-[0.78rem] text-muted-foreground">
+              {isEditing
+                ? "Reorder items, update dwell times, then save."
+                : "Select media below, arrange the queue, and save."}
             </p>
-          ) : !hasMedia ? (
-            <p className="text-[0.8rem] font-mono text-muted-foreground">
-              Upload media before building a playlist.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 pt-5">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[0.8rem] text-muted-foreground" htmlFor="playlist-name">
+                Name
+              </Label>
+              <Input
+                id="playlist-name"
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && name.trim() && queue.length > 0) void handleSave();
+                }}
+                placeholder="Main showroom loop"
+                value={name}
+              />
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-[0.82rem] font-medium text-foreground">Fallback playlist</p>
+                  <p className="text-[0.75rem] text-muted-foreground">
+                    Only one playlist can be active here. It plays whenever no schedule window is active.
+                  </p>
+                  <p className="text-[0.72rem] font-medium text-foreground/85">
+                    {makeDefault
+                      ? currentDefault && currentDefault.id !== editingId
+                        ? `Saving will replace "${currentDefault.name}" as the fallback.`
+                        : "This playlist will be the fallback."
+                      : currentDefault
+                        ? `Current fallback: "${currentDefault.name}".`
+                        : "No fallback is assigned yet. The first saved playlist becomes the fallback automatically."}
+                  </p>
+                </div>
+                <Switch checked={makeDefault} onCheckedChange={(checked) => setMakeDefault(checked)} />
+              </div>
+            </div>
+
+            {/* Ordered queue */}
+            {queue.length > 0 ? (
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                <p className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                  Queue · {queue.length} item{queue.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {queue.map((item, index) => {
+                    const asset = assetMap.get(item.assetId);
+                    if (!asset) return null;
+                    return (
+                      <div
+                        key={item.assetId}
+                        className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/80 px-2 py-1.5"
+                      >
+                        {/* Reorder arrows */}
+                        <div className="flex flex-col">
+                          <button
+                            aria-label="Move up"
+                            className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
+                            disabled={index === 0}
+                            onClick={() => moveItem(index, "up")}
+                            type="button"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            aria-label="Move down"
+                            className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
+                            disabled={index === queue.length - 1}
+                            onClick={() => moveItem(index, "down")}
+                            type="button"
+                          >
+                            ▼
+                          </button>
+                        </div>
+
+                        <span className="flex-1 truncate text-[0.8rem] font-medium text-foreground">
+                          {asset.title}
+                        </span>
+
+                        {/* Dwell / duration */}
+                        {asset.type === "image" ? (
+                          <div
+                            className="w-24 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Select
+                              items={[{ label: "Default", value: DWELL_DEFAULT_VALUE }, ...DWELL_OPTIONS]}
+                              value={item.dwellSeconds ?? DWELL_DEFAULT_VALUE}
+                              onValueChange={(value) =>
+                                setDwell(
+                                  item.assetId,
+                                  !value || value === DWELL_DEFAULT_VALUE ? null : value,
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-[0.75rem] font-mono">
+                                <SelectValue placeholder="Default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={DWELL_DEFAULT_VALUE}>Default</SelectItem>
+                                {DWELL_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <span className="shrink-0 font-mono text-[0.72rem] text-muted-foreground">
+                            {asset.durationSeconds
+                              ? formatDuration(Math.ceil(asset.durationSeconds))
+                              : "video"}
+                          </span>
+                        )}
+
+                        {/* Remove */}
+                        <button
+                          aria-label="Remove"
+                          className="ml-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-destructive"
+                          onClick={() => toggleAsset(item.assetId)}
+                          type="button"
+                        >
+                          <svg className="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M3 3l10 10M13 3L3 13" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-3">
+                <p className="text-[0.8rem] text-muted-foreground">
+                  Click media cards below to add them to the queue.
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={saving || !name.trim() || queue.length === 0}
+                onClick={() => void handleSave()}
+                type="button"
+              >
+                {saving ? "Saving…" : isEditing ? "Update playlist" : "Save playlist"}
+              </Button>
+              {isEditing ? (
+                <Button onClick={cancelEditing} type="button" variant="outline">
+                  Cancel
+                </Button>
+              ) : null}
+            </div>
+
+            {status ? (
+              <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
+                {status.text}
+              </p>
+            ) : !hasMedia ? (
+              <p className="text-[0.8rem] font-mono text-muted-foreground">
+                Upload media before building a playlist.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="flex flex-col gap-6">
         {/* Source media */}
@@ -471,7 +640,7 @@ export function PlaylistManager({
                 </p>
               </div>
             ) : null}
-            {mediaAssets.map((asset) => {
+            {assets.map((asset) => {
               const isSelected = selectedSet.has(asset.id);
               return (
                 <button
