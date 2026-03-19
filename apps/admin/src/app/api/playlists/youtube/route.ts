@@ -30,7 +30,13 @@ export async function POST(request: Request) {
       makeDefault: payload.makeDefault,
       name: payload.name || youtubePlaylist.title,
       tags: payload.tags,
-      videos: youtubePlaylist.videos,
+      videos: youtubePlaylist.videos.map((video) => ({
+        durationSeconds: video.durationSeconds,
+        fileName: video.fileName,
+        previewUrl: video.previewUrl,
+        sourceUrl: video.sourceUrl,
+        title: video.title,
+      })),
     });
 
     return NextResponse.json(
