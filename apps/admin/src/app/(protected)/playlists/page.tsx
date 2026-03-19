@@ -1,5 +1,5 @@
-import { PlaylistManager } from "@/components/playlist-manager";
 import { PageHeader } from "@/components/page-header";
+import { PlaylistManagerShell } from "@/components/playlist-manager-shell";
 import { requireOrgId } from "@/lib/auth";
 import { listMediaAssets, listPlaylists } from "@/lib/backend";
 
@@ -17,7 +17,7 @@ export default async function PlaylistsPage() {
         description="Ordered media sequences assigned to screens."
       />
       <div className="p-8">
-        <PlaylistManager initialPlaylists={playlists} mediaAssets={mediaAssets} />
+        <PlaylistManagerShell initialPlaylists={playlists} mediaAssets={mediaAssets} />
       </div>
     </>
   );
