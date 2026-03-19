@@ -33,6 +33,19 @@ function parseUrl(rawUrl: string) {
   }
 }
 
+export function normalizePastedUrl(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+}
+
 function sanitizeVideoId(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -52,7 +65,7 @@ function sanitizePlaylistId(value: string | null | undefined) {
 }
 
 export function extractYouTubeVideoId(rawUrl: string) {
-  const parsed = parseUrl(rawUrl.trim());
+  const parsed = parseUrl(normalizePastedUrl(rawUrl));
   if (!parsed) {
     return null;
   }
@@ -83,7 +96,7 @@ export function extractYouTubeVideoId(rawUrl: string) {
 }
 
 export function extractYouTubePlaylistId(rawUrl: string) {
-  const parsed = parseUrl(rawUrl.trim());
+  const parsed = parseUrl(normalizePastedUrl(rawUrl));
   if (!parsed) {
     return null;
   }

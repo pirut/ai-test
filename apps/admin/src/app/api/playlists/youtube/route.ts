@@ -3,13 +3,13 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
 import { importYouTubePlaylist } from "@/lib/backend";
-import { resolveYouTubePlaylistImport } from "@/lib/youtube";
+import { normalizePastedUrl, resolveYouTubePlaylistImport } from "@/lib/youtube";
 
 const schema = z.object({
   makeDefault: z.boolean().optional(),
   name: z.string().trim().optional(),
   tags: z.array(z.string()).default([]),
-  url: z.string().url(),
+  url: z.string().trim().min(1),
 });
 
 export async function POST(request: Request) {
@@ -24,7 +24,8 @@ export async function POST(request: Request) {
 
   try {
     const payload = schema.parse(await request.json());
-    const youtubePlaylist = await resolveYouTubePlaylistImport(payload.url);
+    const normalizedUrl = normalizePastedUrl(payload.url);
+    const youtubePlaylist = await resolveYouTubePlaylistImport(normalizedUrl);
     const result = await importYouTubePlaylist({
       makeDefault: payload.makeDefault,
       name: payload.name || youtubePlaylist.title,
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    console.error("YouTube playlist import failed", error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Unable to import YouTube playlist",
