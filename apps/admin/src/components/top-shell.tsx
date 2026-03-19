@@ -47,9 +47,9 @@ export function TopShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-background/95 backdrop-blur-xl">
-        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:pl-[18rem] lg:pr-10">
+        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 md:pl-[18rem] md:pr-8">
           <div className="flex min-w-0 flex-1 items-center gap-4">
-            <Link href="/dashboard" className="flex min-w-0 items-center gap-3 lg:hidden">
+            <Link href="/dashboard" className="flex min-w-0 items-center gap-3 md:hidden">
               <div className="flex size-8 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[11px] font-bold text-primary-foreground">
                 DC
               </div>
@@ -77,22 +77,22 @@ export function TopShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <button
               aria-label="Notifications"
-              className="hidden size-9 items-center justify-center rounded-md border border-white/6 bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
+              className="hidden size-9 items-center justify-center rounded-md border border-white/6 bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:inline-flex"
               type="button"
             >
               <Bell className="size-4" />
             </button>
-            <div className="hidden items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary lg:flex">
+            <div className="hidden items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary md:flex">
               <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_rgba(141,172,255,0.65)]" />
               Operational
             </div>
-            <div className="lg:hidden">
+            <div className="md:hidden">
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
             </div>
           </div>
         </div>
 
-        <div className="border-t border-white/5 lg:hidden">
+        <div className="border-t border-white/5 md:hidden">
           <nav className="flex gap-1 overflow-x-auto px-2 py-2">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
@@ -118,7 +118,7 @@ export function TopShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/90 px-4 py-6 backdrop-blur-xl lg:flex">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/90 px-4 py-6 backdrop-blur-xl md:flex">
         <Link href="/dashboard" className="flex items-start gap-3 px-2 pb-8 pt-1">
           <div className="flex size-10 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[12px] font-bold text-primary-foreground">
             DC
@@ -184,8 +184,8 @@ export function TopShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="pt-[7.25rem] lg:pl-64 lg:pt-16">
-        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <main className="pt-[7.25rem] md:pl-64 md:pt-16">
+        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px] flex-col gap-8 px-4 py-6 sm:px-6 md:px-8 md:py-8 lg:px-10">
           {children}
         </div>
       </main>
