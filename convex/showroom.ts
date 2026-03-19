@@ -41,6 +41,7 @@ export async function serializeAsset(ctx: Ctx, asset: Doc<"mediaAssets">) {
 
   return {
     id: asset._id,
+    folderId: asset.folderId ?? null,
     title: asset.title,
     type: asset.mediaType,
     sourceType,
@@ -83,6 +84,7 @@ export async function serializePlaylist(ctx: Ctx, playlist: Doc<"playlists">) {
 
   return {
     id: playlist._id,
+    folderId: playlist.folderId ?? null,
     name: playlist.name,
     isDefault: playlist.isDefault,
     items: await Promise.all(

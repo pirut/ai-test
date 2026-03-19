@@ -9,6 +9,7 @@ const schema = z.object({
   url: z.string().trim().min(1),
   title: z.string().trim().optional(),
   tags: z.array(z.string()).default([]),
+  folderId: z.string().nullable().optional(),
 });
 
 export async function POST(request: Request) {
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
           previewUrl: youtube.previewUrl,
           fileName: youtube.fileName,
           tags: payload.tags,
+          folderId: payload.folderId,
         }),
       },
       { status: 201 },

@@ -17,6 +17,7 @@ const schema = z.object({
   height: z.number().int().positive().optional(),
   durationSeconds: z.number().positive().optional(),
   tags: z.array(z.string()).default([]),
+  folderId: z.string().nullable().optional(),
 });
 
 export async function POST(request: Request) {

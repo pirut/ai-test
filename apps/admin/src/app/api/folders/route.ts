@@ -2,19 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
-import { savePlaylist } from "@/lib/backend";
+import { createLibraryFolder } from "@/lib/backend";
 
 const schema = z.object({
-  playlistId: z.string().optional(),
-  name: z.string().min(2),
-  folderId: z.string().nullable().optional(),
-  itemIds: z.array(
-    z.object({
-      mediaAssetId: z.string(),
-      dwellSeconds: z.number().int().positive().optional(),
-    }),
-  ),
-  makeDefault: z.boolean().optional(),
+  kind: z.enum(["media", "playlist"]),
+  name: z.string().min(1),
+  parentId: z.string().nullable().optional(),
 });
 
 export async function POST(request: Request) {
@@ -30,7 +23,7 @@ export async function POST(request: Request) {
   const payload = schema.parse(await request.json());
   return NextResponse.json(
     {
-      playlist: await savePlaylist(payload),
+      folder: await createLibraryFolder(payload),
     },
     { status: 201 },
   );

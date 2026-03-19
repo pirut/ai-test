@@ -6,6 +6,7 @@ import {
   type DeviceCommandResult,
   type DeviceManifest,
   type DeviceSummary,
+  type LibraryFolder,
   type MediaAsset,
   type Playlist,
   type ReleaseSummary,
@@ -14,11 +15,14 @@ import {
   deviceCommandResultSchema,
   deviceCommandSchema,
   deviceManifestSchema,
+  libraryFolderKindSchema,
   mockDashboardStats,
   mockDevices,
   mockManifest,
   mockMediaAssets,
+  mockMediaFolders,
   mockPlaylist,
+  mockPlaylistFolders,
   temporaryRegistrationResponseSchema,
 } from "@showroom/contracts";
 
@@ -50,6 +54,7 @@ type DeviceRecord = DeviceSummary & {
 
 type MockState = {
   devices: DeviceRecord[];
+  folders: LibraryFolder[];
   mediaAssets: MediaAsset[];
   playlists: Playlist[];
   releases: ReleaseSummary[];
@@ -59,24 +64,143 @@ type MockState = {
   registrations: RegistrationRecord[];
 };
 
+type FolderKind = LibraryFolder["kind"];
+
 declare global {
   // eslint-disable-next-line no-var
   var __showroomMockState: MockState | undefined;
 }
 
+function cloneFolder(folder: LibraryFolder): LibraryFolder {
+  return { ...folder };
+}
+
+function cloneAsset(asset: MediaAsset): MediaAsset {
+  return {
+    ...asset,
+    tags: [...asset.tags],
+  };
+}
+
+function clonePlaylist(playlist: Playlist): Playlist {
+  return {
+    ...playlist,
+    items: playlist.items.map((item) => ({
+      ...item,
+      asset: cloneAsset(item.asset),
+    })),
+  };
+}
+
+function ensurePlaylistItemsReferenceCurrentAssets(playlist: Playlist, assets: MediaAsset[]) {
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+  playlist.items = playlist.items
+    .map((item) => {
+      const asset = byId.get(item.asset.id);
+      if (!asset) {
+        return null;
+      }
+
+      return {
+        ...item,
+        asset,
+      };
+    })
+    .filter((item): item is Playlist["items"][number] => item !== null);
+}
+
+function normalizeFolderParent(parentId?: string | null) {
+  return parentId ?? null;
+}
+
+function assertFolderKind(folderId: string | null | undefined, kind: FolderKind) {
+  if (!folderId) {
+    return null;
+  }
+
+  const folder = state().folders.find((entry) => entry.id === folderId) ?? null;
+  if (!folder || folder.kind !== kind) {
+    throw new Error("Folder not found");
+  }
+
+  return folder;
+}
+
+function getDescendantFolderIds(folderId: string): Set<string> {
+  const descendants = new Set<string>();
+  const queue = [folderId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const folder of state().folders) {
+      if (folder.parentId === current && !descendants.has(folder.id)) {
+        descendants.add(folder.id);
+        queue.push(folder.id);
+      }
+    }
+  }
+
+  descendants.delete(folderId);
+  return descendants;
+}
+
+function sanitizeFolderMove(folderId: string, parentId?: string | null) {
+  if (!parentId) {
+    return null;
+  }
+
+  if (parentId === folderId) {
+    throw new Error("A folder cannot contain itself");
+  }
+
+  const descendants = getDescendantFolderIds(folderId);
+  if (descendants.has(parentId)) {
+    throw new Error("A folder cannot be moved into one of its descendants");
+  }
+
+  return parentId;
+}
+
 function buildState(): MockState {
+  const folders = [...mockMediaFolders, ...mockPlaylistFolders].map(cloneFolder);
+  const mediaAssets = mockMediaAssets.map(cloneAsset);
+  const basePlaylist = clonePlaylist(mockPlaylist);
+  ensurePlaylistItemsReferenceCurrentAssets(basePlaylist, mediaAssets);
+
+  const seasonalPlaylist: Playlist = {
+    id: "playlist-seasonal-launch",
+    folderId: "folder-playlist-seasonal",
+    name: "Spring launch loop",
+    isDefault: false,
+    items: [
+      {
+        id: "playlist-seasonal-item-1",
+        order: 0,
+        dwellSeconds: null,
+        asset: mediaAssets[0]!,
+      },
+      {
+        id: "playlist-seasonal-item-2",
+        order: 1,
+        dwellSeconds: 8,
+        asset: mediaAssets[1]!,
+      },
+    ],
+  };
+
   return {
     devices: mockDevices.map((device) => ({
       ...device,
       orgId: "org_demo",
-      defaultPlaylistId: mockPlaylist.id,
+      defaultPlaylistId: basePlaylist.id,
       timezone: "America/New_York",
       orientation: 0,
       volume: 0,
       credential: `demo-${device.id}`,
     })),
-    mediaAssets: mockMediaAssets,
-    playlists: [mockPlaylist],
+    folders,
+    mediaAssets,
+    playlists: [basePlaylist, seasonalPlaylist],
     releases: [],
     manifests: {
       [mockManifest.deviceId]: deviceManifestSchema.parse(mockManifest),
@@ -114,6 +238,18 @@ function state() {
   return globalThis.__showroomMockState;
 }
 
+function syncPlaylistAssets() {
+  for (const playlist of state().playlists) {
+    ensurePlaylistItemsReferenceCurrentAssets(playlist, state().mediaAssets);
+  }
+}
+
+function nextFolderOrder(kind: FolderKind, parentId: string | null) {
+  return state().folders.filter(
+    (folder) => folder.kind === kind && normalizeFolderParent(folder.parentId) === parentId,
+  ).length;
+}
+
 export function getDashboardStats(orgId: string): DashboardStats {
   const devices = state().devices.filter((device) => device.orgId === orgId);
   return {
@@ -132,6 +268,106 @@ export function listDevices(orgId: string) {
 
 export function getDevice(orgId: string, deviceId: string) {
   return listDevices(orgId).find((device) => device.id === deviceId) ?? null;
+}
+
+export function listLibraryFolders(kind: FolderKind) {
+  return state().folders
+    .filter((folder) => folder.kind === kind)
+    .sort((a, b) => {
+      const parentDiff = (a.parentId ?? "").localeCompare(b.parentId ?? "");
+      if (parentDiff !== 0) {
+        return parentDiff;
+      }
+
+      const orderDiff = a.order - b.order;
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+}
+
+export function createLibraryFolder(input: {
+  kind: FolderKind;
+  name: string;
+  parentId?: string | null;
+}) {
+  const kind = libraryFolderKindSchema.parse(input.kind);
+  const parentId = normalizeFolderParent(input.parentId);
+  if (parentId) {
+    assertFolderKind(parentId, kind);
+  }
+
+  const folder: LibraryFolder = {
+    id: crypto.randomUUID(),
+    kind,
+    name: input.name.trim(),
+    parentId,
+    order: nextFolderOrder(kind, parentId),
+  };
+
+  state().folders.push(folder);
+  return folder;
+}
+
+export function updateLibraryFolder(input: {
+  folderId: string;
+  name?: string;
+  parentId?: string | null;
+}) {
+  const folder = state().folders.find((entry) => entry.id === input.folderId);
+  if (!folder) {
+    throw new Error("Folder not found");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "name") && input.name) {
+    folder.name = input.name.trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "parentId")) {
+    const nextParentId = sanitizeFolderMove(folder.id, normalizeFolderParent(input.parentId));
+    if (nextParentId) {
+      assertFolderKind(nextParentId, folder.kind);
+    }
+    folder.parentId = nextParentId;
+    folder.order = nextFolderOrder(folder.kind, folder.parentId);
+  }
+
+  return folder;
+}
+
+export function deleteLibraryFolder(folderId: string) {
+  const index = state().folders.findIndex((entry) => entry.id === folderId);
+  if (index === -1) {
+    return;
+  }
+
+  const [folder] = state().folders.splice(index, 1);
+  if (!folder) {
+    return;
+  }
+
+  for (const child of state().folders) {
+    if (child.parentId === folder.id) {
+      child.parentId = folder.parentId;
+      child.order = nextFolderOrder(child.kind, child.parentId);
+    }
+  }
+
+  if (folder.kind === "media") {
+    for (const asset of state().mediaAssets) {
+      if (asset.folderId === folder.id) {
+        asset.folderId = folder.parentId;
+      }
+    }
+  } else {
+    for (const playlist of state().playlists) {
+      if (playlist.folderId === folder.id) {
+        playlist.folderId = folder.parentId;
+      }
+    }
+  }
 }
 
 export function listMediaAssets() {
@@ -188,14 +424,53 @@ export function createUploadDraft(input: {
   bytes: number;
 }) {
   const assetId = crypto.randomUUID();
-  const draft = {
+  return {
     assetId,
     uploadUrl: `/api/media/mock-upload/${assetId}`,
     storagePath: `media/org_demo/${assetId}-${input.fileName}`,
     expiresInSeconds: 900,
   };
+}
 
-  return draft;
+export function finalizeMediaUpload(input: {
+  title: string;
+  fileName: string;
+  mimeType: string;
+  bytes: number;
+  storagePath: string;
+  previewUrl: string;
+  checksum: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  tags: string[];
+  folderId?: string | null;
+}) {
+  if (input.folderId) {
+    assertFolderKind(input.folderId, "media");
+  }
+
+  const asset: MediaAsset = {
+    id: crypto.randomUUID(),
+    folderId: normalizeFolderParent(input.folderId),
+    title: input.title,
+    type: input.mimeType.startsWith("video/") ? "video" : "image",
+    sourceType: "upload",
+    mimeType: input.mimeType,
+    fileName: input.fileName,
+    sizeBytes: input.bytes,
+    width: input.width,
+    height: input.height,
+    durationSeconds: input.durationSeconds,
+    storagePath: input.storagePath,
+    previewUrl: input.previewUrl,
+    checksum: input.checksum,
+    tags: input.tags,
+  };
+
+  state().mediaAssets.unshift(asset);
+  syncPlaylistAssets();
+  return asset;
 }
 
 export function createYouTubeMediaAsset(input: {
@@ -205,10 +480,16 @@ export function createYouTubeMediaAsset(input: {
   fileName: string;
   durationSeconds?: number;
   tags: string[];
+  folderId?: string | null;
 }) {
   const checksum = `youtube:${crypto.createHash("sha256").update(input.sourceUrl).digest("hex")}`;
   const existing = state().mediaAssets.find((asset) => asset.checksum === checksum);
+  if (input.folderId) {
+    assertFolderKind(input.folderId, "media");
+  }
+
   if (existing) {
+    existing.folderId = normalizeFolderParent(input.folderId) ?? existing.folderId;
     existing.title = input.title;
     existing.sourceType = "youtube";
     existing.sourceUrl = input.sourceUrl;
@@ -222,6 +503,7 @@ export function createYouTubeMediaAsset(input: {
 
   const asset: MediaAsset = {
     id: crypto.randomUUID(),
+    folderId: normalizeFolderParent(input.folderId),
     title: input.title,
     type: "video",
     sourceType: "youtube",
@@ -237,6 +519,7 @@ export function createYouTubeMediaAsset(input: {
   };
 
   state().mediaAssets.unshift(asset);
+  syncPlaylistAssets();
   return asset;
 }
 
@@ -248,7 +531,12 @@ export function savePlaylist(input: {
     dwellSeconds?: number;
   }>;
   makeDefault?: boolean;
+  folderId?: string | null;
 }) {
+  if (input.folderId) {
+    assertFolderKind(input.folderId, "playlist");
+  }
+
   const items = input.itemIds.map((item, index) => {
     const asset = state().mediaAssets.find((entry) => entry.id === item.mediaAssetId);
     if (!asset) {
@@ -272,6 +560,10 @@ export function savePlaylist(input: {
 
   const playlist: Playlist = {
     id: existing?.id ?? crypto.randomUUID(),
+    folderId:
+      normalizeFolderParent(input.folderId) ??
+      existing?.folderId ??
+      null,
     name: input.name,
     isDefault: shouldBeDefault,
     items,
@@ -295,7 +587,32 @@ export function savePlaylist(input: {
     }));
   }
 
+  syncPlaylistAssets();
   return state().playlists.find((entry) => entry.id === playlist.id) ?? playlist;
+}
+
+export function updatePlaylist(input: {
+  playlistId: string;
+  name?: string;
+  folderId?: string | null;
+}) {
+  const playlist = state().playlists.find((entry) => entry.id === input.playlistId);
+  if (!playlist) {
+    throw new Error("Playlist not found");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "name") && input.name) {
+    playlist.name = input.name.trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "folderId")) {
+    if (input.folderId) {
+      assertFolderKind(input.folderId, "playlist");
+    }
+    playlist.folderId = normalizeFolderParent(input.folderId);
+  }
+
+  return playlist;
 }
 
 export function importYouTubePlaylist(input: {
@@ -309,11 +626,14 @@ export function importYouTubePlaylist(input: {
     sourceUrl: string;
     title: string;
   }>;
+  folderId?: string | null;
+  assetFolderId?: string | null;
 }) {
   const assets = input.videos.map((video) =>
     createYouTubeMediaAsset({
       ...video,
       tags: input.tags,
+      folderId: input.assetFolderId,
     }),
   );
   const uniqueAssets = [...new Map(assets.map((asset) => [asset.id, asset])).values()];
@@ -326,6 +646,7 @@ export function importYouTubePlaylist(input: {
       })),
       makeDefault: input.makeDefault,
       name: input.name,
+      folderId: input.folderId,
     }),
   };
 }
@@ -439,6 +760,7 @@ export function claimDevice(input: {
   registration.claimedDeviceId = deviceId;
   registration.credential = credential;
 
+  const fallbackPlaylist = state().playlists.find((playlist) => playlist.isDefault) ?? mockPlaylist;
   const device: DeviceRecord = {
     id: deviceId,
     name: input.name,
@@ -446,12 +768,12 @@ export function claimDevice(input: {
     status: "online",
     lastHeartbeatAt: new Date().toISOString(),
     screenshotUrl: null,
-    currentPlaylistName: mockPlaylist.name,
+    currentPlaylistName: fallbackPlaylist.name,
     manifestVersion: mockManifest.manifestVersion,
     orgId: input.orgId,
     claimCode: input.claimCode,
     credential,
-    defaultPlaylistId: mockPlaylist.id,
+    defaultPlaylistId: fallbackPlaylist.id,
     timezone: "America/New_York",
     orientation: 0,
     volume: 0,
@@ -629,18 +951,47 @@ export function deletePlaylist(id: string) {
 }
 
 export function deleteSchedule(_id: string) {
-  // No schedules in mock state — nothing to remove
+  // No schedules in mock state.
 }
 
 export function deleteMediaAsset(id: string) {
-  const idx = state().mediaAssets.findIndex((a) => a.id === id);
-  if (idx !== -1) state().mediaAssets.splice(idx, 1);
+  const idx = state().mediaAssets.findIndex((asset) => asset.id === id);
+  if (idx === -1) {
+    return;
+  }
+
+  state().mediaAssets.splice(idx, 1);
+  for (const playlist of state().playlists) {
+    playlist.items = playlist.items.filter((item) => item.asset.id !== id);
+  }
 }
 
-export function updateMediaAsset(id: string, title: string, tags: string[]) {
-  const asset = state().mediaAssets.find((a) => a.id === id);
-  if (!asset) return null;
-  asset.title = title;
-  asset.tags = tags;
+export function updateMediaAsset(input: {
+  assetId: string;
+  title?: string;
+  tags?: string[];
+  folderId?: string | null;
+}) {
+  const asset = state().mediaAssets.find((entry) => entry.id === input.assetId);
+  if (!asset) {
+    return null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "title") && input.title) {
+    asset.title = input.title.trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "tags") && input.tags) {
+    asset.tags = input.tags;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "folderId")) {
+    if (input.folderId) {
+      assertFolderKind(input.folderId, "media");
+    }
+    asset.folderId = normalizeFolderParent(input.folderId);
+  }
+
+  syncPlaylistAssets();
   return asset;
 }

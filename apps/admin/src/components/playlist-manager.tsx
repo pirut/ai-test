@@ -1,35 +1,37 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Check, ShieldCheck, Sparkles } from "lucide-react";
-import type { MediaAsset, Playlist } from "@showroom/contracts";
+import { useMemo, useState } from "react";
+import { FolderPlus, GripVertical, ImageIcon, Plus, Trash2, Video } from "lucide-react";
+import type { LibraryFolder, MediaAsset, Playlist } from "@showroom/contracts";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { LibraryFolderTree } from "@/components/library-folder-tree";
+import { getFolderChildren, getFolderMap, moveArrayItem } from "@/lib/library";
 import { cn } from "@/lib/utils";
 
-const DWELL_OPTIONS = [5, 10, 15, 20, 30, 45, 60].map((value) => ({
-  label: `${value}s`,
-  value: String(value),
-}));
-const DWELL_DEFAULT_VALUE = "__default__";
-
 type QueueItem = {
+  id: string;
   assetId: string;
   dwellSeconds: string | null;
 };
+
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
+  return `0:${String(s).padStart(2, "0")}`;
+}
+
+function createQueueItem(assetId: string, dwellSeconds?: number | null): QueueItem {
+  return {
+    id: crypto.randomUUID(),
+    assetId,
+    dwellSeconds: dwellSeconds ? String(dwellSeconds) : null,
+  };
+}
 
 function sortPlaylists(playlists: Playlist[]) {
   return [...playlists].sort((a, b) => {
@@ -41,120 +43,262 @@ function sortPlaylists(playlists: Playlist[]) {
   });
 }
 
-function formatDuration(seconds: number) {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
-  return `0:${String(s).padStart(2, "0")}`;
-}
-
 export function PlaylistManager({
   initialPlaylists,
   mediaAssets,
+  initialPlaylistFolders,
+  initialMediaFolders,
 }: {
   initialPlaylists: Playlist[];
   mediaAssets: MediaAsset[];
+  initialPlaylistFolders: LibraryFolder[];
+  initialMediaFolders: LibraryFolder[];
 }) {
   const router = useRouter();
   const [playlists, setPlaylists] = useState(initialPlaylists);
   const [assets, setAssets] = useState(mediaAssets);
+  const [playlistFolders, setPlaylistFolders] = useState(initialPlaylistFolders);
+  const [mediaFolders] = useState(initialMediaFolders);
+  const [selectedPlaylistFolderId, setSelectedPlaylistFolderId] = useState<string | null>(null);
+  const [selectedMediaFolderId, setSelectedMediaFolderId] = useState<string | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [playlistSearch, setPlaylistSearch] = useState("");
+  const [mediaSearch, setMediaSearch] = useState("");
   const [name, setName] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [makeDefault, setMakeDefault] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [defaultingId, setDefaultingId] = useState<string | null>(null);
   const [youtubePlaylistUrl, setYoutubePlaylistUrl] = useState("");
   const [youtubePlaylistName, setYoutubePlaylistName] = useState("");
   const [youtubePlaylistTags, setYoutubePlaylistTags] = useState("");
   const [youtubePlaylistDefault, setYoutubePlaylistDefault] = useState(false);
-  const [youtubePlaylistStatus, setYoutubePlaylistStatus] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
   const [isImportingYouTubePlaylist, setIsImportingYouTubePlaylist] = useState(false);
 
-  const assetMap = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
-  const selectedSet = useMemo(() => new Set(queue.map((i) => i.assetId)), [queue]);
-  const hasMedia = assets.length > 0;
-  const isEditing = editingId !== null;
+  const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const playlistFolderMap = useMemo(() => getFolderMap(playlistFolders), [playlistFolders]);
+  const mediaFolderMap = useMemo(() => getFolderMap(mediaFolders), [mediaFolders]);
   const currentDefault = useMemo(
     () => playlists.find((playlist) => playlist.isDefault) ?? null,
     [playlists],
   );
-  const orderedPlaylists = useMemo(() => sortPlaylists(playlists), [playlists]);
-
-  function toggleAsset(assetId: string) {
-    setQueue((current) => {
-      if (current.some((i) => i.assetId === assetId)) {
-        return current.filter((i) => i.assetId !== assetId);
+  const visiblePlaylists = useMemo(() => {
+    const query = playlistSearch.trim().toLowerCase();
+    return sortPlaylists(playlists).filter((playlist) => {
+      if ((playlist.folderId ?? null) !== selectedPlaylistFolderId) {
+        return false;
       }
-      return [...current, { assetId, dwellSeconds: null }];
+
+      if (!query) {
+        return true;
+      }
+
+      return playlist.name.toLowerCase().includes(query);
     });
-  }
+  }, [playlistSearch, playlists, selectedPlaylistFolderId]);
+  const visibleAssets = useMemo(() => {
+    const query = mediaSearch.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if ((asset.folderId ?? null) !== selectedMediaFolderId) {
+        return false;
+      }
 
-  function moveItem(index: number, direction: "up" | "down") {
-    setQueue((current) => {
-      const next = [...current];
-      const swapIdx = direction === "up" ? index - 1 : index + 1;
-      if (swapIdx < 0 || swapIdx >= next.length) return next;
-      [next[index], next[swapIdx]] = [next[swapIdx]!, next[index]!];
-      return next;
+      if (!query) {
+        return true;
+      }
+
+      return [asset.title, asset.fileName, ...asset.tags]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
     });
-  }
+  }, [assets, mediaSearch, selectedMediaFolderId]);
 
-  function setDwell(assetId: string, value: string | null) {
-    setQueue((current) =>
-      current.map((i) => (i.assetId === assetId ? { ...i, dwellSeconds: value } : i)),
-    );
-  }
-
-  function mergeAssets(nextAssets: MediaAsset[]) {
-    setAssets((current) => {
-      return [
-        ...nextAssets,
-        ...current.filter((asset) => !nextAssets.some((next) => next.id === asset.id)),
-      ];
-    });
-  }
-
-  function startEditing(playlist: Playlist) {
-    setEditingId(playlist.id);
+  function loadPlaylist(playlist: Playlist) {
+    setSelectedPlaylistId(playlist.id);
+    setSelectedPlaylistFolderId(playlist.folderId ?? null);
     setName(playlist.name);
     setMakeDefault(playlist.isDefault);
     setQueue(
       [...playlist.items]
         .sort((a, b) => a.order - b.order)
-        .map((item) => ({
-          assetId: item.asset.id,
-          dwellSeconds: item.dwellSeconds ? String(item.dwellSeconds) : null,
-        })),
+        .map((item) => createQueueItem(item.asset.id, item.dwellSeconds)),
     );
     setStatus(null);
-    setConfirmDeleteId(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  useEffect(() => {
-    if (!confirmDeleteId) return;
-    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
-    return () => clearTimeout(timer);
-  }, [confirmDeleteId]);
-
-  function cancelEditing() {
-    setEditingId(null);
+  function startNewPlaylist() {
+    setSelectedPlaylistId(null);
     setName("");
     setQueue([]);
     setMakeDefault(false);
+    setStatus(null);
+  }
+
+  function addAssetToQueue(assetId: string, targetIndex?: number) {
+    setQueue((current) => {
+      const nextItem = createQueueItem(assetId);
+      if (typeof targetIndex !== "number" || targetIndex < 0 || targetIndex > current.length) {
+        return [...current, nextItem];
+      }
+
+      const next = [...current];
+      next.splice(targetIndex, 0, nextItem);
+      return next;
+    });
+  }
+
+  function updateQueueItem(queueItemId: string, updates: Partial<QueueItem>) {
+    setQueue((current) =>
+      current.map((item) => (item.id === queueItemId ? { ...item, ...updates } : item)),
+    );
+  }
+
+  function removeQueueItem(queueItemId: string) {
+    setQueue((current) => current.filter((item) => item.id !== queueItemId));
+  }
+
+  function setDragData(event: React.DragEvent<HTMLElement>, type: string, id: string) {
+    event.dataTransfer.setData("application/x-showroom-drag-type", type);
+    event.dataTransfer.setData("application/x-showroom-item-id", id);
+    event.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleQueueDrop(event: React.DragEvent<HTMLElement>, targetIndex?: number) {
+    const dragType = event.dataTransfer.getData("application/x-showroom-drag-type");
+    const itemId = event.dataTransfer.getData("application/x-showroom-item-id");
+    if (!dragType || !itemId) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (dragType === "asset") {
+      addAssetToQueue(itemId, targetIndex);
+      return;
+    }
+
+    if (dragType === "queue-item") {
+      const fromIndex = queue.findIndex((item) => item.id === itemId);
+      if (fromIndex === -1) {
+        return;
+      }
+
+      const toIndex =
+        typeof targetIndex === "number"
+          ? targetIndex
+          : Math.max(queue.length - 1, 0);
+      setQueue((current) => moveArrayItem(current, fromIndex, toIndex));
+    }
+  }
+
+  async function createFolder(parentId: string | null) {
+    const name = window.prompt("Folder name");
+    if (!name?.trim()) {
+      return;
+    }
+
+    const response = await fetch("/api/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "playlist",
+        name: name.trim(),
+        parentId,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setStatus({ ok: false, text: payload.error ?? "Unable to create folder" });
+      return;
+    }
+
+    const nextFolder = payload.folder as LibraryFolder;
+    setPlaylistFolders((current) => [...current, nextFolder]);
+    setSelectedPlaylistFolderId(nextFolder.id);
+    router.refresh();
+  }
+
+  async function renameFolder(folder: LibraryFolder) {
+    const name = window.prompt("Rename folder", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) {
+      return;
+    }
+
+    const response = await fetch(`/api/folders/${folder.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setStatus({ ok: false, text: payload.error ?? "Unable to rename folder" });
+      return;
+    }
+
+    const nextFolder = payload.folder as LibraryFolder;
+    setPlaylistFolders((current) =>
+      current.map((entry) => (entry.id === folder.id ? nextFolder : entry)),
+    );
+    router.refresh();
+  }
+
+  async function deleteFolder(folder: LibraryFolder) {
+    const confirmed = window.confirm(
+      "Delete this folder? Child folders and playlists will move to the parent.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json();
+      setStatus({ ok: false, text: payload.error ?? "Unable to delete folder" });
+      return;
+    }
+
+    setPlaylistFolders((current) =>
+      current
+        .filter((entry) => entry.id !== folder.id)
+        .map((entry) =>
+          entry.parentId === folder.id ? { ...entry, parentId: folder.parentId } : entry,
+        ),
+    );
+    setPlaylists((current) =>
+      current.map((playlist) =>
+        playlist.folderId === folder.id ? { ...playlist, folderId: folder.parentId } : playlist,
+      ),
+    );
+    if (selectedPlaylistFolderId === folder.id) {
+      setSelectedPlaylistFolderId(folder.parentId ?? null);
+    }
+    router.refresh();
+  }
+
+  async function movePlaylistToFolder(playlistId: string, folderId: string | null) {
+    const response = await fetch(`/api/playlists/${playlistId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folderId }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setStatus({ ok: false, text: payload.error ?? "Unable to move playlist" });
+      return;
+    }
+
+    const nextPlaylist = payload.playlist as Playlist;
+    setPlaylists((current) =>
+      current.map((playlist) => (playlist.id === playlistId ? nextPlaylist : playlist)),
+    );
+    router.refresh();
   }
 
   async function handleImportYouTubePlaylist() {
     try {
       setIsImportingYouTubePlaylist(true);
-      setYoutubePlaylistStatus({ ok: true, text: "Loading playlist from YouTube…" });
+      setStatus({ ok: true, text: "Importing YouTube playlist..." });
       const response = await fetch("/api/playlists/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -166,6 +310,8 @@ export function PlaylistManager({
             .map((entry) => entry.trim())
             .filter(Boolean),
           url: youtubePlaylistUrl.trim(),
+          folderId: selectedPlaylistFolderId,
+          assetFolderId: selectedMediaFolderId,
         }),
       });
 
@@ -177,30 +323,31 @@ export function PlaylistManager({
       const nextPlaylist = payload.playlist as Playlist;
       const nextAssets = payload.assets as MediaAsset[];
 
-      mergeAssets(nextAssets);
+      setAssets((current) => [
+        ...nextAssets,
+        ...current.filter((asset) => !nextAssets.some((nextAsset) => nextAsset.id === asset.id)),
+      ]);
       setPlaylists((current) => {
         const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
-        let merged = [nextPlaylist, ...remaining];
-        if (nextPlaylist.isDefault) {
-          merged = merged.map((playlist) => ({
-            ...playlist,
-            isDefault: playlist.id === nextPlaylist.id,
-          }));
-        }
+        const merged = [nextPlaylist, ...remaining].map((playlist) => ({
+          ...playlist,
+          isDefault: nextPlaylist.isDefault ? playlist.id === nextPlaylist.id : playlist.isDefault,
+        }));
         return merged;
       });
 
+      loadPlaylist(nextPlaylist);
       setYoutubePlaylistUrl("");
       setYoutubePlaylistName("");
       setYoutubePlaylistTags("");
       setYoutubePlaylistDefault(false);
-      setYoutubePlaylistStatus({
+      setStatus({
         ok: true,
         text: `Imported "${nextPlaylist.name}" with ${nextPlaylist.items.length} videos.`,
       });
       router.refresh();
     } catch (error) {
-      setYoutubePlaylistStatus({
+      setStatus({
         ok: false,
         text: error instanceof Error ? error.message : "Unable to import YouTube playlist",
       });
@@ -211,7 +358,7 @@ export function PlaylistManager({
 
   async function handleSave() {
     if (!name.trim() || queue.length === 0) {
-      setStatus({ ok: false, text: "Add a name and at least one media item." });
+      setStatus({ ok: false, text: "Add a name and at least one item." });
       return;
     }
 
@@ -221,13 +368,14 @@ export function PlaylistManager({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          playlistId: editingId ?? undefined,
+          playlistId: selectedPlaylistId ?? undefined,
           name: name.trim(),
+          folderId: selectedPlaylistFolderId,
           makeDefault,
-          itemIds: queue.map(({ assetId, dwellSeconds }) => {
-            const dwell = Number(dwellSeconds);
+          itemIds: queue.map((item) => {
+            const dwell = Number(item.dwellSeconds);
             return {
-              mediaAssetId: assetId,
+              mediaAssetId: item.assetId,
               dwellSeconds: Number.isFinite(dwell) && dwell > 0 ? dwell : undefined,
             };
           }),
@@ -241,27 +389,15 @@ export function PlaylistManager({
 
       const nextPlaylist = payload.playlist as Playlist;
       setPlaylists((current) => {
-        const priorPlaylist = current.find((playlist) => playlist.id === nextPlaylist.id) ?? null;
         const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
-        let merged = [nextPlaylist, ...remaining];
-
-        if (nextPlaylist.isDefault) {
-          merged = merged.map((playlist) => ({
-            ...playlist,
-            isDefault: playlist.id === nextPlaylist.id,
-          }));
-        } else if (priorPlaylist?.isDefault) {
-          const replacement = sortPlaylists(remaining)[0] ?? nextPlaylist;
-          merged = merged.map((playlist) => ({
-            ...playlist,
-            isDefault: playlist.id === replacement.id,
-          }));
-        }
-
+        const merged = [nextPlaylist, ...remaining].map((playlist) => ({
+          ...playlist,
+          isDefault: nextPlaylist.isDefault ? playlist.id === nextPlaylist.id : playlist.isDefault,
+        }));
         return merged;
       });
-      setStatus({ ok: true, text: `Saved "${nextPlaylist.name}"` });
-      cancelEditing();
+      loadPlaylist(nextPlaylist);
+      setStatus({ ok: true, text: `Saved "${nextPlaylist.name}".` });
       router.refresh();
     } catch (error) {
       setStatus({
@@ -273,100 +409,347 @@ export function PlaylistManager({
     }
   }
 
-  async function handleSetDefault(playlist: Playlist) {
-    if (playlist.isDefault) {
-      return;
-    }
-
-    setDefaultingId(playlist.id);
-    setStatus(null);
-    try {
-      const response = await fetch(`/api/playlists/${playlist.id}`, {
-        method: "PATCH",
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to change fallback playlist");
-      }
-
-      const nextPlaylist = payload.playlist as Playlist;
-      setPlaylists((current) =>
-        current.map((entry) => ({
-          ...entry,
-          isDefault: entry.id === nextPlaylist.id,
-        })),
-      );
-      setStatus({ ok: true, text: `"${nextPlaylist.name}" is now the fallback playlist.` });
-      router.refresh();
-    } catch (error) {
-      setStatus({
-        ok: false,
-        text: error instanceof Error ? error.message : "Unable to change fallback playlist",
-      });
-    } finally {
-      setDefaultingId(null);
-    }
-  }
-
   async function handleDelete(playlistId: string) {
-    if (confirmDeleteId !== playlistId) {
-      setConfirmDeleteId(playlistId);
+    const confirmed = window.confirm("Delete this playlist?");
+    if (!confirmed) {
       return;
     }
 
-    setDeleting(true);
-    setConfirmDeleteId(null);
-    try {
-      const response = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" });
-      if (!response.ok) {
-        const payload = await response.json();
-        throw new Error(payload.error ?? "Unable to delete playlist");
-      }
-
-      setPlaylists((current) => {
-        const removed = current.find((playlist) => playlist.id === playlistId) ?? null;
-        const remaining = current.filter((playlist) => playlist.id !== playlistId);
-
-        if (!removed?.isDefault || remaining.length === 0) {
-          return remaining;
-        }
-
-        const replacement = sortPlaylists(remaining)[0] ?? null;
-        return remaining.map((playlist) => ({
-          ...playlist,
-          isDefault: playlist.id === replacement?.id,
-        }));
-      });
-      if (editingId === playlistId) cancelEditing();
-      router.refresh();
-    } catch (error) {
-      setStatus({
-        ok: false,
-        text: error instanceof Error ? error.message : "Unable to delete playlist",
-      });
-    } finally {
-      setDeleting(false);
+    const response = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json();
+      setStatus({ ok: false, text: payload.error ?? "Unable to delete playlist" });
+      return;
     }
+
+    setPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
+    if (selectedPlaylistId === playlistId) {
+      startNewPlaylist();
+    }
+    router.refresh();
   }
+
+  const playlistChildren = getFolderChildren(playlistFolders, selectedPlaylistFolderId);
+  const mediaChildren = getFolderChildren(mediaFolders, selectedMediaFolderId);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
-      <div className="flex flex-col gap-6">
-        <Card className="border border-border/70 bg-card/95">
-          <CardHeader className="border-b border-border/60">
-            <CardTitle className="text-[0.92rem] font-semibold">Import YouTube playlist</CardTitle>
-            <p className="text-[0.78rem] text-muted-foreground">
-              Paste a public YouTube playlist URL to create a playlist and register every video in Media.
+    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
+      <aside className="rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-foreground">Playlists</p>
+              <p className="text-xs text-muted-foreground">Store loops in folders and move them from the tree.</p>
+            </div>
+            <Button onClick={() => void createFolder(selectedPlaylistFolderId)} size="sm" type="button" variant="outline">
+              <FolderPlus className="size-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-4 p-3">
+          <LibraryFolderTree
+            folders={playlistFolders}
+            onDelete={(folder) => void deleteFolder(folder)}
+            onDropItem={(folderId, dragType, itemId) => {
+              if (dragType === "playlist") {
+                void movePlaylistToFolder(itemId, folderId);
+              }
+            }}
+            onRename={(folder) => void renameFolder(folder)}
+            onSelect={setSelectedPlaylistFolderId}
+            rootLabel="All playlists"
+            selectedFolderId={selectedPlaylistFolderId}
+          />
+
+          <div className="space-y-3 border-t border-border pt-4">
+            <div className="flex items-center gap-2">
+              <Input
+                onChange={(event) => setPlaylistSearch(event.target.value)}
+                placeholder="Search playlists"
+                value={playlistSearch}
+              />
+              <Button onClick={startNewPlaylist} type="button" variant="outline">
+                <Plus className="size-4" />
+              </Button>
+            </div>
+            {playlistChildren.length > 0 ? (
+              <div className="space-y-2">
+                {playlistChildren.map((folder) => (
+                  <button
+                    key={folder.id}
+                    className="flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left hover:bg-accent/60"
+                    onClick={() => setSelectedPlaylistFolderId(folder.id)}
+                    type="button"
+                  >
+                    <FolderPlus className="size-4 text-muted-foreground" />
+                    <span className="truncate text-sm">{folder.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              {visiblePlaylists.length > 0 ? (
+                visiblePlaylists.map((playlist) => (
+                  <button
+                    key={playlist.id}
+                    className={cn(
+                      "w-full rounded-md border px-3 py-3 text-left transition-colors",
+                      selectedPlaylistId === playlist.id
+                        ? "border-foreground/20 bg-accent"
+                        : "border-border hover:bg-accent/60",
+                    )}
+                    draggable
+                    onClick={() => loadPlaylist(playlist)}
+                    onDragStart={(event) => setDragData(event, "playlist", playlist.id)}
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">{playlist.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
+                        </div>
+                      </div>
+                      {playlist.isDefault ? (
+                        <span className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                          Default
+                        </span>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  No playlists in this folder.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <section className="rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-5 py-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-base font-medium text-foreground">Source media</p>
+              <p className="text-sm text-muted-foreground">
+                Drag assets into the queue. Use media folders to narrow the catalog.
+              </p>
+            </div>
+            <Input
+              className="w-full lg:w-64"
+              onChange={(event) => setMediaSearch(event.target.value)}
+              placeholder="Search media"
+              value={mediaSearch}
+            />
+          </div>
+        </div>
+        <div className="grid gap-6 p-5 xl:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <LibraryFolderTree
+              folders={mediaFolders}
+              onSelect={setSelectedMediaFolderId}
+              rootLabel="All media"
+              selectedFolderId={selectedMediaFolderId}
+            />
+            {mediaChildren.length > 0 ? (
+              <div className="space-y-2">
+                {mediaChildren.map((folder) => (
+                  <button
+                    key={folder.id}
+                    className="flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left hover:bg-accent/60"
+                    onClick={() => setSelectedMediaFolderId(folder.id)}
+                    type="button"
+                  >
+                    <FolderPlus className="size-4 text-muted-foreground" />
+                    <span className="truncate text-sm">{folder.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {visibleAssets.length > 0 ? (
+              visibleAssets.map((asset) => (
+                <button
+                  key={asset.id}
+                  className="rounded-md border border-border bg-background p-3 text-left transition-colors hover:bg-accent/40"
+                  draggable
+                  onClick={() => addAssetToQueue(asset.id)}
+                  onDragStart={(event) => setDragData(event, "asset", asset.id)}
+                  type="button"
+                >
+                  <div className="mb-3 aspect-[16/10] overflow-hidden rounded-md border border-border bg-muted/20">
+                    <img alt={asset.title} className="h-full w-full object-cover" src={asset.previewUrl} />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {asset.type === "video" ? (
+                        <Video className="size-3.5" />
+                      ) : (
+                        <ImageIcon className="size-3.5" />
+                      )}
+                      <span>
+                        {asset.type === "video" && asset.durationSeconds
+                          ? formatDuration(Math.ceil(asset.durationSeconds))
+                          : asset.type}
+                      </span>
+                      <span>·</span>
+                      <span>{asset.folderId ? mediaFolderMap.get(asset.folderId)?.name : "Root"}</span>
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="md:col-span-2 2xl:col-span-3 rounded-md border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                No media in this folder.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-medium text-foreground">
+              {selectedPlaylistId ? "Edit playlist" : "New playlist"}
             </p>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 pt-5">
-            <div className="flex flex-col gap-1.5">
-              <Label
-                className="text-[0.8rem] text-muted-foreground"
-                htmlFor="youtube-playlist-url"
+            <p className="mt-1 text-xs text-muted-foreground">
+              Save into {selectedPlaylistFolderId ? playlistFolderMap.get(selectedPlaylistFolderId)?.name : "Root"}.
+            </p>
+          </div>
+          <div className="space-y-4 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="playlist-name">Name</Label>
+              <Input
+                id="playlist-name"
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Main showroom loop"
+                value={name}
+              />
+            </div>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+              <div>
+                <div className="text-sm font-medium text-foreground">Fallback playlist</div>
+                <div className="text-xs text-muted-foreground">
+                  {currentDefault ? `Current default: ${currentDefault.name}` : "No fallback playlist yet"}
+                </div>
+              </div>
+              <input
+                checked={makeDefault}
+                className="size-4 accent-[var(--primary)]"
+                onChange={(event) => setMakeDefault(event.target.checked)}
+                type="checkbox"
+              />
+            </label>
+            <div
+              className="space-y-2 rounded-md border border-dashed border-border bg-background/40 p-3"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => handleQueueDrop(event)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-foreground">Queue</div>
+                <div className="text-xs text-muted-foreground">
+                  {queue.length} item{queue.length !== 1 ? "s" : ""}
+                </div>
+              </div>
+              {queue.length > 0 ? (
+                <div className="space-y-2">
+                  {queue.map((item, index) => {
+                    const asset = assetMap.get(item.assetId);
+                    if (!asset) {
+                      return null;
+                    }
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-md border border-border bg-card"
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }}
+                        onDrop={(event) => handleQueueDrop(event, index)}
+                      >
+                        <div
+                          className="flex items-center gap-3 px-3 py-2"
+                          draggable
+                          onDragStart={(event) => setDragData(event, "queue-item", item.id)}
+                        >
+                          <GripVertical className="size-4 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {asset.type === "video" && asset.durationSeconds
+                                ? formatDuration(Math.ceil(asset.durationSeconds))
+                                : "image"}
+                            </div>
+                          </div>
+                          {asset.type === "image" ? (
+                            <Input
+                              className="h-8 w-24"
+                              onChange={(event) =>
+                                updateQueueItem(item.id, {
+                                  dwellSeconds: event.target.value || null,
+                                })
+                              }
+                              placeholder="10"
+                              value={item.dwellSeconds ?? ""}
+                            />
+                          ) : null}
+                          <button
+                            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                            onClick={() => removeQueueItem(item.id)}
+                            type="button"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-border px-3 py-6 text-sm text-muted-foreground">
+                  Drag media here to build the playlist.
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" disabled={saving} onClick={() => void handleSave()} type="button">
+                {saving ? "Saving..." : "Save playlist"}
+              </Button>
+              <Button onClick={startNewPlaylist} type="button" variant="outline">
+                Reset
+              </Button>
+            </div>
+            {selectedPlaylistId ? (
+              <Button
+                className="w-full justify-start"
+                onClick={() => void handleDelete(selectedPlaylistId)}
+                type="button"
+                variant="outline"
               >
-                Playlist URL
-              </Label>
+                <Trash2 className="size-4" />
+                Delete playlist
+              </Button>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-medium text-foreground">Import YouTube playlist</p>
+          </div>
+          <div className="space-y-3 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="youtube-playlist-url">Playlist URL</Label>
               <Input
                 id="youtube-playlist-url"
                 onChange={(event) => setYoutubePlaylistUrl(event.target.value)}
@@ -374,437 +757,49 @@ export function PlaylistManager({
                 value={youtubePlaylistUrl}
               />
             </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  className="text-[0.8rem] text-muted-foreground"
-                  htmlFor="youtube-playlist-name"
-                >
-                  Playlist name (optional)
-                </Label>
-                <Input
-                  id="youtube-playlist-name"
-                  onChange={(event) => setYoutubePlaylistName(event.target.value)}
-                  placeholder="Use the YouTube playlist title"
-                  value={youtubePlaylistName}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  className="text-[0.8rem] text-muted-foreground"
-                  htmlFor="youtube-playlist-tags"
-                >
-                  Tags
-                </Label>
-                <Input
-                  id="youtube-playlist-tags"
-                  onChange={(event) => setYoutubePlaylistTags(event.target.value)}
-                  placeholder="youtube, campaign"
-                  value={youtubePlaylistTags}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="youtube-playlist-name">Override name</Label>
+              <Input
+                id="youtube-playlist-name"
+                onChange={(event) => setYoutubePlaylistName(event.target.value)}
+                placeholder="Optional"
+                value={youtubePlaylistName}
+              />
             </div>
-
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-[0.82rem] font-medium text-foreground">Set as fallback</p>
-                  <p className="text-[0.75rem] text-muted-foreground">
-                    Make the imported playlist the default loop whenever no schedule is active.
-                  </p>
-                </div>
-                <Switch
-                  checked={youtubePlaylistDefault}
-                  onCheckedChange={(checked) => setYoutubePlaylistDefault(checked)}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="youtube-playlist-tags">Tags</Label>
+              <Input
+                id="youtube-playlist-tags"
+                onChange={(event) => setYoutubePlaylistTags(event.target.value)}
+                placeholder="youtube, campaign"
+                value={youtubePlaylistTags}
+              />
             </div>
-
+            <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+              <span>Set as default</span>
+              <input
+                checked={youtubePlaylistDefault}
+                className="size-4 accent-[var(--primary)]"
+                onChange={(event) => setYoutubePlaylistDefault(event.target.checked)}
+                type="checkbox"
+              />
+            </label>
             <Button
+              className="w-full"
               disabled={!youtubePlaylistUrl.trim() || isImportingYouTubePlaylist}
               onClick={() => void handleImportYouTubePlaylist()}
               type="button"
             >
-              {isImportingYouTubePlaylist ? "Importing…" : "Import playlist"}
+              {isImportingYouTubePlaylist ? "Importing..." : "Import playlist"}
             </Button>
-
-            {youtubePlaylistStatus ? (
-              <p
-                className={cn(
-                  "text-[0.8rem] font-mono",
-                  youtubePlaylistStatus.ok ? "text-primary" : "text-destructive",
-                )}
-              >
-                {youtubePlaylistStatus.text}
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        {/* Create / Edit panel */}
-        <Card className="border border-border/70 bg-card/95">
-          <CardHeader className="border-b border-border/60">
-            <CardTitle className="text-[0.92rem] font-semibold">
-              {isEditing ? "Edit playlist" : "Create playlist"}
-            </CardTitle>
-            <p className="text-[0.78rem] text-muted-foreground">
-              {isEditing
-                ? "Reorder items, update dwell times, then save."
-                : "Select media below, arrange the queue, and save."}
-            </p>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 pt-5">
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-[0.8rem] text-muted-foreground" htmlFor="playlist-name">
-                Name
-              </Label>
-              <Input
-                id="playlist-name"
-                onChange={(event) => setName(event.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && name.trim() && queue.length > 0) void handleSave();
-                }}
-                placeholder="Main showroom loop"
-                value={name}
-              />
-            </div>
-
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-[0.82rem] font-medium text-foreground">Fallback playlist</p>
-                  <p className="text-[0.75rem] text-muted-foreground">
-                    Only one playlist can be active here. It plays whenever no schedule window is active.
-                  </p>
-                  <p className="text-[0.72rem] font-medium text-foreground/85">
-                    {makeDefault
-                      ? currentDefault && currentDefault.id !== editingId
-                        ? `Saving will replace "${currentDefault.name}" as the fallback.`
-                        : "This playlist will be the fallback."
-                      : currentDefault
-                        ? `Current fallback: "${currentDefault.name}".`
-                        : "No fallback is assigned yet. The first saved playlist becomes the fallback automatically."}
-                  </p>
-                </div>
-                <Switch checked={makeDefault} onCheckedChange={(checked) => setMakeDefault(checked)} />
-              </div>
-            </div>
-
-            {/* Ordered queue */}
-            {queue.length > 0 ? (
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                <p className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary">
-                  Queue · {queue.length} item{queue.length !== 1 ? "s" : ""}
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  {queue.map((item, index) => {
-                    const asset = assetMap.get(item.assetId);
-                    if (!asset) return null;
-                    return (
-                      <div
-                        key={item.assetId}
-                        className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/80 px-2 py-1.5"
-                      >
-                        {/* Reorder arrows */}
-                        <div className="flex flex-col">
-                          <button
-                            aria-label="Move up"
-                            className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
-                            disabled={index === 0}
-                            onClick={() => moveItem(index, "up")}
-                            type="button"
-                          >
-                            ▲
-                          </button>
-                          <button
-                            aria-label="Move down"
-                            className="flex h-4 w-4 items-center justify-center text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-25"
-                            disabled={index === queue.length - 1}
-                            onClick={() => moveItem(index, "down")}
-                            type="button"
-                          >
-                            ▼
-                          </button>
-                        </div>
-
-                        <span className="flex-1 truncate text-[0.8rem] font-medium text-foreground">
-                          {asset.title}
-                        </span>
-
-                        {/* Dwell / duration */}
-                        {asset.type === "image" ? (
-                          <div
-                            className="w-24 shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Select
-                              items={[{ label: "Default", value: DWELL_DEFAULT_VALUE }, ...DWELL_OPTIONS]}
-                              value={item.dwellSeconds ?? DWELL_DEFAULT_VALUE}
-                              onValueChange={(value) =>
-                                setDwell(
-                                  item.assetId,
-                                  !value || value === DWELL_DEFAULT_VALUE ? null : value,
-                                )
-                              }
-                            >
-                              <SelectTrigger className="h-7 text-[0.75rem] font-mono">
-                                <SelectValue placeholder="Default" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={DWELL_DEFAULT_VALUE}>Default</SelectItem>
-                                {DWELL_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : (
-                          <span className="shrink-0 font-mono text-[0.72rem] text-muted-foreground">
-                            {asset.durationSeconds
-                              ? formatDuration(Math.ceil(asset.durationSeconds))
-                              : "video"}
-                          </span>
-                        )}
-
-                        {/* Remove */}
-                        <button
-                          aria-label="Remove"
-                          className="ml-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-destructive"
-                          onClick={() => toggleAsset(item.assetId)}
-                          type="button"
-                        >
-                          <svg className="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <path d="M3 3l10 10M13 3L3 13" />
-                          </svg>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-3">
-                <p className="text-[0.8rem] text-muted-foreground">
-                  Click media cards below to add them to the queue.
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                disabled={saving || !name.trim() || queue.length === 0}
-                onClick={() => void handleSave()}
-                type="button"
-              >
-                {saving ? "Saving…" : isEditing ? "Update playlist" : "Save playlist"}
-              </Button>
-              {isEditing ? (
-                <Button onClick={cancelEditing} type="button" variant="outline">
-                  Cancel
-                </Button>
-              ) : null}
-            </div>
-
             {status ? (
-              <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
+              <div className={cn("rounded-md border border-border px-3 py-2 text-sm", status.ok ? "text-foreground" : "text-destructive")}>
                 {status.text}
-              </p>
-            ) : !hasMedia ? (
-              <p className="text-[0.8rem] font-mono text-muted-foreground">
-                Upload media before building a playlist.
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        {/* Source media */}
-        <Card className="border border-border/70 bg-card/95">
-          <CardHeader className="border-b border-border/60">
-            <CardTitle className="text-[0.92rem] font-semibold">Source media</CardTitle>
-            <p className="text-[0.78rem] text-muted-foreground">
-              Click a card to add or remove it from the queue.
-            </p>
-          </CardHeader>
-          <CardContent className="grid gap-3 pt-5 md:grid-cols-2">
-            {!hasMedia ? (
-              <div className="md:col-span-2 rounded-xl border border-dashed border-border/80 bg-muted/15 p-5">
-                <p className="text-sm font-medium text-foreground">No media yet</p>
-                <p className="mt-1 text-[0.78rem] text-muted-foreground">
-                  Upload assets on the Media page first.
-                </p>
               </div>
             ) : null}
-            {assets.map((asset) => {
-              const isSelected = selectedSet.has(asset.id);
-              return (
-                <button
-                  key={asset.id}
-                  className={cn(
-                    "group flex items-center gap-3 rounded-xl border p-3 text-left transition-all",
-                    isSelected
-                      ? "border-primary/70 bg-primary/8 shadow-[0_0_0_1px_rgba(0,217,160,0.2)]"
-                      : "border-border/80 bg-muted/15 hover:border-primary/30 hover:bg-muted/25",
-                  )}
-                  onClick={() => toggleAsset(asset.id)}
-                  type="button"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-input bg-background dark:bg-input/40",
-                    )}
-                  >
-                    {isSelected ? <Check className="size-3" /> : null}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{asset.title}</p>
-                    <p className="truncate font-mono text-[0.72rem] text-muted-foreground">
-                      {asset.fileName}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0">
-                    {asset.type === "video"
-                      ? asset.durationSeconds
-                        ? formatDuration(Math.ceil(asset.durationSeconds))
-                        : "video"
-                      : "image"}
-                  </Badge>
-                </button>
-              );
-            })}
-          </CardContent>
-        </Card>
-
-        {/* Existing playlists */}
-        {playlists.length > 0 ? (
-          <section>
-            <div className="mb-3 flex flex-col gap-3">
-              <h2 className="text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Saved playlists
-              </h2>
-              <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/8 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="size-4 text-primary" />
-                    <p className="text-[0.78rem] font-semibold text-foreground">Current fallback</p>
-                  </div>
-                  <p className="mt-1 truncate text-sm text-foreground">
-                    {currentDefault?.name ?? "No fallback playlist assigned"}
-                  </p>
-                </div>
-                <Badge className="shrink-0 gap-1">
-                  <Sparkles className="size-3" />
-                  One active
-                </Badge>
-              </div>
-            </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
-              {orderedPlaylists.map((playlist) => (
-                <Card key={playlist.id} className={cn(
-                  "border bg-card/95 transition-colors",
-                  editingId === playlist.id
-                    ? "border-primary/50 bg-primary/5"
-                    : playlist.isDefault
-                      ? "border-primary/35 bg-primary/6"
-                      : "border-border/70",
-                )}>
-                  <CardHeader className="border-b border-border/60 pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <CardTitle className="truncate text-[0.88rem] font-semibold">
-                          {playlist.name}
-                        </CardTitle>
-                        <div className="mt-0.5 flex items-center gap-2">
-                          <p className="text-[0.75rem] text-muted-foreground">
-                            {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
-                          </p>
-                          {playlist.isDefault ? (
-                            <Badge className="h-5 px-1.5 text-[0.62rem] uppercase tracking-[0.14em]">
-                              Current fallback
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          disabled={deleting || defaultingId !== null || playlist.isDefault}
-                          onClick={() => void handleSetDefault(playlist)}
-                          size="sm"
-                          type="button"
-                          variant={playlist.isDefault ? "secondary" : "outline"}
-                        >
-                          {playlist.isDefault
-                            ? "Fallback"
-                            : defaultingId === playlist.id
-                              ? "Setting..."
-                              : "Set fallback"}
-                        </Button>
-                        <Button
-                          disabled={deleting}
-                          onClick={() => startEditing(playlist)}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          className={confirmDeleteId === playlist.id ? "border-destructive/30 text-destructive hover:bg-destructive/10" : ""}
-                          disabled={deleting}
-                          onClick={() => void handleDelete(playlist.id)}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          {confirmDeleteId === playlist.id ? "Confirm?" : "Delete"}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="divide-y divide-border/60 pt-1">
-                    {[...playlist.items]
-                      .sort((a, b) => a.order - b.order)
-                      .map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[0.72rem] font-mono text-muted-foreground/60 w-4 shrink-0 text-center">
-                              {item.order + 1}
-                            </span>
-                            <span className="truncate text-[0.82rem] text-foreground">
-                              {item.asset.title}
-                            </span>
-                          </div>
-                          <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">
-                            {item.asset.type === "video"
-                              ? item.asset.durationSeconds
-                                ? formatDuration(Math.ceil(item.asset.durationSeconds))
-                                : "video"
-                              : item.dwellSeconds
-                                ? `${item.dwellSeconds}s`
-                                : "default"}
-                          </span>
-                        </div>
-                      ))}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center">
-            <p className="text-[0.85rem] text-muted-foreground">No playlists yet. Create one above.</p>
           </div>
-        )}
-      </div>
+        </section>
+      </aside>
     </div>
   );
 }

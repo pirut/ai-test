@@ -39,6 +39,7 @@ export const releaseUpdatePayloadSchema = z
 
 export const mediaTypeSchema = z.enum(["image", "video"]);
 export const assetSourceTypeSchema = z.enum(["upload", "youtube"]);
+export const libraryFolderKindSchema = z.enum(["media", "playlist"]);
 export const releaseRolloutStatusSchema = z.enum([
   "queued",
   "in_progress",
@@ -141,8 +142,17 @@ export const deviceSummarySchema = z.object({
   manifestVersion: z.string().nullable(),
 });
 
+export const libraryFolderSchema = z.object({
+  id: z.string(),
+  kind: libraryFolderKindSchema,
+  name: z.string(),
+  parentId: z.string().nullable().default(null),
+  order: z.number().int().nonnegative().default(0),
+});
+
 export const mediaAssetSchema = z.object({
   id: z.string(),
+  folderId: z.string().nullable().default(null),
   title: z.string(),
   type: mediaTypeSchema,
   sourceType: assetSourceTypeSchema.default("upload"),
@@ -168,6 +178,7 @@ export const playlistItemSchema = z.object({
 
 export const playlistSchema = z.object({
   id: z.string(),
+  folderId: z.string().nullable().default(null),
   name: z.string(),
   isDefault: z.boolean().default(false),
   items: z.array(playlistItemSchema),
@@ -222,6 +233,7 @@ export type DeviceCommandResult = z.infer<typeof deviceCommandResultSchema>;
 export type TemporaryRegistrationResponse = z.infer<typeof temporaryRegistrationResponseSchema>;
 export type ClaimStatusResponse = z.infer<typeof claimStatusResponseSchema>;
 export type DeviceSummary = z.infer<typeof deviceSummarySchema>;
+export type LibraryFolder = z.infer<typeof libraryFolderSchema>;
 export type MediaAsset = z.infer<typeof mediaAssetSchema>;
 export type Playlist = z.infer<typeof playlistSchema>;
 export type DashboardStats = z.infer<typeof dashboardStatsSchema>;
@@ -229,9 +241,51 @@ export type ReleaseUpdatePayload = z.infer<typeof releaseUpdatePayloadSchema>;
 export type ReleaseSummary = z.infer<typeof releaseSummarySchema>;
 export type ReleaseRollout = z.infer<typeof releaseRolloutSchema>;
 
+export const mockMediaFolders: LibraryFolder[] = [
+  {
+    id: "folder-media-campaigns",
+    kind: "media",
+    name: "Campaigns",
+    parentId: null,
+    order: 0,
+  },
+  {
+    id: "folder-media-launch",
+    kind: "media",
+    name: "Launch",
+    parentId: "folder-media-campaigns",
+    order: 0,
+  },
+  {
+    id: "folder-media-evergreen",
+    kind: "media",
+    name: "Evergreen",
+    parentId: null,
+    order: 1,
+  },
+];
+
+export const mockPlaylistFolders: LibraryFolder[] = [
+  {
+    id: "folder-playlist-showroom",
+    kind: "playlist",
+    name: "Showroom",
+    parentId: null,
+    order: 0,
+  },
+  {
+    id: "folder-playlist-seasonal",
+    kind: "playlist",
+    name: "Seasonal",
+    parentId: null,
+    order: 1,
+  },
+];
+
 export const mockMediaAssets: MediaAsset[] = [
   {
     id: "asset-hero-video",
+    folderId: "folder-media-launch",
     title: "Showroom hero reel",
     type: "video",
     sourceType: "upload",
@@ -242,12 +296,14 @@ export const mockMediaAssets: MediaAsset[] = [
     height: 1080,
     durationSeconds: 24,
     storagePath: "media/org-demo/hero-reel.mp4",
-    previewUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
+    previewUrl:
+      "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     checksum: "sha256:hero-reel",
     tags: ["launch", "video"],
   },
   {
     id: "asset-feature-poster",
+    folderId: "folder-media-campaigns",
     title: "Feature poster",
     type: "image",
     sourceType: "upload",
@@ -257,12 +313,14 @@ export const mockMediaAssets: MediaAsset[] = [
     width: 1920,
     height: 1080,
     storagePath: "media/org-demo/feature-poster.webp",
-    previewUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80",
+    previewUrl:
+      "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80",
     checksum: "sha256:feature-poster",
     tags: ["image", "poster"],
   },
   {
     id: "asset-detail-slide",
+    folderId: "folder-media-evergreen",
     title: "Detail slide",
     type: "image",
     sourceType: "upload",
@@ -272,7 +330,8 @@ export const mockMediaAssets: MediaAsset[] = [
     width: 1920,
     height: 1080,
     storagePath: "media/org-demo/detail-slide.jpg",
-    previewUrl: "https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=1200&q=80",
+    previewUrl:
+      "https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=1200&q=80",
     checksum: "sha256:detail-slide",
     tags: ["detail", "image"],
   },
@@ -280,6 +339,7 @@ export const mockMediaAssets: MediaAsset[] = [
 
 export const mockPlaylist: Playlist = {
   id: "playlist-main-showroom",
+  folderId: "folder-playlist-showroom",
   name: "Main showroom loop",
   isDefault: true,
   items: [
@@ -287,19 +347,19 @@ export const mockPlaylist: Playlist = {
       id: "item-1",
       order: 0,
       dwellSeconds: null,
-      asset: mockMediaAssets[0],
+      asset: mockMediaAssets[0]!,
     },
     {
       id: "item-2",
       order: 1,
       dwellSeconds: 12,
-      asset: mockMediaAssets[1],
+      asset: mockMediaAssets[1]!,
     },
     {
       id: "item-3",
       order: 2,
       dwellSeconds: 10,
-      asset: mockMediaAssets[2],
+      asset: mockMediaAssets[2]!,
     },
   ],
 };
@@ -319,8 +379,7 @@ export const mockManifest: DeviceManifest = {
     title: item.asset.title,
     url: item.asset.previewUrl,
     checksum: item.asset.checksum,
-    durationSeconds:
-      item.dwellSeconds ?? item.asset.durationSeconds ?? 10,
+    durationSeconds: item.dwellSeconds ?? item.asset.durationSeconds ?? 10,
   })),
   scheduleWindows: [
     {
@@ -345,7 +404,8 @@ export const mockDevices: DeviceSummary[] = [
     siteName: "Chelsea showroom",
     status: "online",
     lastHeartbeatAt: "2026-03-11T10:02:00.000Z",
-    screenshotUrl: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80",
+    screenshotUrl:
+      "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80",
     currentPlaylistName: mockPlaylist.name,
     manifestVersion: mockManifest.manifestVersion,
   },
@@ -355,7 +415,8 @@ export const mockDevices: DeviceSummary[] = [
     siteName: "Chelsea showroom",
     status: "stale",
     lastHeartbeatAt: "2026-03-11T09:58:12.000Z",
-    screenshotUrl: "https://images.unsplash.com/photo-1497366412874-3415097a27e7?auto=format&fit=crop&w=1200&q=80",
+    screenshotUrl:
+      "https://images.unsplash.com/photo-1497366412874-3415097a27e7?auto=format&fit=crop&w=1200&q=80",
     currentPlaylistName: "Accessories focus",
     manifestVersion: "manifest-2026-03-11T09:30:00Z",
   },

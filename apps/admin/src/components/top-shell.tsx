@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
-  Bell,
   CalendarRange,
   ImageIcon,
   LayoutDashboard,
@@ -36,7 +35,7 @@ const clerkAppearance = {
     colorInputText: "#f9f9fd",
     colorNeutral: "#f9f9fd",
     fontFamily: "var(--font-sans)",
-    borderRadius: "10px",
+    borderRadius: "8px",
     fontSize: "14px",
   },
 } as const;
@@ -46,46 +45,26 @@ export function TopShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-background/95 backdrop-blur-xl">
-        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 md:pl-[17rem] md:pr-8">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            <Link href="/dashboard" className="flex min-w-0 items-center gap-3 md:hidden">
-              <div className="flex size-8 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[11px] font-bold text-primary-foreground">
-                DC
-              </div>
-              <div className="min-w-0">
-                <p className="font-heading truncate text-sm font-bold text-foreground">
-                  Digital Curator
-                </p>
-                <p className="truncate text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                  Media manager
-                </p>
-              </div>
-            </Link>
-
-            <div className="hidden max-w-xl flex-1 items-center gap-2 rounded-lg bg-card px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ring-1 ring-white/6 md:flex">
-              <Search className="size-4 text-muted-foreground" />
-              <input
-                aria-label="Search"
-                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                placeholder="Search assets, devices, playlists, or schedules..."
-                type="search"
-              />
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-sidebar-border bg-background">
+        <div className="flex h-14 items-center gap-4 px-4 sm:px-6 md:pl-[17rem] md:pr-6">
+          <Link href="/dashboard" className="flex min-w-0 items-center gap-3 md:hidden">
+            <div className="flex size-8 items-center justify-center rounded-md bg-accent text-xs font-semibold text-foreground">
+              DC
             </div>
+            <span className="truncate text-sm font-medium text-foreground">Digital Curator</span>
+          </Link>
+
+          <div className="hidden max-w-xl flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 md:flex">
+            <Search className="size-4 text-muted-foreground" />
+            <input
+              aria-label="Search"
+              className="h-9 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              placeholder="Search media, playlists, devices, or schedules"
+              type="search"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              aria-label="Notifications"
-              className="hidden size-9 items-center justify-center rounded-md border border-white/6 bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:inline-flex"
-              type="button"
-            >
-              <Bell className="size-4" />
-            </button>
-            <div className="hidden items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary md:flex">
-              <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_rgba(141,172,255,0.65)]" />
-              Operational
-            </div>
+          <div className="ml-auto flex items-center gap-2">
             <div className="hidden md:block">
               <OrganizationSwitcher
                 afterCreateOrganizationUrl="/dashboard"
@@ -95,16 +74,11 @@ export function TopShell({ children }: { children: React.ReactNode }) {
                 appearance={clerkAppearance}
               />
             </div>
-            <div className="hidden md:block">
-              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
-            </div>
-            <div className="md:hidden">
-              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
-            </div>
+            <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
           </div>
         </div>
 
-        <div className="border-t border-white/5 md:hidden">
+        <div className="border-t border-sidebar-border md:hidden">
           <nav className="flex gap-1 overflow-x-auto px-2 py-2">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
@@ -115,13 +89,13 @@ export function TopShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                    "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm transition-colors",
                     isActive
-                      ? "bg-accent text-primary"
+                      ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  <Icon className="size-4" />
                   {item.label}
                 </Link>
               );
@@ -130,20 +104,20 @@ export function TopShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/92 px-4 py-6 backdrop-blur-xl md:flex">
-        <Link href="/dashboard" className="flex items-start gap-3 px-2 pb-8 pt-1">
-          <div className="flex size-9 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[12px] font-bold text-primary-foreground">
-            DC
-          </div>
-          <div>
-            <p className="font-heading text-base font-bold text-foreground">Digital Curator</p>
-            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              Enterprise control
-            </p>
-          </div>
-        </Link>
+      <aside className="fixed inset-y-0 left-0 hidden w-[248px] flex-col border-r border-sidebar-border bg-sidebar md:flex">
+        <div className="border-b border-sidebar-border px-5 py-4">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <div className="flex size-8 items-center justify-center rounded-md bg-accent text-xs font-semibold text-foreground">
+              DC
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-foreground">Digital Curator</div>
+              <div className="truncate text-xs text-muted-foreground">Media manager</div>
+            </div>
+          </Link>
+        </div>
 
-        <nav className="flex flex-1 flex-col gap-1 px-1">
+        <nav className="flex-1 space-y-1 px-3 py-4">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -153,42 +127,31 @@ export function TopShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-r-full px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                  "flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors",
                   isActive
-                    ? "border-l-2 border-primary bg-accent text-primary"
+                    ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
-                <Icon
-                  className={cn(
-                    "size-4",
-                    isActive ? "text-primary" : "text-muted-foreground",
-                  )}
-                />
-                {item.label}
+                <Icon className="size-4" />
+                <span>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="mt-auto space-y-3 px-1">
+        <div className="border-t border-sidebar-border p-3">
           <Link
             href="/media"
-            className="flex items-center justify-center rounded-lg bg-[linear-gradient(90deg,#296cf0,#8dacff)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary-foreground transition-[filter] hover:brightness-110"
+            className="flex h-9 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             Open media library
           </Link>
-          <div className="border-t border-white/6 pt-3">
-            <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              <span>Navigation</span>
-              <span className="text-primary">Live</span>
-            </div>
-          </div>
         </div>
       </aside>
 
-      <main className="pt-[7.25rem] md:pl-64 md:pt-16">
-        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px] flex-col gap-8 px-4 py-6 sm:px-6 md:px-8 md:py-8 lg:px-10">
+      <main className="pt-[6.5rem] md:pl-[248px] md:pt-14">
+        <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] w-full max-w-[1480px] flex-col gap-6 px-4 py-6 sm:px-6 md:px-8">
           {children}
         </div>
       </main>

@@ -112,10 +112,7 @@
 
   body {
     @apply text-foreground font-sans;
-    background:
-      radial-gradient(circle at top right, rgba(141, 172, 255, 0.1), transparent 20%),
-      radial-gradient(circle at bottom left, rgba(255, 167, 238, 0.05), transparent 22%),
-      var(--background);
+    background: var(--background);
     font-size: 14px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;

@@ -145,8 +145,22 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_device_and_captured_at", ["deviceId", "capturedAt"]),
 
+  libraryFolders: defineTable({
+    organizationId: v.string(),
+    kind: v.union(v.literal("media"), v.literal("playlist")),
+    name: v.string(),
+    parentFolderId: v.optional(v.id("libraryFolders")),
+    order: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_org_and_kind", ["organizationId", "kind"])
+    .index("by_parent", ["parentFolderId"]),
+
   mediaAssets: defineTable({
     organizationId: v.string(),
+    folderId: v.optional(v.id("libraryFolders")),
     title: v.string(),
     mediaType: v.union(v.literal("image"), v.literal("video")),
     sourceType: v.optional(v.union(v.literal("upload"), v.literal("youtube"))),
@@ -201,6 +215,7 @@ export default defineSchema({
 
   playlists: defineTable({
     organizationId: v.string(),
+    folderId: v.optional(v.id("libraryFolders")),
     name: v.string(),
     description: v.optional(v.string()),
     isDefault: v.boolean(),

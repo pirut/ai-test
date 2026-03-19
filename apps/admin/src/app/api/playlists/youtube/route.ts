@@ -9,6 +9,8 @@ const schema = z.object({
   makeDefault: z.boolean().optional(),
   name: z.string().trim().optional(),
   tags: z.array(z.string()).default([]),
+  folderId: z.string().nullable().optional(),
+  assetFolderId: z.string().nullable().optional(),
   url: z.string().trim().min(1),
 });
 
@@ -30,6 +32,8 @@ export async function POST(request: Request) {
       makeDefault: payload.makeDefault,
       name: payload.name || youtubePlaylist.title,
       tags: payload.tags,
+      folderId: payload.folderId,
+      assetFolderId: payload.assetFolderId,
       videos: youtubePlaylist.videos.map((video) => ({
         durationSeconds: video.durationSeconds,
         fileName: video.fileName,

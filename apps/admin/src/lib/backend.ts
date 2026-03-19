@@ -2,10 +2,12 @@ import { auth } from "@clerk/nextjs/server";
 import {
   type DeviceCommandResult,
   type HeartbeatPayload,
+  type LibraryFolder,
   type ScreenshotUploadPayload,
   dashboardStatsSchema,
   deviceManifestSchema,
   deviceSummarySchema,
+  libraryFolderSchema,
   mediaAssetSchema,
   playlistSchema,
   releaseSummarySchema,
@@ -177,6 +179,26 @@ export async function listMediaAssets() {
   return z.array(mediaAssetSchema).parse(result);
 }
 
+export async function listMediaFolders() {
+  if (!hasConvexBackend()) {
+    return mock.listLibraryFolders("media");
+  }
+
+  return z.array(libraryFolderSchema).parse(
+    await convexQuery(api.admin.listLibraryFolders, { kind: "media" }),
+  );
+}
+
+export async function listPlaylistFolders() {
+  if (!hasConvexBackend()) {
+    return mock.listLibraryFolders("playlist");
+  }
+
+  return z.array(libraryFolderSchema).parse(
+    await convexQuery(api.admin.listLibraryFolders, { kind: "playlist" }),
+  );
+}
+
 export async function listReleases() {
   if (!hasConvexBackend()) {
     return mock.listReleases();
@@ -243,9 +265,10 @@ export async function finalizeMediaUpload(input: {
   height?: number;
   durationSeconds?: number;
   tags: string[];
+  folderId?: string | null;
 }) {
   if (!hasConvexBackend()) {
-    return mock.listMediaAssets().at(0) ?? null;
+    return mock.finalizeMediaUpload(input);
   }
 
   return mediaAssetSchema.parse(
@@ -260,6 +283,7 @@ export async function createYouTubeMediaAsset(input: {
   fileName: string;
   durationSeconds?: number;
   tags: string[];
+  folderId?: string | null;
 }) {
   if (!hasConvexBackend()) {
     return mock.createYouTubeMediaAsset(input);
@@ -274,6 +298,8 @@ export async function importYouTubePlaylist(input: {
   makeDefault?: boolean;
   name: string;
   tags: string[];
+  folderId?: string | null;
+  assetFolderId?: string | null;
   videos: Array<{
     durationSeconds?: number;
     fileName: string;
@@ -378,6 +404,7 @@ export async function compileManifests(orgId: string) {
 export async function savePlaylist(input: {
   playlistId?: string;
   name: string;
+  folderId?: string | null;
   itemIds: Array<{
     mediaAssetId: string;
     dwellSeconds?: number;
@@ -389,6 +416,18 @@ export async function savePlaylist(input: {
   }
 
   return playlistSchema.parse(await convexMutation(api.admin.savePlaylist, input));
+}
+
+export async function updatePlaylist(input: {
+  playlistId: string;
+  name?: string;
+  folderId?: string | null;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.updatePlaylist(input);
+  }
+
+  return playlistSchema.parse(await convexMutation(api.admin.updatePlaylist, input));
 }
 
 export async function setDefaultPlaylist(playlistId: string) {
@@ -632,14 +671,57 @@ export async function deleteMediaAsset(id: string) {
   await convexMutation(api.admin.deleteMediaAsset, { assetId: id as never });
 }
 
-export async function updateMediaAsset(id: string, title: string, tags: string[]) {
+export async function updateMediaAsset(input: {
+  assetId: string;
+  title?: string;
+  tags?: string[];
+  folderId?: string | null;
+}) {
   if (!hasConvexBackend()) {
-    return mock.updateMediaAsset(id, title, tags);
+    return mock.updateMediaAsset(input);
   }
 
   return mediaAssetSchema.parse(
-    await convexMutation(api.admin.updateMediaAsset, { assetId: id as never, title, tags }),
+    await convexMutation(api.admin.updateMediaAsset, {
+      assetId: input.assetId as never,
+      title: input.title,
+      tags: input.tags,
+      folderId: input.folderId,
+    }),
   );
+}
+
+export async function createLibraryFolder(input: {
+  kind: LibraryFolder["kind"];
+  name: string;
+  parentId?: string | null;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.createLibraryFolder(input);
+  }
+
+  return libraryFolderSchema.parse(await convexMutation(api.admin.createLibraryFolder, input));
+}
+
+export async function updateLibraryFolder(input: {
+  folderId: string;
+  name?: string;
+  parentId?: string | null;
+}) {
+  if (!hasConvexBackend()) {
+    return mock.updateLibraryFolder(input);
+  }
+
+  return libraryFolderSchema.parse(await convexMutation(api.admin.updateLibraryFolder, input));
+}
+
+export async function deleteLibraryFolder(folderId: string) {
+  if (!hasConvexBackend()) {
+    mock.deleteLibraryFolder(folderId);
+    return;
+  }
+
+  await convexMutation(api.admin.deleteLibraryFolder, { folderId: folderId as never });
 }
 
 export async function upsertOrganizationFromClerkWebhook(input: {

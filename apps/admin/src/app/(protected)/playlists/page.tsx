@@ -1,22 +1,34 @@
 import { PageHeader } from "@/components/page-header";
 import { PlaylistManagerShell } from "@/components/playlist-manager-shell";
 import { requireOrgId } from "@/lib/auth";
-import { listMediaAssets, listPlaylists } from "@/lib/backend";
+import {
+  listMediaAssets,
+  listMediaFolders,
+  listPlaylistFolders,
+  listPlaylists,
+} from "@/lib/backend";
 
 export default async function PlaylistsPage() {
   await requireOrgId();
-  const [playlists, mediaAssets] = await Promise.all([
+  const [playlists, mediaAssets, playlistFolders, mediaFolders] = await Promise.all([
     listPlaylists(),
     listMediaAssets(),
+    listPlaylistFolders(),
+    listMediaFolders(),
   ]);
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Playlists"
-        description="Assemble ordered playback sequences and designate fallback loops."
+        description="Build loops with drag and drop, organize them in folders, and keep a clear fallback playlist."
       />
-      <PlaylistManagerShell initialPlaylists={playlists} mediaAssets={mediaAssets} />
+      <PlaylistManagerShell
+        initialMediaFolders={mediaFolders}
+        initialPlaylistFolders={playlistFolders}
+        initialPlaylists={playlists}
+        mediaAssets={mediaAssets}
+      />
     </div>
   );
 }

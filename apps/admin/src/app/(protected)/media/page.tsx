@@ -1,19 +1,19 @@
 import { MediaLibraryManager } from "@/components/media-library-manager";
 import { PageHeader } from "@/components/page-header";
 import { requireOrgId } from "@/lib/auth";
-import { listMediaAssets } from "@/lib/backend";
+import { listMediaAssets, listMediaFolders } from "@/lib/backend";
 
 export default async function MediaPage() {
   await requireOrgId();
-  const media = await listMediaAssets();
+  const [media, folders] = await Promise.all([listMediaAssets(), listMediaFolders()]);
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Media library"
-        description={`${media.length} asset${media.length !== 1 ? "s" : ""} available for playlists and scheduled playback.`}
+        description={`${media.length} asset${media.length !== 1 ? "s" : ""} across ${folders.length} folder${folders.length !== 1 ? "s" : ""}.`}
       />
-      <MediaLibraryManager initialAssets={media} />
+      <MediaLibraryManager initialAssets={media} initialFolders={folders} />
     </div>
   );
 }

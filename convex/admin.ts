@@ -25,6 +25,85 @@ async function listOrgMediaAssets(ctx: any, orgId: string) {
     .collect() as Promise<Array<Doc<"mediaAssets">>>;
 }
 
+async function listOrgFolders(
+  ctx: any,
+  orgId: string,
+  kind?: "media" | "playlist",
+) {
+  const folders = kind
+    ? await ctx.db
+        .query("libraryFolders")
+        .withIndex("by_org_and_kind", (q: any) =>
+          q.eq("organizationId", orgId).eq("kind", kind),
+        )
+        .collect()
+    : await ctx.db
+        .query("libraryFolders")
+        .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+        .collect();
+
+  return folders as Array<Doc<"libraryFolders">>;
+}
+
+function serializeFolder(folder: Doc<"libraryFolders">) {
+  return {
+    id: folder._id,
+    kind: folder.kind,
+    name: folder.name,
+    parentId: folder.parentFolderId ?? null,
+    order: folder.order,
+  };
+}
+
+async function assertFolderForKind(
+  ctx: any,
+  orgId: string,
+  folderId: Id<"libraryFolders"> | undefined,
+  kind: "media" | "playlist",
+) {
+  if (!folderId) {
+    return null;
+  }
+
+  const folder = await ctx.db.get(folderId);
+  if (!folder || folder.organizationId !== orgId || folder.kind !== kind) {
+    throw new ConvexError("Folder not found");
+  }
+
+  return folder;
+}
+
+function collectDescendantFolderIds(
+  folders: Array<Doc<"libraryFolders">>,
+  folderId: Id<"libraryFolders">,
+) {
+  const descendants = new Set<Id<"libraryFolders">>();
+  const queue = [folderId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const folder of folders) {
+      if (folder.parentFolderId === current && !descendants.has(folder._id)) {
+        descendants.add(folder._id);
+        queue.push(folder._id);
+      }
+    }
+  }
+
+  descendants.delete(folderId);
+  return descendants;
+}
+
+function nextFolderOrder(
+  folders: Array<Doc<"libraryFolders">>,
+  kind: "media" | "playlist",
+  parentFolderId?: Id<"libraryFolders">,
+) {
+  return folders.filter(
+    (folder) => folder.kind === kind && folder.parentFolderId === parentFolderId,
+  ).length;
+}
+
 function sortPlaylistsForFallback(playlists: Array<Doc<"playlists">>) {
   return [...playlists].sort((a, b) => {
     const createdAtDiff = a.createdAt - b.createdAt;
@@ -115,6 +194,7 @@ async function upsertYouTubeAsset(
     fileName: string;
     durationSeconds?: number;
     tags: string[];
+    folderId?: Id<"libraryFolders">;
   },
   existingByChecksum?: Map<string, Doc<"mediaAssets">>,
 ) {
@@ -129,8 +209,10 @@ async function upsertYouTubeAsset(
   }
 
   const now = Date.now();
+  await assertFolderForKind(ctx, orgId, args.folderId, "media");
   if (existing) {
     await ctx.db.patch(existing._id, {
+      folderId: args.folderId ?? existing.folderId,
       title: args.title,
       sourceType: "youtube",
       sourceUrl: args.sourceUrl,
@@ -156,6 +238,7 @@ async function upsertYouTubeAsset(
 
   const assetId = await ctx.db.insert("mediaAssets", {
     organizationId: orgId,
+    folderId: args.folderId,
     title: args.title,
     mediaType: "video",
     sourceType: "youtube",
@@ -187,6 +270,7 @@ async function savePlaylistRecord(
   args: {
     playlistId?: Id<"playlists">;
     name: string;
+    folderId?: Id<"libraryFolders">;
     itemIds: Array<{
       mediaAssetId: Id<"mediaAssets">;
       dwellSeconds?: number;
@@ -201,6 +285,8 @@ async function savePlaylistRecord(
     }
   }
 
+  await assertFolderForKind(ctx, orgId, args.folderId, "playlist");
+
   let playlistId = args.playlistId;
   let existing: Doc<"playlists"> | null = null;
   if (playlistId) {
@@ -211,6 +297,7 @@ async function savePlaylistRecord(
 
     const shouldBeDefault = args.makeDefault ?? existing.isDefault;
     await ctx.db.patch(playlistId, {
+      folderId: args.folderId ?? existing.folderId,
       name: args.name,
       isDefault: shouldBeDefault,
       updatedAt: Date.now(),
@@ -220,6 +307,7 @@ async function savePlaylistRecord(
     const shouldBeDefault = args.makeDefault ?? orgPlaylists.length === 0;
     playlistId = await ctx.db.insert("playlists", {
       organizationId: orgId,
+      folderId: args.folderId,
       name: args.name,
       description: undefined,
       isDefault: shouldBeDefault,
@@ -434,6 +522,18 @@ export const listMediaAssets = query({
   },
 });
 
+export const listLibraryFolders = query({
+  args: {
+    kind: v.union(v.literal("media"), v.literal("playlist")),
+  },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgIdentity(ctx);
+    const folders = await listOrgFolders(ctx, orgId, args.kind);
+    return folders.map(serializeFolder);
+  },
+});
+
 export const listReleases = query({
   args: {},
   returns: v.array(v.any()),
@@ -576,6 +676,95 @@ export const generateMediaUploadUrl = mutation({
   },
 });
 
+export const createLibraryFolder = mutation({
+  args: {
+    kind: v.union(v.literal("media"), v.literal("playlist")),
+    name: v.string(),
+    parentId: v.optional(v.union(v.id("libraryFolders"), v.null())),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const parentId = args.parentId ?? undefined;
+    if (parentId) {
+      await assertFolderForKind(ctx, orgId, parentId, args.kind);
+    }
+
+    const folders = await listOrgFolders(ctx, orgId, args.kind);
+    const folderId = await ctx.db.insert("libraryFolders", {
+      organizationId: orgId,
+      kind: args.kind,
+      name: args.name,
+      parentFolderId: parentId,
+      order: nextFolderOrder(folders, args.kind, parentId),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const folder = await ctx.db.get(folderId);
+    if (!folder) {
+      throw new ConvexError("Folder not found after create");
+    }
+
+    return serializeFolder(folder);
+  },
+});
+
+export const updateLibraryFolder = mutation({
+  args: {
+    folderId: v.id("libraryFolders"),
+    name: v.optional(v.string()),
+    parentId: v.optional(v.union(v.id("libraryFolders"), v.null())),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder || folder.organizationId !== orgId) {
+      throw new ConvexError("Folder not found");
+    }
+
+    const allFolders = await listOrgFolders(ctx, orgId);
+    const patch: Partial<Doc<"libraryFolders">> = {};
+
+    if (typeof args.name === "string") {
+      patch.name = args.name;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(args, "parentId")) {
+      const nextParentId = args.parentId ?? undefined;
+      if (nextParentId) {
+        const parent = await assertFolderForKind(ctx, orgId, nextParentId, folder.kind);
+        if (!parent) {
+          throw new ConvexError("Folder not found");
+        }
+      }
+
+      if (nextParentId === folder._id) {
+        throw new ConvexError("A folder cannot contain itself");
+      }
+
+      const descendants = collectDescendantFolderIds(allFolders, folder._id);
+      if (nextParentId && descendants.has(nextParentId)) {
+        throw new ConvexError("A folder cannot be moved into one of its descendants");
+      }
+
+      patch.parentFolderId = nextParentId;
+      patch.order = nextFolderOrder(allFolders, folder.kind, nextParentId);
+    }
+
+    patch.updatedAt = Date.now();
+    await ctx.db.patch(folder._id, patch);
+
+    const updated = await ctx.db.get(folder._id);
+    if (!updated) {
+      throw new ConvexError("Folder not found after update");
+    }
+
+    return serializeFolder(updated);
+  },
+});
+
 export const finalizeMediaUpload = mutation({
   args: {
     title: v.string(),
@@ -590,13 +779,16 @@ export const finalizeMediaUpload = mutation({
     height: v.optional(v.number()),
     durationSeconds: v.optional(v.number()),
     tags: v.array(v.string()),
+    folderId: v.optional(v.id("libraryFolders")),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
+    await assertFolderForKind(ctx, orgId, args.folderId, "media");
 
     const assetId = await ctx.db.insert("mediaAssets", {
       organizationId: orgId,
+      folderId: args.folderId,
       title: args.title,
       mediaType: args.mimeType.startsWith("video/") ? "video" : "image",
       sourceType: "upload",
@@ -632,6 +824,7 @@ export const createYouTubeMediaAsset = mutation({
     fileName: v.string(),
     durationSeconds: v.optional(v.number()),
     tags: v.array(v.string()),
+    folderId: v.optional(v.id("libraryFolders")),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -646,6 +839,8 @@ export const importYouTubePlaylist = mutation({
     makeDefault: v.optional(v.boolean()),
     name: v.string(),
     tags: v.array(v.string()),
+    folderId: v.optional(v.id("libraryFolders")),
+    assetFolderId: v.optional(v.id("libraryFolders")),
     videos: v.array(
       v.object({
         durationSeconds: v.optional(v.number()),
@@ -678,6 +873,7 @@ export const importYouTubePlaylist = mutation({
           {
             ...video,
             tags: args.tags,
+            folderId: args.assetFolderId,
           },
           assetByChecksum,
         ),
@@ -690,6 +886,7 @@ export const importYouTubePlaylist = mutation({
       })),
       makeDefault: args.makeDefault,
       name: args.name,
+      folderId: args.folderId,
     });
     const uniqueAssets = [...new Map(assets.map((asset) => [asset._id, asset])).values()];
 
@@ -830,6 +1027,7 @@ export const savePlaylist = mutation({
   args: {
     playlistId: v.optional(v.id("playlists")),
     name: v.string(),
+    folderId: v.optional(v.union(v.id("libraryFolders"), v.null())),
     itemIds: v.array(
       v.object({
         mediaAssetId: v.id("mediaAssets"),
@@ -841,7 +1039,43 @@ export const savePlaylist = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    return savePlaylistRecord(ctx, orgId, args);
+    return savePlaylistRecord(ctx, orgId, {
+      ...args,
+      folderId: args.folderId ?? undefined,
+    });
+  },
+});
+
+export const updatePlaylist = mutation({
+  args: {
+    playlistId: v.id("playlists"),
+    name: v.optional(v.string()),
+    folderId: v.optional(v.union(v.id("libraryFolders"), v.null())),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const playlist = await ctx.db.get(args.playlistId);
+    if (!playlist || playlist.organizationId !== orgId) {
+      throw new ConvexError("Playlist not found");
+    }
+
+    await assertFolderForKind(ctx, orgId, args.folderId ?? undefined, "playlist");
+    await ctx.db.patch(args.playlistId, {
+      name: args.name ?? playlist.name,
+      folderId: args.folderId === null ? undefined : args.folderId ?? playlist.folderId,
+      updatedAt: Date.now(),
+    });
+
+    const updated = await ctx.db.get(args.playlistId);
+    if (!updated) {
+      throw new ConvexError("Playlist not found after update");
+    }
+
+    return {
+      ...(await serializePlaylist(ctx, updated)),
+      isDefault: updated.isDefault,
+    };
   },
 });
 
@@ -1140,6 +1374,64 @@ export const compileManifests = mutation({
   },
 });
 
+export const deleteLibraryFolder = mutation({
+  args: {
+    folderId: v.id("libraryFolders"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder || folder.organizationId !== orgId) {
+      throw new ConvexError("Folder not found");
+    }
+
+    const [folders, assets, playlists] = await Promise.all([
+      listOrgFolders(ctx, orgId),
+      listOrgMediaAssets(ctx, orgId),
+      listOrgPlaylists(ctx, orgId),
+    ]);
+
+    await Promise.all(
+      folders
+        .filter((entry) => entry.parentFolderId === folder._id)
+        .map((entry) =>
+          ctx.db.patch(entry._id, {
+            parentFolderId: folder.parentFolderId,
+            updatedAt: Date.now(),
+          }),
+        ),
+    );
+
+    if (folder.kind === "media") {
+      await Promise.all(
+        assets
+          .filter((asset) => asset.folderId === folder._id)
+          .map((asset) =>
+            ctx.db.patch(asset._id, {
+              folderId: folder.parentFolderId,
+              updatedAt: Date.now(),
+            }),
+          ),
+      );
+    } else {
+      await Promise.all(
+        playlists
+          .filter((playlist) => playlist.folderId === folder._id)
+          .map((playlist) =>
+            ctx.db.patch(playlist._id, {
+              folderId: folder.parentFolderId,
+              updatedAt: Date.now(),
+            }),
+          ),
+      );
+    }
+
+    await ctx.db.delete(folder._id);
+    return null;
+  },
+});
+
 export const deletePlaylist = mutation({
   args: {
     playlistId: v.id("playlists"),
@@ -1229,8 +1521,9 @@ export const deleteMediaAsset = mutation({
 export const updateMediaAsset = mutation({
   args: {
     assetId: v.id("mediaAssets"),
-    title: v.string(),
-    tags: v.array(v.string()),
+    title: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    folderId: v.optional(v.union(v.id("libraryFolders"), v.null())),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -1240,9 +1533,12 @@ export const updateMediaAsset = mutation({
       throw new ConvexError("Media asset not found");
     }
 
+    await assertFolderForKind(ctx, orgId, args.folderId ?? undefined, "media");
+
     await ctx.db.patch(args.assetId, {
-      title: args.title,
-      tags: args.tags,
+      title: args.title ?? asset.title,
+      tags: args.tags ?? asset.tags,
+      folderId: args.folderId === null ? undefined : args.folderId ?? asset.folderId,
       updatedAt: Date.now(),
     });
 
