@@ -37,7 +37,11 @@
   --radius:                0.625rem;
 
   --sidebar:               #111417;
+  --sidebar-foreground:    #f5f7fd;
   --sidebar-border:        rgba(116, 117, 121, 0.14);
+  --sidebar-accent:        #1b2027;
+  --sidebar-accent-foreground: #f9f9fd;
+  --sidebar-ring:          #608fff;
   --surface-low:           #111417;
   --surface-high:          #1d2024;
   --surface-highest:       #23262a;
@@ -74,7 +78,11 @@
   --color-input:                var(--input);
   --color-ring:                 var(--ring);
   --color-sidebar:              var(--sidebar);
+  --color-sidebar-foreground:   var(--sidebar-foreground);
   --color-sidebar-border:       var(--sidebar-border);
+  --color-sidebar-accent:       var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-ring:         var(--sidebar-ring);
 
   --color-signal:    var(--signal);
   --color-warning:   var(--warning);

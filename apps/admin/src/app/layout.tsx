@@ -6,6 +6,7 @@ import { extractRouterConfig } from "uploadthing/server";
 
 import { uploadRouter } from "@/app/api/uploadthing/core";
 import { AuthProviders } from "@/components/auth-providers";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -53,7 +54,9 @@ export default function RootLayout({
           defaultTheme="dark"
           disableTransitionOnChange
         >
-          <AuthProviders>{children}</AuthProviders>
+          <TooltipProvider>
+            <AuthProviders>{children}</AuthProviders>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

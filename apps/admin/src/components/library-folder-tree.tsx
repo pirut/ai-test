@@ -1,12 +1,56 @@
 "use client";
 
+import { useDroppable } from "@dnd-kit/core";
 import { ChevronRight, Folder, FolderOpen, Pencil, Trash2 } from "lucide-react";
 import type { LibraryFolder } from "@showroom/contracts";
 
 import { cn } from "@/lib/utils";
 import { getFolderChildren } from "@/lib/library";
 
-type DragItemType = "asset" | "playlist";
+export type FolderTreeDragType = "asset" | "playlist";
+export type FolderTreeScope = "media" | "playlist";
+
+function FolderDropRow({
+  children,
+  droppableScope,
+  activeDragType,
+  folderId,
+  isSelected,
+}: {
+  children: React.ReactNode;
+  droppableScope?: FolderTreeScope;
+  activeDragType?: FolderTreeDragType | null;
+  folderId: string | null;
+  isSelected: boolean;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `${droppableScope ?? "none"}:${folderId ?? "root"}`,
+    disabled: !droppableScope,
+    data: droppableScope
+      ? {
+          type: "folder",
+          scope: droppableScope,
+          folderId,
+        }
+      : undefined,
+  });
+
+  return (
+    <div
+      className={cn(
+        "rounded-md transition-colors",
+        isOver && activeDragType
+          ? "bg-accent ring-1 ring-foreground/15"
+          : isSelected
+            ? "bg-accent"
+            : "",
+      )}
+      ref={setNodeRef}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function LibraryFolderTree({
   folders,
@@ -15,7 +59,8 @@ export function LibraryFolderTree({
   onSelect,
   onRename,
   onDelete,
-  onDropItem,
+  droppableScope,
+  activeDragType,
 }: {
   folders: LibraryFolder[];
   selectedFolderId: string | null;
@@ -23,22 +68,9 @@ export function LibraryFolderTree({
   onSelect: (folderId: string | null) => void;
   onRename?: (folder: LibraryFolder) => void;
   onDelete?: (folder: LibraryFolder) => void;
-  onDropItem?: (folderId: string | null, dragType: DragItemType, itemId: string) => void;
+  droppableScope?: FolderTreeScope;
+  activeDragType?: FolderTreeDragType | null;
 }) {
-  function handleDrop(
-    event: React.DragEvent<HTMLButtonElement>,
-    folderId: string | null,
-  ) {
-    const dragType = event.dataTransfer.getData("application/x-showroom-drag-type");
-    const itemId = event.dataTransfer.getData("application/x-showroom-item-id");
-    if (!dragType || !itemId || !onDropItem) {
-      return;
-    }
-
-    event.preventDefault();
-    onDropItem(folderId, dragType as DragItemType, itemId);
-  }
-
   function FolderNode({
     folder,
     depth,
@@ -52,38 +84,36 @@ export function LibraryFolderTree({
     return (
       <div>
         <div className="group flex items-center gap-2">
-          <button
-            className={cn(
-              "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
-              isSelected
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
-            )}
-            onClick={() => onSelect(folder.id)}
-            onDragOver={(event) => {
-              if (!onDropItem) {
-                return;
-              }
-
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-            }}
-            onDrop={(event) => handleDrop(event, folder.id)}
-            style={{ paddingLeft: `${12 + depth * 14}px` }}
-            type="button"
+          <FolderDropRow
+            activeDragType={activeDragType ?? null}
+            droppableScope={droppableScope}
+            folderId={folder.id}
+            isSelected={isSelected}
           >
-            {children.length > 0 ? (
-              <ChevronRight className="size-4 text-muted-foreground" />
-            ) : (
-              <span className="block size-4" />
-            )}
-            {isSelected ? (
-              <FolderOpen className="size-4" />
-            ) : (
-              <Folder className="size-4" />
-            )}
-            <span className="truncate">{folder.name}</span>
-          </button>
+            <button
+              className={cn(
+                "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
+                isSelected
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => onSelect(folder.id)}
+              style={{ paddingLeft: `${12 + depth * 14}px` }}
+              type="button"
+            >
+              {children.length > 0 ? (
+                <ChevronRight className="size-4 text-muted-foreground" />
+              ) : (
+                <span className="block size-4" />
+              )}
+              {isSelected ? (
+                <FolderOpen className="size-4" />
+              ) : (
+                <Folder className="size-4" />
+              )}
+              <span className="truncate">{folder.name}</span>
+            </button>
+          </FolderDropRow>
           {(onRename || onDelete) ? (
             <div className="hidden items-center gap-1 pr-1 group-hover:flex">
               {onRename ? (
@@ -118,30 +148,30 @@ export function LibraryFolderTree({
     );
   }
 
+  const rootSelected = selectedFolderId === null;
+
   return (
     <div className="space-y-1">
-      <button
-        className={cn(
-          "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
-          selectedFolderId === null
-            ? "bg-accent text-foreground"
-            : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
-        )}
-        onClick={() => onSelect(null)}
-        onDragOver={(event) => {
-          if (!onDropItem) {
-            return;
-          }
-
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-        }}
-        onDrop={(event) => handleDrop(event, null)}
-        type="button"
+      <FolderDropRow
+        activeDragType={activeDragType ?? null}
+        droppableScope={droppableScope}
+        folderId={null}
+        isSelected={rootSelected}
       >
-        <Folder className="size-4" />
-        <span>{rootLabel}</span>
-      </button>
+        <button
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
+            rootSelected
+              ? "text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          onClick={() => onSelect(null)}
+          type="button"
+        >
+          <Folder className="size-4" />
+          <span>{rootLabel}</span>
+        </button>
+      </FolderDropRow>
       {getFolderChildren(folders, null).map((folder) => (
         <FolderNode key={folder.id} depth={0} folder={folder} />
       ))}
