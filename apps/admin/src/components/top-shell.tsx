@@ -162,6 +162,31 @@ export function TopShell({ children }: { children: React.ReactNode }) {
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
             </div>
           </div>
+
+          <div className="border-t border-sidebar-border/80">
+            <nav className="flex gap-2 overflow-x-auto px-4 py-3 sm:px-6">
+              {navItems.map((item) => {
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={`top-nav-${item.href}`}
+                    href={item.href}
+                    className={cn(
+                      "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
+                      isActive
+                        ? "border-foreground/18 bg-accent text-foreground"
+                        : "border-transparent text-muted-foreground hover:border-border hover:bg-accent/60 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </header>
 
         <main className="flex-1">
