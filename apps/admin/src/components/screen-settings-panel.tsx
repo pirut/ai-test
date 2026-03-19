@@ -96,16 +96,16 @@ export function ScreenSettingsPanel({
   }
 
   return (
-    <Card className="border border-border/70 bg-card/95">
-      <CardHeader className="border-b border-border/60">
-        <CardTitle className="text-[0.92rem] font-semibold">Screen settings</CardTitle>
-        <p className="text-[0.78rem] text-muted-foreground">
-          Configure the device profile with shadcn-styled selectors and a live audio control slider.
+    <Card className="border border-white/5 bg-card/95">
+      <CardHeader className="border-b border-white/5">
+        <CardTitle className="font-heading text-xl font-bold">System settings</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Update the device identity, playback defaults, rotation, and audio ceiling.
         </p>
       </CardHeader>
       <CardContent className="grid gap-4 pt-5">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-name">
+          <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground" htmlFor="screen-name">
             Name
           </Label>
           <Input
@@ -116,7 +116,7 @@ export function ScreenSettingsPanel({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-site">
+          <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground" htmlFor="screen-site">
             Site
           </Label>
           <Input
@@ -127,7 +127,7 @@ export function ScreenSettingsPanel({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[0.8rem] text-muted-foreground" htmlFor="screen-timezone">
+          <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground" htmlFor="screen-timezone">
             Timezone
           </Label>
           <Input
@@ -139,7 +139,7 @@ export function ScreenSettingsPanel({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground">Orientation</Label>
+            <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Orientation</Label>
             <Select
               items={orientationOptions}
               onValueChange={(value) => setForm((current) => ({ ...current, orientation: value ?? "0" }))}
@@ -159,7 +159,7 @@ export function ScreenSettingsPanel({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground">Default playlist</Label>
+            <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Default playlist</Label>
             <Select
               items={playlistOptions}
               onValueChange={(value) =>
@@ -184,15 +184,15 @@ export function ScreenSettingsPanel({
           </div>
         </div>
 
-        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+        <div className="rounded-xl border border-white/6 bg-[var(--surface-low)] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="space-y-1">
-              <Label className="text-[0.8rem] text-muted-foreground">Volume</Label>
-              <p className="text-[0.75rem] text-muted-foreground">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Volume</Label>
+              <p className="text-[0.8rem] text-muted-foreground">
                 Use the slider to set the playback ceiling for this screen.
               </p>
             </div>
-            <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.78rem] text-foreground">
+            <span className="rounded-full border border-white/6 px-2 py-0.5 font-mono text-[0.78rem] text-foreground">
               {form.volume}%
             </span>
           </div>

@@ -6,22 +6,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors outline-none ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[background-color,border-color,color,opacity,transform] outline-none ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-        destructive: "bg-destructive text-white shadow-xs hover:bg-destructive/90",
-        outline: "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/40",
-        secondary: "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+        default: "bg-[linear-gradient(90deg,#296cf0,#8dacff)] text-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] hover:brightness-110",
+        destructive: "bg-destructive text-destructive-foreground hover:brightness-110",
+        outline: "border border-input bg-card text-foreground hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-[#2a2f36]",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-8 px-3 py-2",
+        default: "h-9 px-3.5 py-2",
         xs: "h-6 rounded-md px-2 text-xs",
-        sm: "h-7 rounded-md px-2.5 text-[0.8rem]",
-        lg: "h-9 rounded-md px-4",
+        sm: "h-8 rounded-md px-3 text-[0.8rem]",
+        lg: "h-10 rounded-md px-4",
         icon: "size-8",
         "icon-xs": "size-6 rounded-md",
         "icon-sm": "size-7 rounded-md",

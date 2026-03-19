@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Media Library | Digital Curator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#171a1d",
+              "primary-fixed-dim": "#608fff",
+              "on-tertiary-fixed": "#3d0039",
+              "primary-fixed": "#779dff",
+              "background": "#0c0e11",
+              "on-error-container": "#ffb2b9",
+              "on-secondary-container": "#c7d0e6",
+              "on-primary": "#002a6f",
+              "tertiary-dim": "#e986d8",
+              "on-tertiary-container": "#610a5b",
+              "primary-container": "#779dff",
+              "surface-container-high": "#1d2024",
+              "on-surface": "#f9f9fd",
+              "on-primary-container": "#001f57",
+              "on-tertiary": "#6d1866",
+              "on-secondary-fixed-variant": "#535c6e",
+              "inverse-surface": "#f9f9fd",
+              "tertiary-fixed-dim": "#e986d8",
+              "secondary-container": "#3e4759",
+              "primary-dim": "#296cf0",
+              "tertiary-container": "#f893e6",
+              "secondary-fixed": "#dae2f9",
+              "surface-container-highest": "#23262a",
+              "secondary": "#dae2f9",
+              "primary": "#8dacff",
+              "on-error": "#490013",
+              "surface-tint": "#8dacff",
+              "error": "#ff6e84",
+              "surface-container-low": "#111417",
+              "on-primary-fixed-variant": "#00276a",
+              "tertiary": "#ffa7ee",
+              "surface-variant": "#23262a",
+              "outline-variant": "#46484b",
+              "error-container": "#a70138",
+              "secondary-fixed-dim": "#cbd4eb",
+              "on-primary-fixed": "#000000",
+              "on-background": "#f9f9fd",
+              "inverse-on-surface": "#535559",
+              "on-surface-variant": "#aaabaf",
+              "surface-container-lowest": "#000000",
+              "inverse-primary": "#0056d3",
+              "secondary-dim": "#cbd4eb",
+              "on-secondary-fixed": "#363f51",
+              "surface": "#0c0e11",
+              "surface-bright": "#292c31",
+              "on-secondary": "#495264",
+              "tertiary-fixed": "#f893e6",
+              "on-tertiary-fixed-variant": "#6c1765",
+              "surface-dim": "#0c0e11",
+              "error-dim": "#d73357",
+              "outline": "#747579"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+        .glass-panel {
+            background: rgba(23, 26, 29, 0.8);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar (Predicted Component) -->
+<aside class="flex flex-col h-full py-6 bg-[#111417]/80 backdrop-blur-xl border-r border-[#46484b]/15 h-screen w-64 fixed left-0 top-0 z-50">
+<div class="px-6 mb-10">
+<h1 class="text-lg font-black text-[#8dacff]">Media Manager</h1>
+<p class="font-manrope text-xs tracking-wide uppercase text-on-surface-variant">Enterprise Edition</p>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</div>
+<!-- Active State: Media Library -->
+<div class="cursor-pointer active:opacity-80 flex items-center gap-3 px-4 py-3 text-[#8dacff] bg-[#1d2024] border-l-2 border-[#8dacff] rounded-r-full font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="perm_media">perm_media</span>
+<span>Media Library</span>
+</div>
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="featured_play_list">featured_play_list</span>
+<span>Playlists</span>
+</div>
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span>Schedules</span>
+</div>
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="devices">devices</span>
+<span>Devices</span>
+</div>
+</nav>
+<div class="px-4 mt-8">
+<button class="w-full py-3 bg-gradient-to-r from-primary-dim to-primary text-on-primary-container font-bold text-xs uppercase rounded-lg shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+                Upload Asset
+            </button>
+</div>
+<div class="mt-auto px-2 space-y-1">
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Help</span>
+</div>
+<div class="cursor-pointer active:opacity-80 hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Logout</span>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 min-h-screen">
+<!-- TopAppBar (Predicted Component Integration) -->
+<header class="flex justify-between items-center w-full px-10 h-16 sticky top-0 bg-[#0c0e11] z-40">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold text-[#f9f9fd] tracking-tight">Media Library</span>
+<!-- Search Bar -->
+<div class="relative w-96 hidden md:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="search">search</span>
+<input class="w-full bg-surface-container-high border-none rounded-lg py-2 pl-10 pr-4 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary/40" placeholder="Search assets, tags, or playlists..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-[#1d2024] transition-colors rounded-full material-symbols-outlined" data-icon="notifications">notifications</button>
+<button class="p-2 text-on-surface-variant hover:bg-[#1d2024] transition-colors rounded-full material-symbols-outlined" data-icon="settings">settings</button>
+</div>
+<div class="h-8 w-8 rounded-full overflow-hidden bg-surface-container-highest border border-outline-variant/20">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="User profile circular portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzEy5DFvovRS1azt5O5fJt4IUYE4s3cKOqRbc9K7IbynvPQX8MnqPFi3Nold9yElOJ4ccRtubYVjevjm7WLPNJiCtcORtQ6fPldBRanf1yY7IjqFp_nBrulWUWqU6TDvqen64XaoQqJOCyghPYnE5tzhI49m3mDGiXfyAPW1s-b5m7JpwqCBmRn0l0wR6It0ga2TxOG4R5EtfREAmFfTMEwW5HwodQJegclYVs-cLpw1ZFRi8jWsy1ZKAK_3w_RxQMs2rEjqlGyZWF"/>
+</div>
+</div>
+</header>
+<div class="px-10 py-8 max-w-7xl mx-auto space-y-10">
+<!-- Quick Action Area (Bento Banner) -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="md:col-span-2 relative group overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/10 p-8 flex flex-col justify-center min-h-[220px]">
+<div class="absolute inset-0 bg-gradient-to-br from-primary-dim/10 to-transparent opacity-50"></div>
+<div class="relative z-10">
+<h2 class="text-3xl font-extrabold tracking-tight text-on-surface mb-2">Import Media Assets</h2>
+<p class="text-on-surface-variant max-w-md mb-6 leading-relaxed">Centralize your digital presence. Seamlessly pull YouTube videos or upload high-resolution local assets to your gallery.</p>
+<div class="flex items-center gap-4">
+<button class="bg-primary text-on-primary font-bold px-6 py-2.5 rounded-lg flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all">
+<span class="material-symbols-outlined" data-icon="cloud_upload">cloud_upload</span>
+                                Upload Files
+                            </button>
+<button class="bg-surface-container-highest text-primary font-bold px-6 py-2.5 rounded-lg flex items-center gap-2 hover:bg-surface-bright active:scale-95 transition-all">
+<span class="material-symbols-outlined" data-icon="smart_display">smart_display</span>
+                                Import YouTube
+                            </button>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-high rounded-xl p-8 flex flex-col justify-between border border-outline-variant/10">
+<div>
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined text-tertiary text-3xl" data-icon="storage">storage</span>
+<span class="text-xs font-bold text-tertiary bg-tertiary/10 px-2 py-1 rounded">72% Full</span>
+</div>
+<h3 class="text-xl font-bold text-on-surface">Storage Capacity</h3>
+<p class="text-sm text-on-surface-variant mt-1">45.2 GB of 64 GB used</p>
+</div>
+<div class="w-full bg-surface-container-low h-2 rounded-full mt-4">
+<div class="bg-tertiary h-full rounded-full w-[72%] shadow-[0_0_12px_rgba(255,167,238,0.4)]"></div>
+</div>
+<button class="text-primary text-sm font-bold flex items-center gap-2 mt-4 hover:underline">
+                        Upgrade Tier
+                        <span class="material-symbols-outlined text-xs" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</section>
+<!-- Filters & View Options -->
+<section class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div class="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+<button class="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-bold whitespace-nowrap">All Media</button>
+<button class="px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-full text-xs font-bold transition-colors whitespace-nowrap">Videos</button>
+<button class="px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-full text-xs font-bold transition-colors whitespace-nowrap">Images</button>
+<button class="px-4 py-2 hover:bg-surface-container-high text-on-surface-variant rounded-full text-xs font-bold transition-colors whitespace-nowrap">Documents</button>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium border border-outline-variant/10">
+<span class="material-symbols-outlined text-sm" data-icon="filter_list">filter_list</span>
+                        Filter
+                    </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium border border-outline-variant/10">
+<span class="material-symbols-outlined text-sm" data-icon="sort">sort</span>
+                        Recently Added
+                    </button>
+</div>
+</section>
+<!-- Media Asset Grid -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
+<!-- Asset Card 1 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Abstract media" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Vibrant abstract flowing colorful lines" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNPm6xTcU-OeLVPz9ZGiCbjrANFiP-akqODbzHDXN5cPQpyPfnmNASYVqa5lj8cPby_DsX3JcG7YB4koA1lBRGHtlcBg6oQPBeIkjdqkqUsuP0d_KLAx_KYxsE1fZqdRnxaPEjPjBsiE_4K3lBsxidvnHPfJPM5Q1mMHPIVcs4G9MAcNceKvBHoP75UwehfDUPO2Btg_9JPLIsw3GDX1-o6EgdbvbJlf7bVHcm0taPSlnW64VBGAX-gERUBxPxJ4Ru4UcNJ_Dmd0dD"/>
+<div class="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="play_circle">play_circle</span>
+                            03:45
+                        </div>
+<div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+<span class="material-symbols-outlined text-white text-4xl" data-icon="play_arrow">play_arrow</span>
+</div>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Neon Pulse Exhibition Intro</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-primary-fixed bg-primary/10 px-2 py-0.5 rounded">Campaign</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Video</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 2 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Product photography" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="High-end event photography dark tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBH3UlrRlK90Q63IlL5gUGuoXNpG2lYUte51kiaJzHSQerih_0xNAVMxNeht4aEMdLUJ_atadfnGi7HsFpDUC5WNO7fdwJJiTMK-tY3Kn_RgBI2WWyh4aDTCthlHyJSBBaHfGOh0g8098FcEpH_dwYDRPLRVHOhpeytpPnSg85fx2Gz6dzmRr5Eo_OkS6HjfMPo85tJRK2paLWXV57q7bkTvh2yTsPKFycz6nyocU_YhddNrCVpCxr-3Xcq0yrhW3nJmATHqxVnIfNO"/>
+<div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+<span class="material-symbols-outlined text-white text-4xl" data-icon="visibility">visibility</span>
+</div>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Corporate Gala Night 2024</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-secondary bg-secondary-container px-2 py-0.5 rounded">Event</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Image</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 3 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Tech hardware" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Sleek retro technology electronics" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAJeGUFJoPJ7NAkL8kNSFjK9haDLy39DhBthmIOaE2v1VQfXjlfVxyGJeGdhTM8kF7McF_gMlzL_M-yUoOHqSrSx0S3HcQItv4CqQVjtjPKCtobdYRFhl8dG9yLNf5CblZMmN5TJLOwriw6qVvSD_faCpAZjWp-P4rcPDFQ4IqZR8AOrYyHyPnz8xcAu6aJwkOEq6CpykBdknOCUeF3xd-SBnxQzzoC_gFuXrsLLeL-y6BTiUSHC597ZXNkItGQNmR4YjdG_1Rmkopd"/>
+<div class="absolute top-2 left-2 bg-red-600 px-2 py-1 rounded text-[10px] font-bold text-white flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="movie" style="font-variation-settings: 'FILL' 1;">movie</span>
+                            YouTube
+                        </div>
+<div class="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white">12:10</div>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Retro Hardware Showcase</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-tertiary bg-tertiary-container/10 px-2 py-0.5 rounded">Review</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Social</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 4 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Gradient background" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Blue and purple soft liquid gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSo84cBqhVhTBpuIBQpd66NC58G_SmVxy3McqJi-zjMLtAIhCIOor6fMkxoJGYVXjbWM5vcG_fR-Bu8sGDJyP07vunV8qL3xysGzotYmUgw0d3l430xwUjCcDAcxbHXJhBOgYG_i6yiVFFkik_604jznqEQxN72U-WjJGtnG7WliG68NP94AEAy-WlLLHPJsfLCNSjdrsF8l-sqT1AhjUGgitMz6xIqBZ_AEL7u9_wjqRuwNCMRdJh1YuWGtC-VMKV0DQOcGUdgzAe"/>
+<div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+<span class="material-symbols-outlined text-white text-4xl" data-icon="edit">edit</span>
+</div>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Digital Flow BG Loop</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-primary-fixed bg-primary/10 px-2 py-0.5 rounded">System</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Animation</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 5 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Modern art" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Modern abstract brush strokes oil paint" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnPjnWPEMEgFRj9vZPosL1X27-y2H7xEUCOAfQqAGXX5CQO-Q6gfuxYNwbJxgxrSNabro6RLdHeAibH73PKCQEpBLCvOF-8EZGJTvC8SW3049HXsNww9u41xJtfY_M7rrsXBcZ3e388jDgGiqtXNIN_d8rCIUmu07M9GztBOujJHUes63IMm4qZ5W0hI5niTnj4z13WiSEJwmKofMky8PKYQcyW9RJkPTxn1asWwhs0oL4syMmS4aW9pMhHNHv259ZM-YBhWfdO-RN"/>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Lobby Screen Art Piece</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-secondary bg-secondary-container px-2 py-0.5 rounded">Hospitality</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Image</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 6 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Cityscape" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Night city lights long exposure photography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAsCRaCSR1gqzbqoxtlsRFvlj2VBTiq0kl1PY2vb4A7sQPuDyMlkcFEjDnWmE-sJuwl5OZ78rIgBylN2chz_HlAODR3RtzEva9WEQ030X-wU_hPQ58HD4NVRv-zzkDaegfqQiWszI9CJtQOcSz-o21B-4nC7EccYx3thhb7RygYVTEtCwhJKIDmmk0h2L-qSEuSbL5M9YLZ5ZIbrvE_lG4LZOPxAZb2KUNcAzkRhTuVi9-9b9BCWZlPP1t98BbGYqTvZ8lGqHiSDcdR"/>
+<div class="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white">01:15</div>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Urban Night Drone Loop</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-primary-fixed bg-primary/10 px-2 py-0.5 rounded">City</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Video</span>
+</div>
+</div>
+</div>
+<!-- Asset Card 7 -->
+<div class="group flex flex-col gap-4">
+<div class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-outline-variant/10 group-hover:ring-primary/40 transition-all cursor-pointer">
+<img alt="Gradient mesh" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Deep blue and pink mesh gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYYmn7YSJ3co9-p2gw-Nv42MUQh9eTA6yOATNbFbTfMj1zaL1yASuCpp-n2-qckFFA1FAryCHcdWRdRvIF4a7-7ZWmF-4k3GDpfydZYjE1pa4-dTvDDJtk81CMQmSNvcE2aUSSN63wJ-LeOaVNMbb_hTui21rjrAWjnqvPH8jTgM52U2XD1MY1dmNcjo56piFny-JuebjNEqRIguC9pSGcwLXPZCt8x3je-hlLdDbX00TEZgV71hKxZFnD6hLNfaq9EbsvxZRGpp4H"/>
+</div>
+<div>
+<div class="flex items-start justify-between">
+<h4 class="font-headline font-bold text-on-surface leading-tight">Background Mesh - Deep</h4>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors" data-icon="more_vert">more_vert</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded">Image</span>
+</div>
+</div>
+</div>
+<!-- Add New Asset Placeholder -->
+<div class="group border-2 border-dashed border-outline-variant/20 rounded-xl flex flex-col items-center justify-center gap-2 aspect-video hover:border-primary/40 hover:bg-surface-container-low transition-all cursor-pointer">
+<span class="material-symbols-outlined text-3xl text-on-surface-variant group-hover:text-primary" data-icon="add">add</span>
+<span class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">New Asset</span>
+</div>
+</section>
+</div>
+</main>
+</body></html>

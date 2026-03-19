@@ -32,8 +32,8 @@ const Switch = React.forwardRef<
         onCheckedChange?.(nextChecked);
       }}
       className={cn(
-        "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
-        resolvedChecked ? "bg-primary" : "bg-input/70 dark:bg-input/40",
+        "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-white/8 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
+        resolvedChecked ? "bg-primary" : "bg-[var(--surface-highest)]",
         className,
       )}
       {...props}
@@ -41,7 +41,7 @@ const Switch = React.forwardRef<
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block size-5 rounded-full bg-background shadow-lg ring-0 transition-transform duration-200 ease-out",
+          "pointer-events-none block size-5 rounded-full bg-background shadow-[0_2px_8px_rgba(0,0,0,0.35)] ring-0 transition-transform duration-200 ease-out",
           resolvedChecked ? "translate-x-5" : "translate-x-0",
         )}
         style={{ transform: `translateX(${resolvedChecked ? 20 : 0}px)` }}

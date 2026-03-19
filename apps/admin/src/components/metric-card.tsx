@@ -23,12 +23,18 @@ export function MetricCard({
   tone?: Tone;
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-border bg-card px-5 py-4">
-      <span className="text-[0.78rem] font-medium text-muted-foreground">{label}</span>
-      <span className={cn("font-mono text-[2.2rem] font-semibold leading-none tracking-tight tabular-nums", numberColor[tone])}>
+    <div className="rounded-xl border border-white/5 bg-card px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          {label}
+        </span>
+        <span className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", numberColor[tone])}>
+          {hint}
+        </span>
+      </div>
+      <span className={cn("font-heading mt-4 block text-[2.4rem] font-extrabold leading-none tracking-[-0.04em] tabular-nums", numberColor[tone])}>
         {value}
       </span>
-      <span className="text-[0.78rem] text-muted-foreground/70 leading-snug">{hint}</span>
     </div>
   );
 }

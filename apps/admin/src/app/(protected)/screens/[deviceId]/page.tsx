@@ -5,7 +5,13 @@ import { PageHeader } from "@/components/page-header";
 import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
 import { requireOrgId } from "@/lib/auth";
-import { getDevice, latestScreenshot, listCommands, listPlaylists } from "@/lib/backend";
+import {
+  getDevice,
+  latestScreenshot,
+  listCommands,
+  listPlaylists,
+} from "@/lib/backend";
+import { formatRelativeTimestamp } from "@/lib/utils";
 
 export default async function ScreenDetailPage({
   params,
@@ -25,50 +31,37 @@ export default async function ScreenDetailPage({
   ]);
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
         title={device.name}
-        description={device.siteName}
+        description={`${device.siteName} · configure playback defaults, device identity, and remote commands.`}
         action={<StatusPill status={device.status} label={device.status} />}
       />
 
-      <div className="p-8">
-        <div className="grid grid-cols-[1fr_300px] gap-6">
-          {/* Left: screenshot + stats */}
-          <div className="flex flex-col gap-4">
-            {screenshot ? (
-              <div className="overflow-hidden rounded-xl border border-border bg-card">
-                <img alt={device.name} src={screenshot.publicUrl} className="w-full h-auto block" />
-              </div>
-            ) : (
-              <div className="flex aspect-video items-center justify-center rounded-xl border border-border bg-card text-muted-foreground/30">
-                <svg className="size-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                  <rect x="2" y="3" width="20" height="14" rx="2" />
-                  <path d="M8 21h8M12 17v4" strokeLinecap="round" />
-                </svg>
-              </div>
-            )}
-
-            {/* Device stats */}
-            <div className="rounded-xl border border-border bg-card">
-              {[
-                { label: "Current playlist", value: device.currentPlaylistName ?? "Unassigned" },
-                { label: "Manifest version", value: String(device.manifestVersion ?? "—") },
-                { label: "Last heartbeat",   value: device.lastHeartbeatAt },
-              ].map(({ label, value }, i, arr) => (
-                <div
-                  key={label}
-                  className={`flex items-center justify-between gap-4 px-4 py-3 text-sm ${i < arr.length - 1 ? "border-b border-border" : ""}`}
-                >
-                  <span className="text-muted-foreground">{label}</span>
-                  <span className="font-mono text-[0.82rem] text-foreground">{String(value)}</span>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="border-b border-white/5 px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Live preview
+              </p>
+            </div>
+            <div className="relative aspect-[16/9] bg-[var(--surface-high)]">
+              {screenshot ? (
+                <img
+                  alt={device.name}
+                  src={screenshot.publicUrl}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No screenshot available yet.
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
-          {/* Right: commands + log */}
-          <div className="flex flex-col gap-4">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
             <ScreenSettingsPanel
               device={{
                 deviceId: device.id,
@@ -85,36 +78,80 @@ export default async function ScreenDetailPage({
               }))}
             />
             <CommandPanel deviceId={device.id} />
-
-            {/* Command log */}
-            <div className="rounded-xl border border-border bg-card">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-[0.88rem] font-semibold text-foreground">Command log</h2>
-              </div>
-              {commands.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-muted-foreground">No commands issued yet.</p>
-              ) : (
-                <div>
-                  {commands.map((cmd, i) => (
-                    <div
-                      key={cmd.id}
-                      className={`flex items-center justify-between gap-4 px-4 py-2.5 text-sm ${i < commands.length - 1 ? "border-b border-border" : ""}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-mono text-[0.8rem] text-foreground">{cmd.commandType}</span>
-                        {cmd.status ? (
-                          <span className="font-mono text-[0.72rem] text-muted-foreground">{cmd.status}</span>
-                        ) : null}
-                      </div>
-                      <span className="font-mono text-[0.75rem] text-muted-foreground">{cmd.issuedAt}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
+
+        <aside className="space-y-5">
+          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Device profile
+            </p>
+            <div className="mt-4 space-y-4">
+              {[
+                { label: "Site", value: device.siteName },
+                { label: "Timezone", value: device.timezone },
+                { label: "Orientation", value: `${device.orientation}°` },
+                { label: "Volume", value: `${device.volume}%` },
+                {
+                  label: "Current playlist",
+                  value: device.currentPlaylistName ?? "Unassigned",
+                },
+                {
+                  label: "Manifest version",
+                  value: device.manifestVersion ?? "None",
+                },
+                {
+                  label: "Last heartbeat",
+                  value: formatRelativeTimestamp(device.lastHeartbeatAt),
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-white/6 bg-[var(--surface-low)] px-4 py-3"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 font-mono text-sm text-foreground">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="border-b border-white/5 px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Command log
+              </p>
+            </div>
+            {commands.length === 0 ? (
+              <p className="px-5 py-5 text-sm text-muted-foreground">
+                No commands have been issued for this device yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {commands.map((command) => (
+                  <div key={command.id} className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-sm text-foreground">
+                          {command.commandType}
+                        </p>
+                        <p className="mt-1 text-[0.8rem] text-muted-foreground">
+                          {command.status ?? "queued"}
+                        </p>
+                      </div>
+                      <p className="font-mono text-[0.78rem] text-muted-foreground">
+                        {formatRelativeTimestamp(command.issuedAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
-    </>
+    </div>
   );
 }

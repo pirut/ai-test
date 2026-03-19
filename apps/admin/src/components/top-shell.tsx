@@ -2,177 +2,168 @@
 
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
+import {
+  Bell,
+  CalendarRange,
+  ImageIcon,
+  LayoutDashboard,
+  MonitorSmartphone,
+  Rocket,
+  Search,
+  Users,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useTheme } from "next-themes";
 
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.25" />
-        <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.25" />
-        <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.25" />
-        <rect x="9" y="9" width="5.5" height="5.5" rx="1.25" />
-      </svg>
-    ),
-  },
-  {
-    href: "/screens",
-    label: "Screens",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <rect x="1" y="2" width="14" height="9" rx="1.5" />
-        <path d="M5.5 14h5M8 11v3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/media",
-    label: "Media",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <rect x="1" y="1" width="14" height="14" rx="2" />
-        <path d="M6.5 5.5l4.5 2.5-4.5 2.5V5.5z" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    href: "/playlists",
-    label: "Playlists",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <path d="M2 4h12M2 8h8.5M2 12h6" strokeLinecap="round" />
-        <circle cx="13" cy="10.5" r="1.75" />
-        <path d="M13 8.75V5" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/schedules",
-    label: "Schedules",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <rect x="1" y="2.5" width="14" height="12" rx="1.5" />
-        <path d="M5 1v3M11 1v3M1 7.5h14" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/releases",
-    label: "Releases",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <path d="M3 13.5h10M8 2v8.5M5.5 5.5L8 3l2.5 2.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/team",
-    label: "Team",
-    icon: (
-      <svg className="size-[15px] shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-        <circle cx="6" cy="5" r="2.5" />
-        <path d="M1 14c0-2.76 2.24-5 5-5s5 2.24 5 5" strokeLinecap="round" />
-        <circle cx="12.5" cy="5" r="2" />
-        <path d="M12.5 9c1.93 0 3.5 1.34 3.5 3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/screens", label: "Devices", icon: MonitorSmartphone },
+  { href: "/media", label: "Media", icon: ImageIcon },
+  { href: "/playlists", label: "Playlists", icon: Rocket },
+  { href: "/schedules", label: "Schedules", icon: CalendarRange },
+  { href: "/releases", label: "Releases", icon: Rocket },
+  { href: "/team", label: "Team", icon: Users },
 ];
 
-function useClerkAppearance(resolvedTheme?: string) {
-  if (resolvedTheme === "light") {
-    return {
-      variables: {
-        colorPrimary:         "#0284c7",
-        colorBackground:      "#ffffff",
-        colorText:            "#0f172a",
-        colorTextSecondary:   "#64748b",
-        colorInputBackground: "#f8fafc",
-        colorInputText:       "#0f172a",
-        colorNeutral:         "#0f172a",
-        fontFamily:           "var(--font-sans)",
-        borderRadius:         "8px",
-        fontSize:             "14px",
-      },
-    } as const;
-  }
-
-  return {
-    variables: {
-      colorPrimary:         "#38bdf8",
-      colorBackground:      "#0f1722",
-      colorText:            "#dde9f0",
-      colorTextSecondary:   "#526475",
-      colorInputBackground: "#0b1018",
-      colorInputText:       "#dde9f0",
-      colorNeutral:         "#dde9f0",
-      fontFamily:           "var(--font-sans)",
-      borderRadius:         "8px",
-      fontSize:             "14px",
-    },
-  } as const;
-}
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#8dacff",
+    colorBackground: "#111417",
+    colorText: "#f9f9fd",
+    colorTextSecondary: "#aaabaf",
+    colorInputBackground: "#1d2024",
+    colorInputText: "#f9f9fd",
+    colorNeutral: "#f9f9fd",
+    fontFamily: "var(--font-sans)",
+    borderRadius: "10px",
+    fontSize: "14px",
+  },
+} as const;
 
 export function TopShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const clerkAppearance = useClerkAppearance(
-    mounted ? resolvedTheme : undefined,
-  );
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-        {/* Wordmark */}
-        <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
-          <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold tracking-tight select-none">
-            SR
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-background/95 backdrop-blur-xl">
+        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:pl-[18rem] lg:pr-10">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <Link href="/dashboard" className="flex min-w-0 items-center gap-3 lg:hidden">
+              <div className="flex size-8 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[11px] font-bold text-primary-foreground">
+                DC
+              </div>
+              <div className="min-w-0">
+                <p className="font-heading truncate text-sm font-bold text-foreground">
+                  Digital Curator
+                </p>
+                <p className="truncate text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Media manager
+                </p>
+              </div>
+            </Link>
+
+            <div className="hidden max-w-xl flex-1 items-center gap-2 rounded-lg bg-card px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ring-1 ring-white/6 md:flex">
+              <Search className="size-4 text-muted-foreground" />
+              <input
+                aria-label="Search"
+                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                placeholder="Search assets, devices, playlists, or schedules..."
+                type="search"
+              />
+            </div>
           </div>
-          <span className="text-[0.88rem] font-semibold text-foreground tracking-tight">Signal Room</span>
+
+          <div className="flex items-center gap-2">
+            <button
+              aria-label="Notifications"
+              className="hidden size-9 items-center justify-center rounded-md border border-white/6 bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
+              type="button"
+            >
+              <Bell className="size-4" />
+            </button>
+            <div className="hidden items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary lg:flex">
+              <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_rgba(141,172,255,0.65)]" />
+              Operational
+            </div>
+            <div className="lg:hidden">
+              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+            </div>
+          </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex flex-1 flex-col gap-px px-2 py-3">
+        <div className="border-t border-white/5 lg:hidden">
+          <nav className="flex gap-1 overflow-x-auto px-2 py-2">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                    isActive
+                      ? "bg-accent text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </header>
+
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/90 px-4 py-6 backdrop-blur-xl lg:flex">
+        <Link href="/dashboard" className="flex items-start gap-3 px-2 pb-8 pt-1">
+          <div className="flex size-10 items-center justify-center rounded-md bg-[linear-gradient(135deg,#296cf0,#8dacff)] text-[12px] font-bold text-primary-foreground">
+            DC
+          </div>
+          <div>
+            <p className="font-heading text-base font-bold text-foreground">Digital Curator</p>
+            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Media manager
+            </p>
+          </div>
+        </Link>
+
+        <nav className="flex flex-1 flex-col gap-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const Icon = item.icon;
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
                   isActive
-                    ? "bg-accent text-foreground font-medium"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    ? "border-l-2 border-primary bg-accent text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
-                <span className={cn("transition-opacity", isActive ? "opacity-80" : "opacity-40 group-hover:opacity-60")}>
-                  {item.icon}
-                </span>
+                <Icon
+                  className={cn(
+                    "size-4",
+                    isActive ? "text-primary" : "text-muted-foreground",
+                  )}
+                />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer */}
-        <div className="flex flex-col gap-2 border-t border-sidebar-border p-3">
-          <ThemeToggle />
-          <div className="flex items-center justify-between">
+        <div className="mt-auto space-y-3">
+          <div className="rounded-xl border border-white/6 bg-card p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Workspace
+            </p>
             <OrganizationSwitcher
               afterCreateOrganizationUrl="/dashboard"
               afterLeaveOrganizationUrl="/"
@@ -180,13 +171,24 @@ export function TopShell({ children }: { children: React.ReactNode }) {
               hidePersonal
               appearance={clerkAppearance}
             />
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-white/6 bg-card px-3 py-2.5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Account
+              </p>
+              <p className="mt-1 text-sm text-foreground">Signed in</p>
+            </div>
             <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
           </div>
         </div>
       </aside>
 
-      {/* Main */}
-      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+      <main className="pt-[7.25rem] lg:pl-64 lg:pt-16">
+        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

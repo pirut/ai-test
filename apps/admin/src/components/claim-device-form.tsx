@@ -1,9 +1,11 @@
 "use client";
 
 import { startTransition, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export function ClaimDeviceForm() {
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -27,23 +29,30 @@ export function ClaimDeviceForm() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-0.5 text-[0.88rem] font-semibold text-foreground">Claim a device</h2>
-      <p className="mb-4 text-[0.8rem] text-muted-foreground">Provision a new Pi as it comes online.</p>
+    <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="mb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Provisioning
+        </p>
+        <h2 className="font-heading mt-2 text-xl font-bold text-foreground">Claim a device</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Attach a new screen to this workspace as soon as the Pi reports a claim code.
+        </p>
+      </div>
       <form
         className="flex flex-col gap-3"
         action={(fd) => startTransition(() => void handleSubmit(fd))}
       >
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="claimCode" className="text-[0.8rem]">Claim code</Label>
+          <Label htmlFor="claimCode" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Claim code</Label>
           <Input id="claimCode" name="claimCode" placeholder="123456" required />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="name" className="text-[0.8rem]">Screen name</Label>
+          <Label htmlFor="name" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Screen name</Label>
           <Input id="name" name="name" placeholder="Front Window" required />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="siteName" className="text-[0.8rem]">Site</Label>
+          <Label htmlFor="siteName" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Site</Label>
           <Input id="siteName" name="siteName" placeholder="Chelsea showroom" required />
         </div>
         <Button type="submit" className="mt-1 w-full">Claim device</Button>
@@ -55,8 +64,4 @@ export function ClaimDeviceForm() {
       </form>
     </div>
   );
-}
-
-function cn(...classes: (string | false | null | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
 }

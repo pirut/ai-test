@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Device Management | Digital Curator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-variant": "#23262a",
+              "secondary-fixed": "#dae2f9",
+              "tertiary-fixed": "#f893e6",
+              "on-tertiary": "#6d1866",
+              "on-tertiary-fixed-variant": "#6c1765",
+              "on-primary-fixed": "#000000",
+              "inverse-surface": "#f9f9fd",
+              "on-surface": "#f9f9fd",
+              "surface-container-high": "#1d2024",
+              "on-primary-container": "#001f57",
+              "primary-container": "#779dff",
+              "outline-variant": "#46484b",
+              "surface-container": "#171a1d",
+              "secondary-fixed-dim": "#cbd4eb",
+              "on-secondary-fixed": "#363f51",
+              "secondary-dim": "#cbd4eb",
+              "on-primary": "#002a6f",
+              "secondary-container": "#3e4759",
+              "surface-dim": "#0c0e11",
+              "surface-bright": "#292c31",
+              "on-tertiary-fixed": "#3d0039",
+              "error": "#ff6e84",
+              "on-error": "#490013",
+              "primary-fixed-dim": "#608fff",
+              "on-surface-variant": "#aaabaf",
+              "on-background": "#f9f9fd",
+              "surface-container-low": "#111417",
+              "surface-tint": "#8dacff",
+              "tertiary-dim": "#e986d8",
+              "on-secondary-container": "#c7d0e6",
+              "inverse-primary": "#0056d3",
+              "error-container": "#a70138",
+              "on-error-container": "#ffb2b9",
+              "on-secondary": "#495264",
+              "on-primary-fixed-variant": "#00276a",
+              "primary-fixed": "#779dff",
+              "on-tertiary-container": "#610a5b",
+              "tertiary-fixed-dim": "#e986d8",
+              "tertiary-container": "#f893e6",
+              "on-secondary-fixed-variant": "#535c6e",
+              "surface-container-highest": "#23262a",
+              "primary-dim": "#296cf0",
+              "error-dim": "#d73357",
+              "primary": "#8dacff",
+              "outline": "#747579",
+              "surface-container-lowest": "#000000",
+              "background": "#0c0e11",
+              "secondary": "#dae2f9",
+              "tertiary": "#ffa7ee",
+              "inverse-on-surface": "#535559",
+              "surface": "#0c0e11"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0c0e11;
+            color: #f9f9fd;
+        }
+    </style>
+</head>
+<body class="font-body selection:bg-primary/30">
+<!-- SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#111417]/80 backdrop-blur-xl border-r border-[#46484b]/15 flex flex-col h-full py-6 z-50">
+<div class="px-6 mb-10">
+<div class="text-lg font-black text-[#8dacff] font-headline">Media Manager</div>
+<div class="font-manrope text-xs tracking-wide uppercase text-[#aaabaf] mt-1">Enterprise Edition</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80 font-manrope text-xs tracking-wide uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80 font-manrope text-xs tracking-wide uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="perm_media">perm_media</span>
+<span>Media Library</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80 font-manrope text-xs tracking-wide uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="featured_play_list">featured_play_list</span>
+<span>Playlists</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80 font-manrope text-xs tracking-wide uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span>Schedules</span>
+</a>
+<!-- Active Navigation Item -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#8dacff] bg-[#1d2024] border-l-2 border-[#8dacff] rounded-r-full font-manrope text-xs tracking-wide uppercase cursor-pointer" href="#">
+<span class="material-symbols-outlined" data-icon="devices" style="font-variation-settings: 'FILL' 1;">devices</span>
+<span>Devices</span>
+</a>
+</nav>
+<div class="px-4 mt-auto space-y-4">
+<button class="w-full bg-gradient-to-r from-primary-dim to-primary text-on-primary py-3 rounded-lg font-headline text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all">
+                Upload Asset
+            </button>
+<div class="pt-4 border-t border-outline-variant/10">
+<a class="flex items-center gap-3 px-4 py-2 text-[#aaabaf] hover:text-[#f9f9fd] font-manrope text-xs tracking-wide uppercase transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Help</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-[#aaabaf] hover:text-[#f9f9fd] font-manrope text-xs tracking-wide uppercase transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="ml-64 min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-[#0c0e11] dark:bg-[#0c0e11] flex justify-between items-center w-full px-10 h-16 sticky top-0 z-40 bg-[#111417]">
+<div class="flex items-center gap-4">
+<h1 class="text-xl font-bold text-[#f9f9fd] tracking-tight font-headline">Devices</h1>
+<span class="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase">12 Active</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="search">search</span>
+<input class="bg-surface-container-high border-none rounded-lg pl-10 pr-4 py-2 text-sm text-on-surface w-64 focus:ring-1 focus:ring-primary/40" placeholder="Filter devices..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 active:scale-95 transition-transform rounded-full">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 active:scale-95 transition-transform rounded-full">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="h-8 w-8 rounded-full overflow-hidden ml-2 border border-outline-variant/30">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="Professional user profile headshot" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrRfO8XSBQie1i2-QHcw-GKhos5qXn0AS05wPpin8_swTnjr_4Qnmqg6SqbFyV9TRa20HzNFDvQRyyMX_d7AbaLUCxx2nP1TFbuuT4mTX0Il-DidywzjVesMIvQuAZ0_eSWwU1ZGf5Qq9KuASfujz8_q-2Ou11if7qCLcXxnLB-Q7cHrSHmRz6ZpZ2YRwzMqmR855oOX62ru6FYXa_VhgptHuarZPz8jboL6zihhfo5jSZn_5ED1bntjI4yHn-oM8cXvWRiv71Ql-F"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Content Area -->
+<div class="p-10 flex-1 bg-surface-dim">
+<!-- Summary Stats (Bento Style) -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+<div class="md:col-span-2 p-6 rounded-xl bg-surface-container-low flex flex-col justify-between min-h-[160px] relative overflow-hidden">
+<div class="z-10">
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-wider mb-2">Network Health</p>
+<h2 class="text-4xl font-headline font-extrabold text-on-surface">98.4%</h2>
+</div>
+<div class="flex gap-4 z-10">
+<div class="flex items-center gap-2 text-primary">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-xs font-medium">11 Online</span>
+</div>
+<div class="flex items-center gap-2 text-error">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-xs font-medium">1 Critical</span>
+</div>
+</div>
+<!-- Background Visual Decor -->
+<div class="absolute right-0 bottom-0 w-1/2 h-full bg-gradient-to-l from-primary/5 to-transparent pointer-events-none"></div>
+</div>
+<div class="p-6 rounded-xl bg-surface-container-high border border-outline-variant/10">
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-wider mb-4">Storage Usage</p>
+<div class="space-y-3">
+<div class="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-tertiary w-[65%]"></div>
+</div>
+<p class="text-on-surface text-xl font-headline font-bold">1.2 TB <span class="text-sm font-normal text-on-surface-variant">/ 2.0 TB</span></p>
+</div>
+</div>
+<div class="p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 flex flex-col justify-center items-center text-center">
+<span class="material-symbols-outlined text-3xl text-secondary mb-2" data-icon="troubleshoot">troubleshoot</span>
+<p class="text-on-surface font-headline font-bold">Run Diagnostic</p>
+<p class="text-on-surface-variant text-[10px] mt-1">Full system check</p>
+</div>
+</div>
+<!-- Device Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+<!-- Device Card 1 (Online) -->
+<div class="group rounded-xl bg-surface-container p-5 hover:bg-surface-container-highest transition-all duration-300 border border-transparent hover:border-primary/20">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="monitor">monitor</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-on-surface">Lobby Main 01</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-widest">ID: DX-4092-A</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                            ONLINE
+                        </div>
+</div>
+<div class="mb-6">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-2">Current Content</p>
+<div class="flex gap-3 items-center p-2 rounded-lg bg-surface-container-low">
+<div class="w-12 h-12 rounded bg-surface-container-highest overflow-hidden">
+<img alt="Thumbnail" class="w-full h-full object-cover" data-alt="Abstract cinematic liquid gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCA9eP3key16USFxuaOn_qOhv-fHf7Ni1njE8PuH439jvfZq5xQCHjtcTZ32UfTEkVeR8lZ6u18es4lL594tN5k8AWZrZ4eoC8M5CAx6BXRHUHpYBq-0fm341xfTyW3OYdAc41aLoHdj2KSSxU5zioek7oVEr-amZ-npGlk2XCV2ARx3j59RDqxJ_j1yQI6cghabzHwgeSBwagO5H2DM4LD421z6xiFjyQZoF3KjlmJcDp3vewU6qqfVLReVZEoixCj-g6DFU9s791J"/>
+</div>
+<div class="flex-1 overflow-hidden">
+<p class="text-xs font-medium text-on-surface truncate">Winter_Collection_Hero_4K.mp4</p>
+<p class="text-[10px] text-on-surface-variant">Playlist: Main Hall Morning</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="play_arrow">play_arrow</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex gap-2">
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span>
+</button>
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span>
+</button>
+</div>
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                            Configure
+                            <span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Device Card 2 (Offline) -->
+<div class="group rounded-xl bg-surface-container p-5 hover:bg-surface-container-highest transition-all duration-300 border border-transparent hover:border-error/20">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="tv">tv</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-on-surface opacity-70">Elevator Screen B</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-widest">ID: DX-1120-C</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-error/10 text-error text-[10px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                            OFFLINE
+                        </div>
+</div>
+<div class="mb-6">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-2">Last Seen</p>
+<div class="p-4 rounded-lg bg-error-container/10 border border-error/10">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-error text-lg" data-icon="warning">warning</span>
+<div>
+<p class="text-xs font-medium text-on-error-container">Connection Lost</p>
+<p class="text-[10px] text-on-surface-variant mt-1">October 24, 2023 at 14:22 PM</p>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex gap-2">
+<button class="flex items-center gap-2 px-3 py-1.5 rounded bg-error/20 text-error text-[10px] font-bold uppercase tracking-wider hover:bg-error/30 transition-colors">
+<span class="material-symbols-outlined text-xs" data-icon="restart_alt">restart_alt</span>
+                                Force Reboot
+                            </button>
+</div>
+<button class="text-xs font-bold text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1">
+                            Troubleshoot
+                            <span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Device Card 3 (Online) -->
+<div class="group rounded-xl bg-surface-container p-5 hover:bg-surface-container-highest transition-all duration-300 border border-transparent hover:border-primary/20">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="laptop_chromebook">laptop_chromebook</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-on-surface">Wayfinding Kiosk</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-widest">ID: DX-8871-K</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                            ONLINE
+                        </div>
+</div>
+<div class="mb-6">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-2">Current Content</p>
+<div class="flex gap-3 items-center p-2 rounded-lg bg-surface-container-low">
+<div class="w-12 h-12 rounded bg-surface-container-highest overflow-hidden">
+<img alt="Thumbnail" class="w-full h-full object-cover" data-alt="Dynamic interactive map visual" src="https://lh3.googleusercontent.com/aida-public/AB6AXuARYhNg5wS6xqtflpHFR9Qsaln69nexKbon856omEhUfanf1Vu6vheIs34EVjRtMLbT8wgMd1YsB0m7kYmgODQ91j8KOlGNqhrCXsk91r65pbd3jj1l1V6wgwxIyHD23tYj7uuZjg1CoTJ9XaqcC59b-ZD7FCXH1D9rwu-VinL-BN4vdieoUYoDStE7SHsQJPrlYggF5mahW5IXEYgzKmT3JDTpJowpVs0Yb7inWNoh5zif20zq_JFM38obgofEpOhMxM8D6h9CGsJN"/>
+</div>
+<div class="flex-1 overflow-hidden">
+<p class="text-xs font-medium text-on-surface truncate">Interactive_Map_v2.1.web</p>
+<p class="text-[10px] text-on-surface-variant">Application: Wayfinding Engine</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="touch_app">touch_app</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex gap-2">
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="videocam">videocam</span>
+</button>
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="analytics">analytics</span>
+</button>
+</div>
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                            Configure
+                            <span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Device Card 4 (Online) -->
+<div class="group rounded-xl bg-surface-container p-5 hover:bg-surface-container-highest transition-all duration-300 border border-transparent hover:border-primary/20">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="ads_click">ads_click</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-on-surface">Storefront 05</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-widest">ID: DX-2210-S</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                            ONLINE
+                        </div>
+</div>
+<div class="mb-6">
+<p class="text-[10px] text-on-surface-variant font-bold uppercase mb-2">Current Content</p>
+<div class="flex gap-3 items-center p-2 rounded-lg bg-surface-container-low">
+<div class="w-12 h-12 rounded bg-surface-container-highest overflow-hidden">
+<img alt="Thumbnail" class="w-full h-full object-cover" data-alt="High tech hardware and neon lights" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCqe3UHiPc0lIrHwtH_oUomy5VbROuGBCx4tNeub7zf3qdPX0uAKG87PZzkxLtRUwH1ZhH-M_g4YqxyyjEbUj5kNUPyFJTGveTQgd9mItbNiXR7zs5LyqVdg4Zp6Uq92ldQMv_SHZNfFA7tLstLYIqm22WQ_4xdftuMgxKlzatoEApck62hTx2UPG4joYVIWUEe9xcfXeUL1EG2MlATYNlSofv8eGRpSgKQJGculgzT9OnUJTzo6WcWaeJh2C5iQL-u4WlV0ohil4-T"/>
+</div>
+<div class="flex-1 overflow-hidden">
+<p class="text-xs font-medium text-on-surface truncate">Promo_Cyber_Sale.mp4</p>
+<p class="text-[10px] text-on-surface-variant">Playlist: Exterior Marketing</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="play_arrow">play_arrow</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex gap-2">
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span>
+</button>
+<button class="p-2 rounded bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span>
+</button>
+</div>
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                            Configure
+                            <span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Footer Meta -->
+<div class="mt-12 pt-8 border-t border-outline-variant/10 flex justify-between items-center text-on-surface-variant text-xs font-body">
+<div>Showing 12 devices connected across 4 zones</div>
+<div class="flex gap-4">
+<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 8 Online</span>
+<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span> 3 Updating</span>
+<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-error"></span> 1 Offline</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Suppressing as per mandate on Details/Management screens, but shown here for layout demo if needed) -->
+<!-- Suppressed: Handled by "Upload Asset" and "Run Diagnostic" buttons within the canvas -->
+</body></html>

@@ -11,14 +11,12 @@ export default async function ReleasesPage() {
   ]);
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
         title="Releases"
         description="Manage player and agent builds, then roll them out across the fleet."
       />
-      <div className="p-8">
-        <ReleaseManager initialDevices={devices} initialReleases={releases} />
-      </div>
-    </>
+      <ReleaseManager initialDevices={devices} initialReleases={releases} />
+    </div>
   );
 }

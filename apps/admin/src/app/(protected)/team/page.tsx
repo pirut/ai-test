@@ -7,16 +7,22 @@ export default async function TeamPage() {
   const session = await requireOrgContext();
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
         title="Team"
         description="Organizations scope all screens, playlists, and alerts."
       />
-      <div className="p-8">
-        <div className="max-w-lg flex flex-col gap-4">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="mb-1 text-[0.75rem] font-medium text-muted-foreground uppercase tracking-wider">Session</p>
-            <p className="font-mono text-sm text-foreground">{session.userId}</p>
+      <div className="max-w-2xl space-y-5">
+        <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Session</p>
+          <p className="mt-2 font-mono text-sm text-foreground">{session.userId}</p>
+        </div>
+        <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="mb-4">
+            <h2 className="font-heading text-xl font-bold text-foreground">Organizations</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Switch the active workspace or create a new organization for another fleet.
+            </p>
           </div>
           <OrganizationList
             afterCreateOrganizationUrl="/dashboard"
@@ -25,6 +31,6 @@ export default async function TeamPage() {
           />
         </div>
       </div>
-    </>
+    </div>
   );
 }

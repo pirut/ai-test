@@ -49,9 +49,16 @@ export function CommandPanel({ deviceId }: { deviceId: string }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-0.5 text-[0.88rem] font-semibold text-foreground">Remote control</h2>
-      <p className="mb-4 text-[0.8rem] text-muted-foreground">Commands are queued and picked up on next heartbeat.</p>
+    <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="mb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Controls
+        </p>
+        <h2 className="font-heading mt-2 text-xl font-bold text-foreground">Remote control</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Commands queue immediately and execute on the device heartbeat loop.
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         {commands.map((cmd) => (
           <Button
@@ -65,10 +72,12 @@ export function CommandPanel({ deviceId }: { deviceId: string }) {
           </Button>
         ))}
       </div>
-      <div className="mt-4 space-y-2 rounded-lg border border-border/70 bg-background/40 p-3">
+      <div className="mt-4 space-y-2 rounded-xl border border-white/6 bg-[var(--surface-low)] p-4">
         <div>
-          <h3 className="text-[0.82rem] font-semibold text-foreground">Remote update</h3>
-          <p className="text-[0.75rem] text-muted-foreground">
+          <h3 className="text-[0.82rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Release update
+          </h3>
+          <p className="mt-1 text-[0.8rem] text-muted-foreground">
             Queue a player archive and/or agent binary. SHA-256 values are optional but recommended.
           </p>
         </div>

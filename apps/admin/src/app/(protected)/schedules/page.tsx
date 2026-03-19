@@ -12,18 +12,16 @@ export default async function SchedulesPage() {
   ]);
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
         title="Schedules"
-        description="Time-based playlist assignment by priority."
+        description="Time-based playlist windows with explicit priority and device targeting."
       />
-      <div className="p-8">
-        <ScheduleManager
-          devices={devices.map((device) => ({ id: device.id, name: device.name }))}
-          initialSchedules={schedules}
-          playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
-        />
-      </div>
-    </>
+      <ScheduleManager
+        devices={devices.map((device) => ({ id: device.id, name: device.name }))}
+        initialSchedules={schedules}
+        playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+      />
+    </div>
   );
 }

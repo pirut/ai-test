@@ -6,55 +6,126 @@ import { requireOrgId } from "@/lib/auth";
 import { listDevices } from "@/lib/backend";
 import { formatRelativeTimestamp } from "@/lib/utils";
 
+function summarizeStatuses(statuses: Array<"online" | "stale" | "offline" | "unclaimed">) {
+  return statuses.reduce(
+    (acc, status) => {
+      acc[status] += 1;
+      return acc;
+    },
+    { online: 0, stale: 0, offline: 0, unclaimed: 0 },
+  );
+}
+
 export default async function ScreensPage() {
   const orgId = await requireOrgId();
   const devices = await listDevices(orgId);
+  const counts = summarizeStatuses(devices.map((device) => device.status));
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
-        title="Screens"
-        description={`${devices.length} device${devices.length !== 1 ? "s" : ""} in this fleet`}
+        title="Devices"
+        description={`${devices.length} screen${devices.length === 1 ? "" : "s"} registered across the fleet.`}
       />
-      <div className="p-8">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {devices.map((device) => (
             <Link
               key={device.id}
               href={`/screens/${device.id}`}
-              className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-border/80 hover:shadow-sm"
+              className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:bg-accent/40"
             >
-              <div className="relative aspect-video overflow-hidden bg-muted">
+              <div className="relative aspect-[16/10] bg-[var(--surface-high)]">
                 {device.screenshotUrl ? (
                   <img
                     alt={device.name}
                     src={device.screenshotUrl}
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <svg className="size-6 text-muted-foreground/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-                      <rect x="2" y="3" width="20" height="14" rx="2" />
-                      <path d="M8 21h8M12 17v4" strokeLinecap="round" />
-                    </svg>
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    Waiting for screenshot
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[0.85rem] font-medium text-card-foreground">{device.name}</span>
-                  <StatusPill status={device.status} label={device.status} />
+
+              <div className="space-y-4 px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{device.name}</p>
+                    <p className="mt-1 truncate text-[0.8rem] text-muted-foreground">
+                      {device.siteName}
+                    </p>
+                  </div>
+                  <StatusPill label={device.status} status={device.status} />
                 </div>
-                <p className="text-[0.75rem] text-muted-foreground">{device.siteName}</p>
-                <div className="flex items-center justify-between gap-2 text-[0.75rem] text-muted-foreground font-mono">
-                  <span className="truncate">{device.currentPlaylistName ?? "—"}</span>
-                  <span className="shrink-0">{formatRelativeTimestamp(device.lastHeartbeatAt)}</span>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Playlist
+                    </p>
+                    <p className="mt-1 truncate text-sm text-foreground">
+                      {device.currentPlaylistName ?? "Unassigned"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Last heartbeat
+                    </p>
+                    <p className="mt-1 font-mono text-sm text-foreground">
+                      {formatRelativeTimestamp(device.lastHeartbeatAt)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </Link>
           ))}
-        </div>
+        </section>
+
+        <aside className="space-y-5">
+          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Device health
+            </p>
+            <div className="mt-4 space-y-3">
+              {[
+                { label: "Online", value: counts.online, status: "online" as const },
+                { label: "Stale", value: counts.stale, status: "stale" as const },
+                { label: "Offline", value: counts.offline, status: "offline" as const },
+                { label: "Unclaimed", value: counts.unclaimed, status: "unclaimed" as const },
+              ].map((entry) => (
+                <div key={entry.label} className="flex items-center justify-between gap-3">
+                  <StatusPill label={entry.label} status={entry.status} />
+                  <span className="font-heading text-2xl font-bold text-foreground">
+                    {entry.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Coverage
+            </p>
+            <div className="mt-4 grid gap-3">
+              {devices.slice(0, 4).map((device) => (
+                <div
+                  key={device.id}
+                  className="rounded-lg border border-white/6 bg-[var(--surface-low)] px-4 py-3"
+                >
+                  <p className="truncate text-sm font-medium text-foreground">{device.name}</p>
+                  <p className="mt-1 truncate text-[0.8rem] text-muted-foreground">
+                    {device.siteName}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
       </div>
-    </>
+    </div>
   );
 }

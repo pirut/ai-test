@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Schedules | Digital Curator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-variant": "#23262a",
+              "secondary-fixed": "#dae2f9",
+              "tertiary-fixed": "#f893e6",
+              "on-tertiary": "#6d1866",
+              "on-tertiary-fixed-variant": "#6c1765",
+              "on-primary-fixed": "#000000",
+              "inverse-surface": "#f9f9fd",
+              "on-surface": "#f9f9fd",
+              "surface-container-high": "#1d2024",
+              "on-primary-container": "#001f57",
+              "primary-container": "#779dff",
+              "outline-variant": "#46484b",
+              "surface-container": "#171a1d",
+              "secondary-fixed-dim": "#cbd4eb",
+              "on-secondary-fixed": "#363f51",
+              "secondary-dim": "#cbd4eb",
+              "on-primary": "#002a6f",
+              "secondary-container": "#3e4759",
+              "surface-dim": "#0c0e11",
+              "surface-bright": "#292c31",
+              "on-tertiary-fixed": "#3d0039",
+              "error": "#ff6e84",
+              "on-error": "#490013",
+              "primary-fixed-dim": "#608fff",
+              "on-surface-variant": "#aaabaf",
+              "on-background": "#f9f9fd",
+              "surface-container-low": "#111417",
+              "surface-tint": "#8dacff",
+              "tertiary-dim": "#e986d8",
+              "on-secondary-container": "#c7d0e6",
+              "inverse-primary": "#0056d3",
+              "error-container": "#a70138",
+              "on-error-container": "#ffb2b9",
+              "on-secondary": "#495264",
+              "on-primary-fixed-variant": "#00276a",
+              "primary-fixed": "#779dff",
+              "on-tertiary-container": "#610a5b",
+              "tertiary-fixed-dim": "#e986d8",
+              "tertiary-container": "#f893e6",
+              "on-secondary-fixed-variant": "#535c6e",
+              "surface-container-highest": "#23262a",
+              "primary-dim": "#296cf0",
+              "error-dim": "#d73357",
+              "primary": "#8dacff",
+              "outline": "#747579",
+              "surface-container-lowest": "#000000",
+              "background": "#0c0e11",
+              "secondary": "#dae2f9",
+              "tertiary": "#ffa7ee",
+              "inverse-on-surface": "#535559",
+              "surface": "#0c0e11"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0c0e11;
+            color: #f9f9fd;
+            font-family: 'Inter', sans-serif;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- TopAppBar -->
+<header class="bg-[#0c0e11] dark:bg-[#0c0e11] flex justify-between items-center w-full px-10 h-16 fixed top-0 z-50">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold text-[#f9f9fd] tracking-tight font-headline">Digital Curator</span>
+<div class="hidden md:flex items-center gap-6 font-manrope text-sm font-medium">
+<span class="text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 px-3 py-2 rounded-lg cursor-pointer">Network Status</span>
+<span class="text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 px-3 py-2 rounded-lg cursor-pointer">Analytics</span>
+<span class="text-[#8dacff] font-bold">Scheduling</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden sm:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#aaabaf] text-sm">search</span>
+<input class="bg-[#111417] border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-1 focus:ring-[#8dacff]/40 placeholder:text-[#aaabaf]/50 text-[#f9f9fd]" placeholder="Search schedules..." type="text"/>
+</div>
+<button class="text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 p-2 rounded-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-[#aaabaf] hover:bg-[#1d2024] transition-colors duration-200 p-2 rounded-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="h-8 w-8 rounded-full overflow-hidden border border-[#46484b]/30">
+<img alt="User profile" data-alt="Portrait of a male professional curator" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7mH1Blp8UxlIgM2V6OLhF7B78GKlBf18p5ZSrshbhrRx2lNF8fsEfQ-MSFq8UXtHAHb7_aCFY6iVF64BUp7rQtTT2xYxcV2IvkCPhCysqP_QgluNtE9x_QMwvmiyAXOcmFH55r2ALF6zyI3x1fb4daPS4XHjAJX5PkH78o6yAFy18uuE1kvrelUbN4sZUQMX889bQ5jl6_S8e0rfj52YSrVnM4kz7YJJqGGPf6JcctmdfoI48hepSvxG9xeFfPF31S2bryYNy1nc8"/>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="bg-[#111417]/80 backdrop-blur-xl h-screen w-64 fixed left-0 top-0 border-r border-[#46484b]/15 flex flex-col h-full py-6 z-40 hidden md:flex">
+<div class="px-6 mb-10 mt-16">
+<div class="flex items-center gap-3 mb-1">
+<div class="w-8 h-8 bg-gradient-to-br from-primary-dim to-primary rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-black text-xl" style="font-variation-settings: 'FILL' 1;">dataset</span>
+</div>
+<div>
+<h2 class="text-lg font-black text-[#8dacff] font-headline tracking-tight">Media Manager</h2>
+<p class="text-[10px] text-[#aaabaf] uppercase tracking-widest font-bold">Enterprise Edition</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1 px-3">
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="perm_media">perm_media</span>
+                Media Library
+            </div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="featured_play_list">featured_play_list</span>
+                Playlists
+            </div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#8dacff] bg-[#1d2024] border-l-2 border-[#8dacff] rounded-r-full font-manrope text-xs tracking-wide uppercase cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+                Schedules
+            </div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="devices">devices</span>
+                Devices
+            </div>
+</nav>
+<div class="px-4 mt-8">
+<button class="w-full bg-gradient-to-r from-primary-dim to-primary text-black font-bold py-3 rounded-lg text-xs uppercase tracking-tighter flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-sm">add</span>
+                Upload Asset
+            </button>
+</div>
+<div class="mt-auto px-3 space-y-1">
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+                Help
+            </div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] font-manrope text-xs tracking-wide uppercase hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+                Logout
+            </div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="md:ml-64 pt-16 h-screen flex flex-col bg-surface overflow-hidden">
+<!-- Header / Control Bar -->
+<div class="p-8 pb-4 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+<div>
+<h1 class="text-3xl font-extrabold font-headline tracking-tighter text-on-surface mb-2">Device Scheduling</h1>
+<p class="text-on-surface-variant font-body text-sm max-w-xl">Orchestrate your content across the global network. Drag and drop playlists to specific time slots or device clusters.</p>
+</div>
+<div class="flex items-center gap-3 bg-surface-container p-1 rounded-xl">
+<button class="px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#8dacff] bg-surface-container-high rounded-lg shadow-xl">Timeline</button>
+<button class="px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#aaabaf] hover:text-on-surface transition-colors">Grid View</button>
+<button class="px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#aaabaf] hover:text-on-surface transition-colors">Calendar</button>
+</div>
+</div>
+<!-- Scheduling UI: Bento-ish Layout -->
+<div class="flex-1 p-8 pt-2 grid grid-cols-12 gap-6 overflow-hidden">
+<!-- Sidebar: Asset Drawer -->
+<div class="col-span-12 lg:col-span-3 flex flex-col gap-6 overflow-hidden">
+<div class="bg-surface-container-low rounded-2xl p-6 flex flex-col h-full border border-outline-variant/10">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-sm font-bold uppercase tracking-widest text-on-surface-variant">Active Playlists</h3>
+<span class="material-symbols-outlined text-[#8dacff] cursor-pointer">filter_list</span>
+</div>
+<div class="flex-1 overflow-y-auto hide-scrollbar space-y-4">
+<!-- Playlist Card 1 -->
+<div class="group bg-surface-container-highest p-4 rounded-xl border border-outline-variant/10 hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing">
+<div class="flex items-center gap-4 mb-3">
+<div class="w-12 h-12 rounded-lg bg-surface-container-low overflow-hidden flex-shrink-0">
+<img alt="Brand visuals" data-alt="Abstract vibrant geometric artwork" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtZ-Gh_IsgVIdme5JnJLtxFflEtKhIHATFCPPFiC0arLJpn6V65rcX-GoKySu9SNWepbrwVsHvg6UAdCgLjbtiB-HGvudLFoxPZIFK4Nu8d-CSYGdtc-tzkSsNy8e1xDq0UcyfJiZfv9VoVpc7Atu7FvD-TCBmFYyG-2PMAKcvkxpEa3oAxo9414aIGNwlO-uMq0QJhJm3HDuI3p8waKxrb8qOCgcRs9CFdWCSKMCHBT5HXDtKPZM6kAAFGf0LMZfnMAFdwJVHjD3b"/>
+</div>
+<div class="flex-1">
+<p class="text-sm font-bold text-on-surface leading-tight">Spring Campaign '24</p>
+<p class="text-[10px] text-tertiary uppercase font-bold tracking-tighter">High Priority</p>
+</div>
+</div>
+<div class="flex items-center justify-between text-[10px] text-on-surface-variant font-mono">
+<span>12 Assets</span>
+<span>08:45 total</span>
+</div>
+</div>
+<!-- Playlist Card 2 -->
+<div class="group bg-surface-container-highest p-4 rounded-xl border border-outline-variant/10 hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing">
+<div class="flex items-center gap-4 mb-3">
+<div class="w-12 h-12 rounded-lg bg-surface-container-low overflow-hidden flex-shrink-0">
+<img alt="Corporate reel" data-alt="Dark abstract pattern with metallic sheen" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwWXrOSQd4kCG5aUBOmPwxIq7j975qoxTNsOnrFa7ZFBzJU9pfF8Og0xh9Lk0j8qYbogH5oIZi4OgIJ6RIYkFWyxYxWikmkGuTL74tP6-MB755MzEG758CL9uF7fI0cg_1_hoVSV8ViX5kESSsOCTSh1tNCH7oI4hyRAx1kjhZcTAoVqD-lByeZ7MK1i4HYN80XORchqjKi7qeEGgRS-XQeH-iMyOyxIl9KcyQx0TB5Vul3spLadcE4W3yPLZMt2AXdjM5c1LPohBC"/>
+</div>
+<div class="flex-1">
+<p class="text-sm font-bold text-on-surface leading-tight">Internal Comms Reel</p>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-tighter">Standard</p>
+</div>
+</div>
+<div class="flex items-center justify-between text-[10px] text-on-surface-variant font-mono">
+<span>5 Assets</span>
+<span>03:20 total</span>
+</div>
+</div>
+<!-- Playlist Card 3 -->
+<div class="group bg-surface-container-highest p-4 rounded-xl border border-outline-variant/10 hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing">
+<div class="flex items-center gap-4 mb-3">
+<div class="w-12 h-12 rounded-lg bg-surface-container-low overflow-hidden flex-shrink-0">
+<img alt="Menu board" data-alt="Soft gradient of blue and pink tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3kYLAC6Xw1ckCyJIYiqSve7A2UuNVEh8HEQDXAjIBqF1GGOkL2JuRUN09nFOYOEwi7i-IkSxA4tM_AO3JmYBFZwoXtYn8SWWJq2jKTfXEnGgg4iO4bkVC_R4ux1je0UmVa8tPoM_ZZmx1Roj4dIyTdV1diyc9YpCOm3sLdlw0903c-WivuN7VbbdmBzmYIbVm4lrLiPTuGhRwESrSOEz5ZcxgQgz6cfKE0fqJzDRDENhm7bOejw1Pw0YOSunUjvd2lvN49MCGPYtt"/>
+</div>
+<div class="flex-1">
+<p class="text-sm font-bold text-on-surface leading-tight">Digital Menu Board B</p>
+<p class="text-[10px] text-secondary-fixed-dim uppercase font-bold tracking-tighter">Regional</p>
+</div>
+</div>
+<div class="flex items-center justify-between text-[10px] text-on-surface-variant font-mono">
+<span>24 Assets</span>
+<span>Loop Only</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Main Timeline Content -->
+<div class="col-span-12 lg:col-span-9 flex flex-col bg-surface-container rounded-3xl border border-outline-variant/5 overflow-hidden">
+<!-- Timeline Header / Time markers -->
+<div class="grid grid-cols-12 bg-surface-container-high/50 border-b border-outline-variant/10">
+<div class="col-span-2 p-4 border-r border-outline-variant/10 flex items-center justify-center">
+<span class="text-[10px] font-bold uppercase tracking-widest text-[#aaabaf]">Target Screen</span>
+</div>
+<div class="col-span-10 grid grid-cols-10 h-12 items-center text-[10px] font-mono text-on-surface-variant/60">
+<div class="text-center">08:00</div>
+<div class="text-center">10:00</div>
+<div class="text-center">12:00</div>
+<div class="text-center">14:00</div>
+<div class="text-center">16:00</div>
+<div class="text-center">18:00</div>
+<div class="text-center">20:00</div>
+<div class="text-center">22:00</div>
+<div class="text-center">00:00</div>
+<div class="text-center">02:00</div>
+</div>
+</div>
+<!-- Timeline Rows Container -->
+<div class="flex-1 overflow-y-auto hide-scrollbar">
+<!-- Row 1 -->
+<div class="grid grid-cols-12 border-b border-outline-variant/5 min-h-[100px] hover:bg-surface-bright/20 transition-colors">
+<div class="col-span-2 p-4 border-r border-outline-variant/10 flex flex-col justify-center">
+<span class="text-xs font-bold text-on-surface">Lobby Main Wall</span>
+<span class="text-[9px] uppercase tracking-tighter text-[#8dacff] font-bold">Group: HQ Entrance</span>
+</div>
+<div class="col-span-10 relative flex items-center p-2">
+<!-- Background Grid Lines -->
+<div class="absolute inset-0 grid grid-cols-10 pointer-events-none opacity-5">
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+<div class="border-r border-white h-full"></div>
+</div>
+<!-- Schedule Blocks -->
+<div class="absolute left-[5%] w-[45%] h-14 bg-gradient-to-r from-primary/20 to-primary/40 rounded-xl border border-primary/30 flex items-center px-4 backdrop-blur-sm group cursor-pointer hover:ring-2 ring-primary/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary scale-75">auto_awesome</span>
+<div>
+<p class="text-[11px] font-bold text-on-surface">Spring Campaign '24</p>
+<p class="text-[9px] text-on-surface-variant font-mono">09:00 — 18:00</p>
+</div>
+</div>
+<div class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+<span class="material-symbols-outlined text-sm text-on-surface-variant hover:text-white">edit</span>
+<span class="material-symbols-outlined text-sm text-on-surface-variant hover:text-error">delete</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="grid grid-cols-12 border-b border-outline-variant/5 min-h-[100px] hover:bg-surface-bright/20 transition-colors">
+<div class="col-span-2 p-4 border-r border-outline-variant/10 flex flex-col justify-center">
+<span class="text-xs font-bold text-on-surface">Elevator Array (4)</span>
+<span class="text-[9px] uppercase tracking-tighter text-[#aaabaf] font-bold">Group: Circulation</span>
+</div>
+<div class="col-span-10 relative flex items-center p-2">
+<div class="absolute left-[0%] w-[100%] h-14 bg-surface-container-highest/80 rounded-xl border border-outline-variant/20 flex items-center px-4 backdrop-blur-sm group cursor-pointer hover:border-primary/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant scale-75">cached</span>
+<div>
+<p class="text-[11px] font-bold text-on-surface">Internal Comms Reel</p>
+<p class="text-[9px] text-on-surface-variant font-mono">24h Loop Activation</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 3 -->
+<div class="grid grid-cols-12 border-b border-outline-variant/5 min-h-[100px] hover:bg-surface-bright/20 transition-colors">
+<div class="col-span-2 p-4 border-r border-outline-variant/10 flex flex-col justify-center">
+<span class="text-xs font-bold text-on-surface">Retail South Kiosk</span>
+<span class="text-[9px] uppercase tracking-tighter text-tertiary font-bold">Group: Mall Level 1</span>
+</div>
+<div class="col-span-10 relative flex items-center p-2">
+<div class="absolute left-[15%] w-[25%] h-14 bg-gradient-to-r from-tertiary/10 to-tertiary/30 rounded-xl border border-tertiary/30 flex items-center px-4 backdrop-blur-sm group cursor-pointer hover:ring-2 ring-tertiary/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-tertiary scale-75">restaurant_menu</span>
+<div>
+<p class="text-[11px] font-bold text-on-surface">Breakfast Specials</p>
+<p class="text-[9px] text-on-surface-variant font-mono">11:00 — 16:00</p>
+</div>
+</div>
+</div>
+<div class="absolute left-[42%] w-[38%] h-14 bg-surface-container-highest rounded-xl border border-outline-variant/10 flex items-center px-4 group cursor-pointer hover:border-primary/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant scale-75 opacity-40">pause_circle</span>
+<p class="text-[11px] font-bold text-on-surface-variant/40 italic">No Content Scheduled</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 4 -->
+<div class="grid grid-cols-12 border-b border-outline-variant/5 min-h-[100px] hover:bg-surface-bright/20 transition-colors">
+<div class="col-span-2 p-4 border-r border-outline-variant/10 flex flex-col justify-center">
+<span class="text-xs font-bold text-on-surface">Conference Wayfinding</span>
+<span class="text-[9px] uppercase tracking-tighter text-[#8dacff] font-bold">Group: Meeting Rooms</span>
+</div>
+<div class="col-span-10 relative flex items-center p-2">
+<div class="absolute left-[0%] w-[100%] h-14 flex items-center justify-center border-2 border-dashed border-outline-variant/10 rounded-xl group hover:border-primary/40 transition-all cursor-pointer">
+<div class="flex items-center gap-2 opacity-20 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-primary">add_circle</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-primary">Drop playlist here</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Timeline Footer / Stats -->
+<div class="p-6 bg-surface-container-high/80 border-t border-outline-variant/10 flex items-center justify-between">
+<div class="flex gap-8">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<span class="text-[10px] uppercase font-bold text-on-surface-variant">4 Active Tracks</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-tertiary"></div>
+<span class="text-[10px] uppercase font-bold text-on-surface-variant">2 Pending Updates</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+<span class="text-[10px] uppercase font-bold text-on-surface-variant">1 Offline Device</span>
+</div>
+</div>
+<div class="flex gap-4">
+<button class="px-6 py-2 rounded-lg bg-surface-container-highest border border-outline-variant/15 text-xs font-bold uppercase tracking-tighter hover:bg-surface-bright active:scale-95 transition-all">Discard Changes</button>
+<button class="px-8 py-2 rounded-lg bg-gradient-to-r from-primary-dim to-primary text-black text-xs font-bold uppercase tracking-tighter active:scale-95 transition-all">Publish Network Schedule</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Only for Scheduling Screens) -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-primary text-black rounded-2xl shadow-[0_24px_48px_rgba(141,172,255,0.3)] flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-50">
+<span class="material-symbols-outlined font-bold" style="font-variation-settings: 'wght' 700;">add_task</span>
+</button>
+</body></html>

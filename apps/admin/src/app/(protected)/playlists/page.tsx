@@ -11,14 +11,12 @@ export default async function PlaylistsPage() {
   ]);
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
         title="Playlists"
-        description="Ordered media sequences assigned to screens."
+        description="Assemble ordered playback sequences and designate fallback loops."
       />
-      <div className="p-8">
-        <PlaylistManagerShell initialPlaylists={playlists} mediaAssets={mediaAssets} />
-      </div>
-    </>
+      <PlaylistManagerShell initialPlaylists={playlists} mediaAssets={mediaAssets} />
+    </div>
   );
 }

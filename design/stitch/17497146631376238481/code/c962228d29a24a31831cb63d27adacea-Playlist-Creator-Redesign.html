@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-container": "#171a1d",
+            "primary-fixed-dim": "#608fff",
+            "on-tertiary-fixed": "#3d0039",
+            "primary-fixed": "#779dff",
+            "background": "#0c0e11",
+            "on-error-container": "#ffb2b9",
+            "on-secondary-container": "#c7d0e6",
+            "on-primary": "#002a6f",
+            "tertiary-dim": "#e986d8",
+            "on-tertiary-container": "#610a5b",
+            "primary-container": "#779dff",
+            "surface-container-high": "#1d2024",
+            "on-surface": "#f9f9fd",
+            "on-primary-container": "#001f57",
+            "on-tertiary": "#6d1866",
+            "on-secondary-fixed-variant": "#535c6e",
+            "inverse-surface": "#f9f9fd",
+            "tertiary-fixed-dim": "#e986d8",
+            "secondary-container": "#3e4759",
+            "primary-dim": "#296cf0",
+            "tertiary-container": "#f893e6",
+            "secondary-fixed": "#dae2f9",
+            "surface-container-highest": "#23262a",
+            "secondary": "#dae2f9",
+            "primary": "#8dacff",
+            "on-error": "#490013",
+            "surface-tint": "#8dacff",
+            "error": "#ff6e84",
+            "surface-container-low": "#111417",
+            "on-primary-fixed-variant": "#00276a",
+            "tertiary": "#ffa7ee",
+            "surface-variant": "#23262a",
+            "outline-variant": "#46484b",
+            "error-container": "#a70138",
+            "secondary-fixed-dim": "#cbd4eb",
+            "on-primary-fixed": "#000000",
+            "on-background": "#f9f9fd",
+            "inverse-on-surface": "#535559",
+            "on-surface-variant": "#aaabaf",
+            "surface-container-lowest": "#000000",
+            "inverse-primary": "#0056d3",
+            "secondary-dim": "#cbd4eb",
+            "on-secondary-fixed": "#363f51",
+            "surface": "#0c0e11",
+            "surface-bright": "#292c31",
+            "on-secondary": "#495264",
+            "tertiary-fixed": "#f893e6",
+            "on-tertiary-fixed-variant": "#6c1765",
+            "surface-dim": "#0c0e11",
+            "error-dim": "#d73357",
+            "outline": "#747579"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+    }
+    .glass-effect {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30">
+<aside class="flex flex-col h-full py-6 bg-[#111417]/80 backdrop-blur-xl h-screen w-64 fixed left-0 top-0 border-r border-[#46484b]/15 z-50">
+<div class="px-6 mb-10">
+<div class="text-lg font-black text-[#8dacff] font-headline">Media Manager</div>
+<div class="font-manrope text-xs tracking-wide uppercase text-on-surface-variant mt-1">Enterprise Edition</div>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="perm_media">perm_media</span>
+<span>Media Library</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#8dacff] bg-[#1d2024] border-l-2 border-[#8dacff] rounded-r-full font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="featured_play_list" style="font-variation-settings: 'FILL' 1;">featured_play_list</span>
+<span>Playlists</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span>Schedules</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="devices">devices</span>
+<span>Devices</span>
+</div>
+</nav>
+<div class="px-4 mb-6">
+<button class="w-full py-3 bg-gradient-to-r from-primary-dim to-primary text-on-primary-container font-headline text-xs font-bold uppercase rounded-lg tracking-widest active:scale-95 transition-transform">
+        Upload Asset
+      </button>
+</div>
+<div class="border-t border-outline-variant/10 pt-4 space-y-1">
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Help</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-[#aaabaf] hover:text-[#f9f9fd] hover:bg-[#171a1d] transition-all cursor-pointer font-manrope text-xs tracking-wide uppercase">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Logout</span>
+</div>
+</div>
+</aside>
+<main class="ml-64 min-h-screen flex flex-col">
+<header class="flex justify-between items-center w-full px-10 h-16 bg-[#0c0e11] sticky top-0 z-40">
+<div class="flex items-center gap-4">
+<h1 class="text-xl font-bold text-[#f9f9fd] tracking-tight font-headline">Playlist Creator</h1>
+<div class="h-4 w-[1px] bg-outline-variant/30"></div>
+<input class="bg-transparent border-none text-on-surface-variant focus:ring-0 font-body text-sm w-64 p-0" placeholder="Untitled Playlist..." type="text" value="Q4 Lobby Reel - Digital Signage"/>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface-variant font-label text-xs uppercase tracking-wider">
+<span class="material-symbols-outlined text-sm" data-icon="cloud_done">cloud_done</span>
+<span>Saved 2m ago</span>
+</div>
+<div class="flex items-center gap-3">
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container font-label text-xs font-bold uppercase rounded-lg hover:bg-surface-container-highest transition-colors">
+            Preview
+          </button>
+<button class="px-4 py-2 bg-gradient-to-r from-primary-dim to-primary text-on-primary-container font-headline text-xs font-bold uppercase rounded-lg shadow-lg shadow-primary/10">
+            Publish Playlist
+          </button>
+</div>
+</div>
+</header>
+<div class="flex-1 flex p-10 gap-10 overflow-hidden">
+<section class="w-2/5 flex flex-col gap-6">
+<div class="flex items-center justify-between">
+<h2 class="font-headline text-lg font-bold text-on-surface tracking-tight">Media Assets</h2>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-lg text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="filter_list">filter_list</span>
+</button>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg" data-icon="search">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container rounded-lg border-none focus:ring-1 focus:ring-primary/40 text-xs text-on-surface w-48 font-body" placeholder="Search library..." type="text"/>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 overflow-y-auto pr-2 custom-scrollbar">
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Abstract gradient 1" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Vibrant abstract blue and purple gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0M_dbg1X0iCgyEpFVXS36_GGYcFacTpgKoFxRCLxbpe9dyFsQCJnuM2lNSsZWBfHFglcZJSW3_mb41Q8CYVjonw-_cN1ChoLm4JJRUATaCqwPsT4X4ryX-D135uK8aFDORRyL3RPAcmPRBk4TMad0Lf7aHgj_Rb4q9ANjXjWed5JPzxRfzH8qeM9y7rjOkn8LDEMcumIXw_EhXQEVKUiIvXjr_jxSoOssovskGDanIICPN4hDbM21vnLnG0mSo2WlxBNv2uMOEhbr"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">0:15</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Corporate_Intro_V1.mp4</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Video • 48.2 MB</div>
+</div>
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Abstract shapes" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Geometric 3D glass shapes on dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3NetGj5HLGhl5szkUUKkXEBebuTtZszsXyyIvAuuk7R8DUr-TPo7PbKUKy9h1mBbKPWXtBNt2mC0A8F6i88xEtEpOPeWAqo1wbzgLJxu0qvEjiEV-A_5sdTTCcvr1WRuI9lRQhX7biZ_C7oplN9f5p-cO9OCyPfOIju-3IHbfa_EauBDf0h4ZVNPP4AUfqx1_L97t3X0VzU73znCP5rbXLV2I6zflLH-z4h-T0cIOHM8rQNWsiurfIBpa-SfY-2FxNmMXzXVQUtYo"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">IMAGE</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Seasonal_Promo_Hero.jpg</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Image • 4.1 MB</div>
+</div>
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Retro tech" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Aesthetic retro technology pattern background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB3BuZHXpL1mx7s99T9TzcIy8c3P_gY7t4kjKpjDQf7PZ25rFycEIdD1qnREQKT0YTV6JXPI0QPC_eVkw91ysvZL6rgzIJv-M6-lP9xmlE1cis8ULbm7PeENhwTZ7RyPcqxDtApJK0HsPGclwAK1mfbC5p73zU1Wgvk4AGVKzOQvUxZx91Dp0b2NZohslh39J9zEj3StTkB6jZGmRUAaos1PPY-8Myf4LPoL_wPlWclftmhRLENnUsgRYy5hkXY_7D7PnyPVdD60aal"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">0:30</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Tech_Timeline_Loop.mp4</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Video • 112 MB</div>
+</div>
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Red gradient" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Soft deep red and black abstract gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVUGFCggYgdy-ixQdKLCGi60xBtk7AkgmZr11qqcn1QHMBla7wxmUtsF2AAQ2RWAhY-bXrKfwBD8hoBFmzWmw_bnfIPwpXo5xoUMDumpxFVfJb9eUvW-a4kk9R0EO9SXSnQhenEdF1g6K1RnLWlF4iKgvp4FIgsmMM64gnPh1HIPVcfdnO8DzjfIPeT3FQdoOAduOaGj2jlVCdPce7DKdzBlqTPEA8xlsP8FdsTUP0IBSjPwI1pTh8SudFlLxVPqbiaOoQrQh3_ccj"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">IMAGE</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Announcement_Banner_Red.png</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Image • 2.8 MB</div>
+</div>
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Yellow wave" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Flowing yellow and orange digital wave art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsfs-avlcvcvkhZGHjS78JZ8zlI75IZNaQHoAwc1jLcDWT1R4NBtdi56ul0i7A191a3hmtdP-BCAgpZs0ADCNDSYKxQSJ51nqrzfQgCwBoQtSkk1TmGaUKfsm8Hgv45zjhcprBUksr2NEivqM9AW69t1HmJvBWrLmUgBeMPXHrtgfk2SrsHpYj75UbPBiwJoU7_nD8jjHbCHxnD4tJJYOWyO3e36WUwdf8z_FIMZt8BcXH0QlN2G8Z74xvNNASadGmwAAcMMHGvlE0"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">0:10</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Lobby_News_Ticker.mp4</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Video • 24.5 MB</div>
+</div>
+<div class="group bg-surface-container-low rounded-xl p-3 border border-transparent hover:border-primary/20 hover:bg-surface-container-high transition-all cursor-grab active:cursor-grabbing">
+<div class="aspect-video rounded-lg overflow-hidden bg-black mb-3 relative">
+<img alt="Multicolor gradient" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="Dynamic multicolor mesh gradient background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6xQrAWkBDWIvKu6bEJLUnmhkRPV-2Kqr_B6cfDTqt-oSOgSKkfsCUdo5Ax18tHIlZ9iBw-rcpsNkBNi9RE75AqknS3x-2uD6kxNllXRi9FiFIFiXJPbmaE2i89NH2i458Dj3L7Q1IDoegS8jIwFRYdVC3X4qPC9o8iy9_fs0Cr-EIAYguzhV3EbPvkztJ77XbHPqaIVUNnJJWspqHi-2n81TIY-yTkg51a7_i0ToywKs_zjkq-HZ9dkppYsInSu0J7GQmFiy1-lNQ"/>
+<div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-bold">0:45</div>
+</div>
+<div class="font-label text-xs font-semibold text-on-surface truncate">Brand_Showcase_Extended.mp4</div>
+<div class="font-label text-[10px] text-on-surface-variant uppercase tracking-tighter mt-1">Video • 189 MB</div>
+</div>
+</div>
+</section>
+<section class="w-3/5 flex flex-col bg-surface-container-low rounded-3xl border border-outline-variant/10 overflow-hidden">
+<div class="p-6 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container/50">
+<div>
+<h2 class="font-headline text-lg font-bold text-on-surface tracking-tight">Your Playlist</h2>
+<p class="font-body text-xs text-on-surface-variant mt-1">Drag assets to reorder. Total Duration: <span class="text-primary font-bold">02:45</span></p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-lg text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="settings">settings</span>
+</button>
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-lg text-error-dim transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="delete_sweep">delete_sweep</span>
+</button>
+</div>
+</div>
+<div class="flex-1 p-6 space-y-4 overflow-y-auto custom-scrollbar">
+<div class="flex items-center gap-6 p-4 bg-surface-container-highest rounded-2xl group border-l-4 border-primary shadow-lg shadow-black/20">
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="font-headline font-black text-lg opacity-30">01</span>
+<span class="material-symbols-outlined text-xl cursor-ns-resize" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-32 aspect-video rounded-lg overflow-hidden bg-black shrink-0">
+<img alt="Corporate Intro" class="w-full h-full object-cover" data-alt="Vibrant abstract blue and purple gradient" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDkg7hG4yL3ic9p33MTuHgH2Lqx0sfVgVo7ENaISEWuLiDWKDsxymmHWyEGTfdRcgeZujdXHfoAbEighB2S-ha21GRhVaBuyKNbNuvfnWnxFblweD7uGPq68MQjJmt-jLE0VdbCF7O3GWRjcsLb9RUYLaaWr2p6EY-s0cGxx58toR0pdh645-k7ulaCdahhj0mq0vUeK9ENcJ6vNlLdbGALRAAu03dQhxdb9yVJIXtdA2ZHgIy3RAVq65tRInmrQLjEVwhcRnvq4HYT"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline font-bold text-on-surface text-sm">Corporate_Intro_V1.mp4</h3>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="schedule">schedule</span>
+<span>15 Seconds</span>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="aspect_ratio">aspect_ratio</span>
+<span>16:9 Full</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant"><span class="material-symbols-outlined text-lg" data-icon="edit">edit</span></button>
+<button class="p-2 hover:bg-surface-container rounded-lg text-error-dim"><span class="material-symbols-outlined text-lg" data-icon="close">close</span></button>
+</div>
+</div>
+<div class="flex items-center gap-6 p-4 bg-surface-container-high rounded-2xl group border-l-4 border-transparent hover:bg-surface-container-highest transition-colors">
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="font-headline font-black text-lg opacity-30">02</span>
+<span class="material-symbols-outlined text-xl cursor-ns-resize" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-32 aspect-video rounded-lg overflow-hidden bg-black shrink-0">
+<img alt="Tech Loop" class="w-full h-full object-cover" data-alt="Aesthetic retro technology pattern background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAU1l4NdCM61qcILSxW-EKuOXXFofvL88YBYfq4A4VheehFalQzzYBVZQe3ECNJWvF9fVJvDXrdj0Bz6VRqosSqip5kI7E97RvoJ5ZmdJEkoyfa5Gwiv7scMlUbt7cwmSFxX2aMRI3YLn68RpvTngAhnwbiNwYzKZKlI_dI9Es-3f5VSQjCfcwcpr-fGtG_QqhGSMBApSZWqc60avXB5vUobqddQTaS-788huvcxXeC0ostjePbL3medRC2z_GyoDdEMNCzE7girBba"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline font-bold text-on-surface text-sm">Tech_Timeline_Loop.mp4</h3>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="schedule">schedule</span>
+<span>30 Seconds</span>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="repeat">repeat</span>
+<span>Loop 3x</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant"><span class="material-symbols-outlined text-lg" data-icon="edit">edit</span></button>
+<button class="p-2 hover:bg-surface-container rounded-lg text-error-dim"><span class="material-symbols-outlined text-lg" data-icon="close">close</span></button>
+</div>
+</div>
+<div class="flex items-center gap-6 p-4 bg-surface-container-high rounded-2xl group border-l-4 border-transparent hover:bg-surface-container-highest transition-colors">
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="font-headline font-black text-lg opacity-30">03</span>
+<span class="material-symbols-outlined text-xl cursor-ns-resize" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-32 aspect-video rounded-lg overflow-hidden bg-black shrink-0">
+<img alt="Seasonal Promo" class="w-full h-full object-cover" data-alt="Geometric 3D glass shapes on dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoyCjl92G-NzzWPoMK2GH1cBe7DeP7nqlG5dw_aJnmMSQd0gJMS1quZwtVL8szrKYxx9VGoJW9ZN08-d1FJtZaI4NyHwhRFynNrXbPF0Utc1HZUQI3_s4YhgbjCBBMRnRaAOxomRXQBC_C8OW2M0-czQLrk2GmZwMvCfSjjhArOt-Dfl3FqwldaTxbPoSAkEXKpYdzfXYDbLxI0QSgZBF7opaMXuZQX2547t3g1V65K0Px-hYgJqYlF0a1O3lBwASmBNQpEnaIwbYs"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline font-bold text-on-surface text-sm">Seasonal_Promo_Hero.jpg</h3>
+<div class="flex items-center gap-4 mt-2">
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="schedule">schedule</span>
+<span>10 Seconds</span>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label text-[10px] uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs" data-icon="transition_fade">transition_fade</span>
+<span>Crossfade</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant"><span class="material-symbols-outlined text-lg" data-icon="edit">edit</span></button>
+<button class="p-2 hover:bg-surface-container rounded-lg text-error-dim"><span class="material-symbols-outlined text-lg" data-icon="close">close</span></button>
+</div>
+</div>
+<div class="border-2 border-dashed border-outline-variant/20 rounded-2xl p-8 flex flex-col items-center justify-center text-on-surface-variant hover:border-primary/40 hover:bg-primary/5 transition-all group">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-2xl text-primary" data-icon="add">add</span>
+</div>
+<p class="font-headline text-sm font-semibold">Drop assets here</p>
+<p class="font-body text-[10px] uppercase tracking-widest mt-1 opacity-60">or click to browse library</p>
+</div>
+</div>
+<div class="p-6 bg-surface-container-high/80 backdrop-blur-md flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-surface-container-high bg-tertiary-dim text-[10px] flex items-center justify-center font-bold text-on-tertiary">JD</div>
+<div class="w-8 h-8 rounded-full border-2 border-surface-container-high bg-primary-fixed-dim text-[10px] flex items-center justify-center font-bold text-on-primary-fixed-variant">MK</div>
+</div>
+<span class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">2 users editing</span>
+</div>
+<div class="flex gap-4">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="font-label text-xs uppercase font-bold">Autosave</span>
+<div class="w-8 h-4 bg-primary rounded-full relative">
+<div class="absolute right-1 top-1 w-2 h-2 bg-white rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<style>
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #46484b;
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #747579;
+    }
+  </style>
+</body></html>

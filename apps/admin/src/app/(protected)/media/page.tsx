@@ -8,14 +8,12 @@ export default async function MediaPage() {
   const media = await listMediaAssets();
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
-        title="Media"
-        description={`${media.length} asset${media.length !== 1 ? "s" : ""} in library`}
+        title="Media library"
+        description={`${media.length} asset${media.length !== 1 ? "s" : ""} available for playlists and scheduled playback.`}
       />
-      <div className="p-8">
-        <MediaLibraryManager initialAssets={media} />
-      </div>
-    </>
+      <MediaLibraryManager initialAssets={media} />
+    </div>
   );
 }
