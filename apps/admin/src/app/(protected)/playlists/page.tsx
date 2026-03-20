@@ -19,10 +19,7 @@ export default async function PlaylistsPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Playlists"
-        description="Build loops with drag and drop, organize them in folders, and keep a clear fallback playlist."
-      />
+      <PageHeader title="Playlists" />
       <PlaylistManagerShell
         initialMediaFolders={mediaFolders}
         initialPlaylistFolders={playlistFolders}

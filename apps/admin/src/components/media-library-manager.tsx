@@ -7,7 +7,6 @@ import {
   PointerSensor,
   pointerWithin,
   useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type CollisionDetection,
@@ -17,7 +16,14 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react";
 import {
   Check,
   ChevronRight,
@@ -31,10 +37,11 @@ import {
 } from "lucide-react";
 import type { LibraryFolder, MediaAsset } from "@showroom/contracts";
 
+import { LibraryFolderTree } from "@/components/library-folder-tree";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getFolderChildren, getFolderMap, getFolderTrail } from "@/lib/library";
+import { getFolderMap, getFolderTrail } from "@/lib/library";
 import { cn } from "@/lib/utils";
 import { UploadDropzone } from "@/lib/uploadthing";
 
@@ -94,6 +101,13 @@ function formatDuration(seconds: number) {
   return `0:${String(s).padStart(2, "0")}`;
 }
 
+function formatDimensions(asset: MediaAsset) {
+  if (asset.width && asset.height) {
+    return `${asset.width}×${asset.height}`;
+  }
+  return null;
+}
+
 type UploadedFile = {
   fileHash: string | null;
   key: string;
@@ -103,7 +117,53 @@ type UploadedFile = {
   ufsUrl: string;
 };
 
-function MediaAssetCard({
+function MediaAssetPreview({
+  asset,
+  className,
+}: {
+  asset: MediaAsset;
+  className?: string;
+}) {
+  const showImage = asset.type === "image" || asset.sourceType === "youtube";
+  const metaLabel =
+    asset.type === "video" && asset.durationSeconds
+      ? formatDuration(Math.ceil(asset.durationSeconds))
+      : asset.type === "video"
+        ? asset.sourceType === "youtube"
+          ? "YouTube"
+          : "Video"
+        : "Image";
+
+  return (
+    <div
+      className={cn(
+        "relative flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20",
+        className,
+      )}
+    >
+      {showImage ? (
+        <img
+          alt={asset.title}
+          className="h-full w-full object-cover"
+          decoding="async"
+          loading="lazy"
+          src={asset.previewUrl}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-secondary/35 text-muted-foreground">
+          <Video className="size-4" />
+          <span className="text-[10px] font-medium uppercase tracking-[0.16em]">Video</span>
+        </div>
+      )}
+      <div className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white">
+        {asset.type === "video" ? <Video className="size-3" /> : <ImageIcon className="size-3" />}
+        <span>{metaLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function MediaAssetRow({
   asset,
   isSelected,
   onSelect,
@@ -112,7 +172,7 @@ function MediaAssetCard({
 }: {
   asset: MediaAsset;
   isSelected: boolean;
-  onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggleSelect: () => void;
   selectionBadge: string | null;
 }) {
@@ -127,8 +187,8 @@ function MediaAssetCard({
   return (
     <article
       className={cn(
-        "relative cursor-grab overflow-hidden rounded-md border border-border bg-background transition-[opacity,border-color,box-shadow] active:cursor-grabbing hover:border-foreground/20",
-        isSelected ? "border-foreground/30 shadow-sm ring-1 ring-foreground/12" : "",
+        "cursor-grab border-b border-border/75 transition-colors last:border-b-0 hover:bg-accent/35 active:cursor-grabbing",
+        isSelected ? "bg-accent/55" : "",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
@@ -136,149 +196,97 @@ function MediaAssetCard({
       {...attributes}
       {...listeners}
     >
-      <button
-        className={cn(
-          "absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-full border text-xs font-semibold shadow-lg transition-colors",
-          isSelected
-            ? "border-foreground bg-foreground text-background"
-            : "border-white/30 bg-black/55 text-white hover:border-white/50 hover:bg-black/70",
-        )}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleSelect();
-        }}
-        type="button"
-      >
-        {selectionBadge === "check" ? <Check className="size-4" /> : selectionBadge ?? "+"}
-      </button>
-      <button
-        className="block w-full cursor-pointer text-left"
-        onClick={onSelect}
-        type="button"
-      >
-        <div className="relative aspect-[16/10] overflow-hidden border-b border-border bg-muted/20">
-          {asset.type === "video" && asset.sourceType !== "youtube" ? (
-            <video
-              className="h-full w-full object-cover"
-              muted
-              preload="metadata"
-              src={`${asset.previewUrl}#t=0.5`}
-            />
-          ) : (
-            <img alt={asset.title} className="h-full w-full object-cover" src={asset.previewUrl} />
-          )}
-          <div className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/75 px-2 py-1 text-xs text-white">
-            {asset.type === "video" ? (
-              <Video className="size-3.5" />
-            ) : (
-              <ImageIcon className="size-3.5" />
+      <div className="grid gap-3 px-3 py-3 md:grid-cols-[auto_minmax(0,1fr)_112px_132px] md:items-center">
+        <div className="flex items-start gap-3">
+          <button
+            className={cn(
+              "mt-1 flex size-6 shrink-0 items-center justify-center rounded border text-[11px] font-semibold transition-colors",
+              isSelected
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-background text-muted-foreground hover:border-foreground/25 hover:text-foreground",
             )}
-            <span>
-              {asset.type === "video" && asset.durationSeconds
-                ? formatDuration(Math.ceil(asset.durationSeconds))
-                : asset.type}
-            </span>
-          </div>
-        </div>
-        <div className="space-y-2 px-4 py-3">
-          <div>
-            <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
-            <div className="truncate text-xs text-muted-foreground">
-              {asset.fileName} · {prettyBytes(asset.sizeBytes)}
-            </div>
-          </div>
-          {asset.tags.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {asset.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </button>
-    </article>
-  );
-}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSelect();
+            }}
+            type="button"
+          >
+            {selectionBadge === "check" ? <Check className="size-3.5" /> : selectionBadge ?? ""}
+          </button>
 
-function FolderTile({
-  activeDropLabel,
-  count,
-  folder,
-  isActive,
-  label,
-  onDelete,
-  onOpen,
-  onRename,
-}: {
-  activeDropLabel?: string | null;
-  count: number;
-  folder: LibraryFolder | null;
-  isActive: boolean;
-  label?: string;
-  onDelete: () => void;
-  onOpen: () => void;
-  onRename: () => void;
-}) {
-  const { isOver, setNodeRef } = useDroppable({
-    id: `media:${folder?.id ?? "root"}`,
-    data: {
-      type: "folder",
-      scope: "media",
-      folderId: folder?.id ?? null,
-    },
-  });
-
-  return (
-    <div
-      className={cn(
-        "rounded-md border transition-all",
-        isActive ? "border-foreground/20 bg-accent" : "border-border hover:bg-accent/60",
-        isOver ? "scale-[1.02] border-foreground/30 bg-accent ring-1 ring-foreground/15" : "",
-      )}
-      ref={setNodeRef}
-    >
-      <div className="flex items-center justify-between gap-2 px-4 pt-3">
-        <button className="min-w-0 text-left" onClick={onOpen} type="button">
-          <div className="flex items-center gap-3">
-            <FolderPlus className="size-4 text-muted-foreground" />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">
-                {label ?? folder?.name ?? "Root"}
+          <button
+            className="flex min-w-0 flex-1 items-start gap-3 text-left"
+            onClick={onSelect}
+            type="button"
+          >
+            <MediaAssetPreview asset={asset} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
+                {asset.sourceType === "youtube" ? (
+                  <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    YouTube
+                  </span>
+                ) : null}
               </div>
-              <div className="text-xs text-muted-foreground">{count} items</div>
+              <div className="truncate text-xs text-muted-foreground">{asset.fileName}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground md:hidden">
+                <span>{asset.type === "video" ? "Video" : "Image"}</span>
+                <span>•</span>
+                <span>{prettyBytes(asset.sizeBytes)}</span>
+                {asset.type === "video" && asset.durationSeconds ? (
+                  <>
+                    <span>•</span>
+                    <span>{formatDuration(Math.ceil(asset.durationSeconds))}</span>
+                  </>
+                ) : null}
+                {formatDimensions(asset) ? (
+                  <>
+                    <span>•</span>
+                    <span>{formatDimensions(asset)}</span>
+                  </>
+                ) : null}
+              </div>
+              {asset.tags.length > 0 ? (
+                <div className="mt-2 hidden flex-wrap gap-1 md:flex">
+                  {asset.tags.slice(0, 3).map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {asset.tags.length > 3 ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      +{asset.tags.length - 3} more
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
+          </button>
+        </div>
+
+        <div className="hidden md:block">
+          <div className="text-sm font-medium text-foreground">
+            {asset.type === "video" ? "Video" : "Image"}
           </div>
-        </button>
-        <div className="flex items-center gap-1">
-          {folder ? (
-            <>
-              <button
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
-                onClick={onRename}
-                type="button"
-              >
-                <Pencil className="size-3.5" />
-              </button>
-              <button
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
-                onClick={onDelete}
-                type="button"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </>
-          ) : null}
+          <div className="text-xs text-muted-foreground">
+            {asset.sourceType === "youtube" ? "YouTube" : "Upload"}
+          </div>
+        </div>
+
+        <div className="hidden md:block">
+          <div className="text-sm font-medium text-foreground">{prettyBytes(asset.sizeBytes)}</div>
+          <div className="text-xs text-muted-foreground">
+            {asset.type === "video" && asset.durationSeconds
+              ? formatDuration(Math.ceil(asset.durationSeconds))
+              : formatDimensions(asset) ?? "No duration"}
+          </div>
         </div>
       </div>
-      <button className="w-full px-4 pb-3 pt-2 text-left text-xs text-muted-foreground" onClick={onOpen} type="button">
-        {isOver && activeDropLabel ? activeDropLabel : folder ? "Open folder" : "Move or browse root"}
-      </button>
-    </div>
+    </article>
   );
 }
 
@@ -313,6 +321,8 @@ export function MediaLibraryManager({
   const [youtubeTags, setYoutubeTags] = useState("");
   const [isImportingYouTube, setIsImportingYouTube] = useState(false);
 
+  const deferredSearch = useDeferredValue(search);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -322,16 +332,21 @@ export function MediaLibraryManager({
   );
 
   const folderMap = useMemo(() => getFolderMap(folders), [folders]);
+  const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const folderTrail = useMemo(
     () => getFolderTrail(selectedFolderId, folderMap),
     [folderMap, selectedFolderId],
   );
-  const childFolders = useMemo(
-    () => getFolderChildren(folders, selectedFolderId),
-    [folders, selectedFolderId],
-  );
+  const folderAssetCounts = useMemo(() => {
+    const counts = new Map<string | null, number>();
+    for (const asset of assets) {
+      const key = asset.folderId ?? null;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [assets]);
   const visibleAssets = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = deferredSearch.trim().toLowerCase();
     return assets.filter((asset) => {
       if ((asset.folderId ?? null) !== selectedFolderId) {
         return false;
@@ -346,7 +361,7 @@ export function MediaLibraryManager({
         .toLowerCase()
         .includes(query);
     });
-  }, [assets, search, selectedFolderId]);
+  }, [assets, deferredSearch, selectedFolderId]);
   const selectedAssetSet = useMemo(() => new Set(selectedAssetIds), [selectedAssetIds]);
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedAssetSet.has(asset.id)),
@@ -368,6 +383,10 @@ export function MediaLibraryManager({
       : activeDropFolderId === null
         ? "Root library"
         : folderMap.get(activeDropFolderId)?.name ?? "Folder";
+  const currentFolderName = selectedFolderId
+    ? folderMap.get(selectedFolderId)?.name ?? "Folder"
+    : "Root library";
+  const currentFolderCount = folderAssetCounts.get(selectedFolderId ?? null) ?? 0;
 
   const collisionDetection = useMemo<CollisionDetection>(
     () => (args) => {
@@ -379,7 +398,7 @@ export function MediaLibraryManager({
 
   useEffect(() => {
     const scopedIds = selectedAssetIds.filter((assetId) => {
-      const asset = assets.find((entry) => entry.id === assetId);
+      const asset = assetMap.get(assetId);
       return asset ? (asset.folderId ?? null) === selectedFolderId : false;
     });
 
@@ -389,7 +408,13 @@ export function MediaLibraryManager({
     } else if (focusedAssetId && !scopedIds.includes(focusedAssetId)) {
       setFocusedAssetId(scopedIds[0] ?? null);
     }
-  }, [assets, focusedAssetId, selectedAssetIds, selectedFolderId]);
+  }, [assetMap, focusedAssetId, selectedAssetIds, selectedFolderId]);
+
+  function refreshData() {
+    startTransition(() => {
+      router.refresh();
+    });
+  }
 
   function setSelection(assetIds: string[], focusAssetId?: string | null) {
     setSelectedAssetIds(assetIds);
@@ -465,7 +490,7 @@ export function MediaLibraryManager({
       setYoutubeTitle("");
       setYoutubeTags("");
       setStatus({ ok: true, text: `Imported "${nextAsset.title}".` });
-      router.refresh();
+      refreshData();
     } catch (error) {
       setStatus({
         ok: false,
@@ -505,7 +530,7 @@ export function MediaLibraryManager({
       const updatedAsset = await updateAssetRequest(assetId, updates);
       applyUpdatedAssets([updatedAsset]);
       setFocusedAssetId(updatedAsset.id);
-      router.refresh();
+      refreshData();
     } catch (error) {
       setStatus({
         ok: false,
@@ -524,7 +549,7 @@ export function MediaLibraryManager({
         ok: true,
         text: `Updated ${updatedAssets.length} asset${updatedAssets.length !== 1 ? "s" : ""}.`,
       });
-      router.refresh();
+      refreshData();
     } catch (error) {
       setStatus({
         ok: false,
@@ -561,7 +586,7 @@ export function MediaLibraryManager({
         ok: true,
         text: `Deleted ${assetIds.length} asset${assetIds.length !== 1 ? "s" : ""}.`,
       });
-      router.refresh();
+      refreshData();
     } catch (error) {
       setStatus({
         ok: false,
@@ -594,7 +619,7 @@ export function MediaLibraryManager({
     const nextFolder = payload.folder as LibraryFolder;
     setFolders((current) => [...current, nextFolder]);
     setSelectedFolderId(nextFolder.id);
-    router.refresh();
+    refreshData();
   }
 
   async function renameFolder(folder: LibraryFolder) {
@@ -618,7 +643,7 @@ export function MediaLibraryManager({
     setFolders((current) =>
       current.map((entry) => (entry.id === folder.id ? nextFolder : entry)),
     );
-    router.refresh();
+    refreshData();
   }
 
   async function deleteFolder(folder: LibraryFolder) {
@@ -650,7 +675,7 @@ export function MediaLibraryManager({
     if (selectedFolderId === folder.id) {
       setSelectedFolderId(folder.parentId ?? null);
     }
-    router.refresh();
+    refreshData();
   }
 
   async function moveAssetsToFolder(assetIds: string[], folderId: string | null) {
@@ -661,7 +686,7 @@ export function MediaLibraryManager({
     await saveBulkAssetEdit(assetIds, { folderId });
   }
 
-  function handleAssetSelect(assetId: string, event: React.MouseEvent<HTMLButtonElement>) {
+  function handleAssetSelect(assetId: string, event: MouseEvent<HTMLButtonElement>) {
     const assetIndex = visibleAssets.findIndex((asset) => asset.id === assetId);
     if (assetIndex === -1) {
       return;
@@ -757,10 +782,121 @@ export function MediaLibraryManager({
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_340px]">
+        <aside className="space-y-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Folders</p>
+              <Button
+                onClick={() => void createFolder(selectedFolderId)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <FolderPlus className="size-4" />
+              </Button>
+            </div>
+            <div className="space-y-4 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md border border-border bg-background px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Assets
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{assets.length}</div>
+                </div>
+                <div className="rounded-md border border-border bg-background px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Folders
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{folders.length}</div>
+                </div>
+              </div>
+
+              {activeDragAssets.length > 0 ? (
+                <div className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+                  {activeDropFolderName ? (
+                    <>
+                      Move{" "}
+                      <span className="font-medium text-foreground">
+                        {activeDragAssets.length === 1
+                          ? activeDragLeadAsset?.title
+                          : `${activeDragAssets.length} assets`}
+                      </span>{" "}
+                      to <span className="font-medium text-foreground">{activeDropFolderName}</span>
+                    </>
+                  ) : (
+                    "Drop onto a folder to move the current selection."
+                  )}
+                </div>
+              ) : null}
+
+              <LibraryFolderTree
+                activeDragType={activeDragAssetIds.length > 0 ? "asset" : null}
+                droppableScope="media"
+                folders={folders}
+                onDelete={(folder) => void deleteFolder(folder)}
+                onRename={(folder) => void renameFolder(folder)}
+                onSelect={setSelectedFolderId}
+                rootLabel="Root library"
+                selectedFolderId={selectedFolderId}
+              />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-border bg-card">
+            <div className="border-b border-border px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Current folder</p>
+            </div>
+            <div className="space-y-3 p-4">
+              <div>
+                <div className="text-sm font-medium text-foreground">{currentFolderName}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {currentFolderCount} item{currentFolderCount !== 1 ? "s" : ""}
+                </div>
+              </div>
+              {selectedFolderId ? (
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      const folder = folderMap.get(selectedFolderId);
+                      if (folder) {
+                        void renameFolder(folder);
+                      }
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Pencil className="size-4" />
+                    Rename
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      const folder = folderMap.get(selectedFolderId);
+                      if (folder) {
+                        void deleteFolder(folder);
+                      }
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Root items stay visible here until you move them into a folder.
+                </p>
+              )}
+            </div>
+          </section>
+        </aside>
+
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-5 py-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <button
@@ -768,11 +904,11 @@ export function MediaLibraryManager({
                     onClick={() => setSelectedFolderId(null)}
                     type="button"
                   >
-                    Media
+                    Root library
                   </button>
                   {folderTrail.map((folder) => (
-                    <span key={folder.id} className="inline-flex items-center gap-2">
-                      <ChevronRight className="size-4" />
+                    <span key={folder.id} className="inline-flex min-w-0 items-center gap-2">
+                      <ChevronRight className="size-4 shrink-0" />
                       <button
                         className="truncate hover:text-foreground"
                         onClick={() => setSelectedFolderId(folder.id)}
@@ -783,193 +919,103 @@ export function MediaLibraryManager({
                     </span>
                   ))}
                 </div>
-                <p className="mt-2 text-base font-medium text-foreground">
-                  {selectedFolderId ? folderMap.get(selectedFolderId)?.name : "All media"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Drag cards straight into the folder lanes below. The overlay will preview the destination before drop.
-                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <h2 className="text-lg font-semibold text-foreground">{currentFolderName}</h2>
+                  <span className="text-sm text-muted-foreground">
+                    {visibleAssets.length} shown
+                  </span>
+                  {search.trim() ? (
+                    <span className="text-sm text-muted-foreground">
+                      {currentFolderCount} total in folder
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  className="w-full sm:w-64"
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search this folder"
-                  value={search}
-                />
-                {selectedFolderId ? (
-                  <>
-                    <Button
-                      onClick={() => {
-                        const folder = folderMap.get(selectedFolderId);
-                        if (folder) {
-                          void renameFolder(folder);
-                        }
-                      }}
-                      type="button"
-                      variant="outline"
-                    >
-                      Rename folder
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        const folder = folderMap.get(selectedFolderId);
-                        if (folder) {
-                          void deleteFolder(folder);
-                        }
-                      }}
-                      type="button"
-                      variant="outline"
-                    >
-                      Delete folder
-                    </Button>
-                  </>
-                ) : null}
-                <Button onClick={() => void createFolder(selectedFolderId)} type="button" variant="outline">
-                  New folder
-                </Button>
-              </div>
+
+              <Input
+                className="w-full xl:w-72"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search title, filename, or tags"
+                value={search}
+              />
             </div>
           </div>
 
-          <div className="space-y-6 p-5">
-            <div className="rounded-xl border border-dashed border-border bg-background/30 px-4 py-3 text-sm text-muted-foreground">
-              {activeDragAssets.length > 0 ? (
-                <span className="inline-flex items-center gap-2">
-                  <MoveRight className="size-4" />
-                  {activeDropFolderName ? (
+          {selectionCount > 0 ? (
+            <div className="border-b border-border bg-background/40 px-5 py-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">
+                    {selectionCount} asset{selectionCount !== 1 ? "s" : ""} selected
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    • drag to a folder or use the bulk actions here
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectionCount > 1 ? (
                     <>
-                      Move{" "}
-                      <span className="font-medium text-foreground">
-                        {activeDragAssets.length === 1
-                          ? activeDragLeadAsset?.title
-                          : `${activeDragAssets.length} selected assets`}
-                      </span>{" "}
-                      to{" "}
-                      <span className="font-medium text-foreground">{activeDropFolderName}</span>
-                    </>
-                  ) : (
-                    <>
-                      Drag onto a folder card to move{" "}
-                      <span className="font-medium text-foreground">
-                        {activeDragAssets.length === 1
-                          ? activeDragLeadAsset?.title
-                          : `${activeDragAssets.length} selected assets`}
-                      </span>
-                    </>
-                  )}
-                </span>
-              ) : (
-                "Folders are drop lanes now. Drag from the media cards into the folder you want."
-              )}
-            </div>
-
-            {selectionCount > 0 ? (
-              <div className="rounded-xl border border-border bg-accent/40 p-4">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {selectionCount} asset{selectionCount !== 1 ? "s" : ""} selected
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Drag from any selected card to move the whole selection into a folder.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {selectionCount > 1 ? (
-                      <>
-                        <Input
-                          className="w-full sm:w-56"
-                          onChange={(event) => setBulkTags(event.target.value)}
-                          placeholder="Replace tags for selection"
-                          value={bulkTags}
-                        />
-                        <Button
-                          onClick={() =>
-                            void saveBulkAssetEdit(
-                              selectedAssetIds,
-                              {
-                                tags: bulkTags
-                                  .split(",")
-                                  .map((tag) => tag.trim())
-                                  .filter(Boolean),
-                              },
-                            )
-                          }
-                          type="button"
-                          variant="outline"
-                        >
-                          Apply tags
-                        </Button>
-                      </>
-                    ) : null}
-                    {selectedFolderId ? (
+                      <Input
+                        className="w-full sm:w-56"
+                        onChange={(event) => setBulkTags(event.target.value)}
+                        placeholder="Replace tags for selection"
+                        value={bulkTags}
+                      />
                       <Button
-                        onClick={() => void moveAssetsToFolder(selectedAssetIds, null)}
+                        onClick={() =>
+                          void saveBulkAssetEdit(selectedAssetIds, {
+                            tags: bulkTags
+                              .split(",")
+                              .map((tag) => tag.trim())
+                              .filter(Boolean),
+                          })
+                        }
                         type="button"
                         variant="outline"
                       >
-                        Move to root
+                        Apply tags
                       </Button>
-                    ) : null}
-                    <Button onClick={() => setSelection([])} type="button" variant="outline">
-                      <X className="size-4" />
-                      Clear
-                    </Button>
+                    </>
+                  ) : null}
+                  {selectedFolderId ? (
                     <Button
-                      className="justify-start"
-                      onClick={() => void deleteAssets(selectedAssetIds)}
+                      onClick={() => void moveAssetsToFolder(selectedAssetIds, null)}
                       type="button"
                       variant="outline"
                     >
-                      <Trash2 className="size-4" />
-                      Delete
+                      Move to root
                     </Button>
-                  </div>
+                  ) : null}
+                  <Button onClick={() => setSelection([])} type="button" variant="outline">
+                    <X className="size-4" />
+                    Clear
+                  </Button>
+                  <Button
+                    className="justify-start"
+                    onClick={() => void deleteAssets(selectedAssetIds)}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
                 </div>
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {(childFolders.length > 0 || selectedFolderId !== null) ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <FolderTile
-                  activeDropLabel={
-                    activeDropFolderId === null && activeDragAssets.length > 0
-                      ? `Release to move ${activeDragAssets.length === 1 ? "item" : `${activeDragAssets.length} items`} here`
-                      : null
-                  }
-                  count={assets.filter((asset) => (asset.folderId ?? null) === null).length}
-                  folder={null}
-                  isActive={selectedFolderId === null}
-                  key="root-folder-tile"
-                  label="Root library"
-                  onDelete={() => undefined}
-                  onOpen={() => setSelectedFolderId(null)}
-                  onRename={() => undefined}
-                />
-                {childFolders.map((folder) => (
-                  <FolderTile
-                    activeDropLabel={
-                      activeDropFolderId === folder.id && activeDragAssets.length > 0
-                        ? `Release to move ${activeDragAssets.length === 1 ? "item" : `${activeDragAssets.length} items`} here`
-                        : null
-                    }
-                    count={assets.filter((asset) => (asset.folderId ?? null) === folder.id).length}
-                    folder={folder}
-                    isActive={selectedFolderId === folder.id}
-                    key={folder.id}
-                    onDelete={() => void deleteFolder(folder)}
-                    onOpen={() => setSelectedFolderId(folder.id)}
-                    onRename={() => void renameFolder(folder)}
-                  />
-                ))}
-              </div>
-            ) : null}
+          <div className="px-5 py-3">
+            <div className="hidden border-b border-border/75 pb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_112px_132px] md:pl-[122px]">
+              <span>Asset</span>
+              <span>Source</span>
+              <span>Size</span>
+            </div>
 
             {visibleAssets.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              <div>
                 {visibleAssets.map((asset) => (
-                  <MediaAssetCard
+                  <MediaAssetRow
                     asset={asset}
                     isSelected={selectedAssetSet.has(asset.id)}
                     key={asset.id}
@@ -986,11 +1032,11 @@ export function MediaLibraryManager({
                 ))}
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-border px-6 py-10 text-center">
+              <div className="rounded-md border border-dashed border-border px-6 py-12 text-center">
                 <p className="text-sm text-muted-foreground">
-                  {search
+                  {search.trim()
                     ? "No matching assets in this folder."
-                    : "This folder is empty. Upload media or drag assets here from another folder."}
+                    : "This folder is empty."}
                 </p>
               </div>
             )}
@@ -1005,32 +1051,30 @@ export function MediaLibraryManager({
               </p>
             </div>
             {selectionCount > 1 ? (
-              <div className="space-y-4 p-4">
-                <div className="rounded-md border border-border bg-background px-4 py-3">
-                  <div className="text-sm font-medium text-foreground">
-                    {selectionCount} assets ready
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Use the bulk bar to tag or delete, or drag the selected cards into another folder.
-                  </div>
+              <div className="space-y-3 p-4">
+                <div className="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">
+                  Drag from any selected row to move the full selection.
                 </div>
                 <div className="space-y-2">
-                  {selectedAssets.slice(0, 5).map((asset) => (
+                  {selectedAssets.slice(0, 6).map((asset) => (
                     <div
                       key={asset.id}
-                      className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+                      className="flex items-center gap-3 rounded-md border border-border px-3 py-2"
                     >
+                      <MediaAssetPreview asset={asset} className="h-11 w-16" />
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {asset.title}
+                        </div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {asset.folderId ? folderMap.get(asset.folderId)?.name : "Root"}
+                          {asset.folderId ? folderMap.get(asset.folderId)?.name : "Root library"}
                         </div>
                       </div>
                     </div>
                   ))}
-                  {selectedAssets.length > 5 ? (
+                  {selectedAssets.length > 6 ? (
                     <div className="text-xs text-muted-foreground">
-                      +{selectedAssets.length - 5} more selected assets
+                      +{selectedAssets.length - 6} more selected assets
                     </div>
                   ) : null}
                 </div>
@@ -1038,11 +1082,22 @@ export function MediaLibraryManager({
             ) : selectedAsset ? (
               <div className="space-y-4 p-4">
                 <div className="aspect-[16/10] overflow-hidden rounded-md border border-border bg-muted/30">
-                  <img
-                    alt={selectedAsset.title}
-                    className="h-full w-full object-cover"
-                    src={selectedAsset.previewUrl}
-                  />
+                  {selectedAsset.type === "video" && selectedAsset.sourceType !== "youtube" ? (
+                    <video
+                      className="h-full w-full object-cover"
+                      controls
+                      preload="metadata"
+                      src={selectedAsset.previewUrl}
+                    />
+                  ) : (
+                    <img
+                      alt={selectedAsset.title}
+                      className="h-full w-full object-cover"
+                      decoding="async"
+                      loading="lazy"
+                      src={selectedAsset.previewUrl}
+                    />
+                  )}
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-1.5">
@@ -1080,7 +1135,15 @@ export function MediaLibraryManager({
                 <dl className="space-y-2 text-sm">
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Type</dt>
-                    <dd className="text-foreground">{selectedAsset.type}</dd>
+                    <dd className="text-foreground">
+                      {selectedAsset.type === "video" ? "Video" : "Image"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Source</dt>
+                    <dd className="text-foreground">
+                      {selectedAsset.sourceType === "youtube" ? "YouTube" : "Upload"}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Size</dt>
@@ -1089,9 +1152,17 @@ export function MediaLibraryManager({
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Folder</dt>
                     <dd className="truncate text-foreground">
-                      {selectedAsset.folderId ? folderMap.get(selectedAsset.folderId)?.name : "Root"}
+                      {selectedAsset.folderId
+                        ? folderMap.get(selectedAsset.folderId)?.name
+                        : "Root library"}
                     </dd>
                   </div>
+                  {formatDimensions(selectedAsset) ? (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-muted-foreground">Dimensions</dt>
+                      <dd className="text-foreground">{formatDimensions(selectedAsset)}</dd>
+                    </div>
+                  ) : null}
                 </dl>
                 <Button
                   className="w-full justify-start"
@@ -1105,7 +1176,7 @@ export function MediaLibraryManager({
               </div>
             ) : (
               <div className="p-4 text-sm text-muted-foreground">
-                Select an asset to edit details or drag it into a different folder.
+                Select an asset to edit details.
               </div>
             )}
           </section>
@@ -1113,10 +1184,6 @@ export function MediaLibraryManager({
           <section className="rounded-lg border border-border bg-card">
             <div className="border-b border-border px-4 py-3">
               <p className="text-sm font-medium text-foreground">Add media</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                New files and imports land in{" "}
-                {selectedFolderId ? folderMap.get(selectedFolderId)?.name : "Root"}.
-              </p>
             </div>
             <div className="space-y-4 p-4">
               <div className="space-y-3">
@@ -1200,7 +1267,7 @@ export function MediaLibraryManager({
                         ok: true,
                         text: `Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}.`,
                       });
-                      router.refresh();
+                      refreshData();
                     }
                   }}
                   onUploadError={(error) => {
@@ -1251,7 +1318,11 @@ export function MediaLibraryManager({
 
               {status || uploadProgress ? (
                 <div className="rounded-md border border-border px-3 py-2 text-sm">
-                  <p className={status?.ok ? "text-foreground" : "text-destructive"}>
+                  <p
+                    className={
+                      status ? (status.ok ? "text-foreground" : "text-destructive") : "text-foreground"
+                    }
+                  >
                     {status?.text ?? uploadProgress}
                   </p>
                   {isFinalizing ? (
@@ -1280,7 +1351,7 @@ export function MediaLibraryManager({
                 <div className="truncate text-xs text-muted-foreground">
                   {activeDropFolderName
                     ? `Release to move into ${activeDropFolderName}`
-                    : "Drag onto a folder lane"}
+                    : "Drag onto a folder"}
                 </div>
               </div>
             </div>

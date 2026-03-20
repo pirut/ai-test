@@ -9,10 +9,7 @@ export default async function MediaPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Media library"
-        description={`${media.length} asset${media.length !== 1 ? "s" : ""} across ${folders.length} folder${folders.length !== 1 ? "s" : ""}.`}
-      />
+      <PageHeader title="Media library" />
       <MediaLibraryManager initialAssets={media} initialFolders={folders} />
     </div>
   );
