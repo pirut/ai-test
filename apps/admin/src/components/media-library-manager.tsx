@@ -1,13 +1,16 @@
 "use client";
 
 import {
+  closestCorners,
   DndContext,
   DragOverlay,
   PointerSensor,
+  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -123,12 +126,14 @@ function MediaAssetCard({
   return (
     <article
       className={cn(
-        "relative overflow-hidden rounded-md border border-border bg-background transition-[opacity,border-color,box-shadow] hover:border-foreground/20",
+        "relative cursor-grab overflow-hidden rounded-md border border-border bg-background transition-[opacity,border-color,box-shadow] active:cursor-grabbing hover:border-foreground/20",
         isSelected ? "border-foreground/30 shadow-sm ring-1 ring-foreground/12" : "",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
+      {...attributes}
+      {...listeners}
     >
       <button
         className={cn(
@@ -149,8 +154,6 @@ function MediaAssetCard({
         className="block w-full cursor-pointer text-left"
         onClick={onSelect}
         type="button"
-        {...attributes}
-        {...listeners}
       >
         <div className="relative aspect-[16/10] overflow-hidden border-b border-border bg-muted/20">
           {asset.type === "video" && asset.sourceType !== "youtube" ? (
@@ -202,26 +205,28 @@ function MediaAssetCard({
 }
 
 function FolderTile({
-  folder,
   count,
+  folder,
   isActive,
+  label,
   onDelete,
   onOpen,
   onRename,
 }: {
-  folder: LibraryFolder;
   count: number;
+  folder: LibraryFolder | null;
   isActive: boolean;
+  label?: string;
   onDelete: () => void;
   onOpen: () => void;
   onRename: () => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({
-    id: `media:${folder.id}`,
+    id: `media:${folder?.id ?? "root"}`,
     data: {
       type: "folder",
       scope: "media",
-      folderId: folder.id,
+      folderId: folder?.id ?? null,
     },
   });
 
@@ -239,30 +244,36 @@ function FolderTile({
           <div className="flex items-center gap-3">
             <FolderPlus className="size-4 text-muted-foreground" />
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">{folder.name}</div>
+              <div className="truncate text-sm font-medium text-foreground">
+                {label ?? folder?.name ?? "Root"}
+              </div>
               <div className="text-xs text-muted-foreground">{count} items</div>
             </div>
           </div>
         </button>
         <div className="flex items-center gap-1">
-          <button
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
-            onClick={onRename}
-            type="button"
-          >
-            <Pencil className="size-3.5" />
-          </button>
-          <button
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
-            onClick={onDelete}
-            type="button"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          {folder ? (
+            <>
+              <button
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                onClick={onRename}
+                type="button"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+              <button
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                onClick={onDelete}
+                type="button"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
       <button className="w-full px-4 pb-3 pt-2 text-left text-xs text-muted-foreground" onClick={onOpen} type="button">
-        Open folder
+        {folder ? "Open folder" : "Move or browse root"}
       </button>
     </div>
   );
@@ -347,6 +358,14 @@ export function MediaLibraryManager({
   }, [activeDragAssetIds, assets]);
   const activeDragLeadAsset = activeDragAssets[0] ?? null;
   const selectionCount = selectedAssetIds.length;
+
+  const collisionDetection = useMemo<CollisionDetection>(
+    () => (args) => {
+      const pointerCollisions = pointerWithin(args);
+      return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+    },
+    [],
+  );
 
   useEffect(() => {
     const scopedIds = selectedAssetIds.filter((assetId) => {
@@ -706,6 +725,7 @@ export function MediaLibraryManager({
 
   return (
     <DndContext
+      collisionDetection={collisionDetection}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
       onDragStart={handleDragStart}
@@ -901,6 +921,16 @@ export function MediaLibraryManager({
 
             {childFolders.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <FolderTile
+                  count={assets.filter((asset) => (asset.folderId ?? null) === null).length}
+                  folder={null}
+                  isActive={selectedFolderId === null}
+                  key="root-folder-tile"
+                  label="Root library"
+                  onDelete={() => undefined}
+                  onOpen={() => setSelectedFolderId(null)}
+                  onRename={() => undefined}
+                />
                 {childFolders.map((folder) => (
                   <FolderTile
                     count={assets.filter((asset) => (asset.folderId ?? null) === folder.id).length}
