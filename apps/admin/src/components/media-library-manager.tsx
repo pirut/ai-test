@@ -12,6 +12,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -19,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  ChevronRight,
   FolderPlus,
   ImageIcon,
   MoveRight,
@@ -29,7 +31,6 @@ import {
 } from "lucide-react";
 import type { LibraryFolder, MediaAsset } from "@showroom/contracts";
 
-import { LibraryFolderTree } from "@/components/library-folder-tree";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -205,6 +206,7 @@ function MediaAssetCard({
 }
 
 function FolderTile({
+  activeDropLabel,
   count,
   folder,
   isActive,
@@ -213,6 +215,7 @@ function FolderTile({
   onOpen,
   onRename,
 }: {
+  activeDropLabel?: string | null;
   count: number;
   folder: LibraryFolder | null;
   isActive: boolean;
@@ -233,9 +236,9 @@ function FolderTile({
   return (
     <div
       className={cn(
-        "rounded-md border transition-colors",
+        "rounded-md border transition-all",
         isActive ? "border-foreground/20 bg-accent" : "border-border hover:bg-accent/60",
-        isOver ? "ring-1 ring-foreground/15" : "",
+        isOver ? "scale-[1.02] border-foreground/30 bg-accent ring-1 ring-foreground/15" : "",
       )}
       ref={setNodeRef}
     >
@@ -273,7 +276,7 @@ function FolderTile({
         </div>
       </div>
       <button className="w-full px-4 pb-3 pt-2 text-left text-xs text-muted-foreground" onClick={onOpen} type="button">
-        {folder ? "Open folder" : "Move or browse root"}
+        {isOver && activeDropLabel ? activeDropLabel : folder ? "Open folder" : "Move or browse root"}
       </button>
     </div>
   );
@@ -294,6 +297,7 @@ export function MediaLibraryManager({
   const [focusedAssetId, setFocusedAssetId] = useState<string | null>(null);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [activeDragAssetIds, setActiveDragAssetIds] = useState<string[]>([]);
+  const [activeDropFolderId, setActiveDropFolderId] = useState<string | null | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [bulkTags, setBulkTags] = useState("");
 
@@ -358,6 +362,12 @@ export function MediaLibraryManager({
   }, [activeDragAssetIds, assets]);
   const activeDragLeadAsset = activeDragAssets[0] ?? null;
   const selectionCount = selectedAssetIds.length;
+  const activeDropFolderName =
+    activeDropFolderId === undefined
+      ? null
+      : activeDropFolderId === null
+        ? "Root library"
+        : folderMap.get(activeDropFolderId)?.name ?? "Folder";
 
   const collisionDetection = useMemo<CollisionDetection>(
     () => (args) => {
@@ -703,6 +713,19 @@ export function MediaLibraryManager({
     }
   }
 
+  function handleDragOver(event: DragOverEvent | DragEndEvent) {
+    const overData = event.over?.data.current as
+      | { type?: string; scope?: string; folderId?: string | null }
+      | undefined;
+
+    if (overData?.type === "folder" && overData.scope === "media") {
+      setActiveDropFolderId(overData.folderId ?? null);
+      return;
+    }
+
+    setActiveDropFolderId(undefined);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const overData = event.over?.data.current as
       | { type?: string; scope?: string; folderId?: string | null }
@@ -717,10 +740,12 @@ export function MediaLibraryManager({
     }
 
     setActiveDragAssetIds([]);
+    setActiveDropFolderId(undefined);
   }
 
   function handleDragCancel() {
     setActiveDragAssetIds([]);
+    setActiveDropFolderId(undefined);
   }
 
   return (
@@ -728,59 +753,11 @@ export function MediaLibraryManager({
       collisionDetection={collisionDetection}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_340px]">
-        <aside className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium text-foreground">Folders</p>
-                <p className="text-xs text-muted-foreground">
-                  Drag assets from the card grid into folders and manage folders here or in the canvas.
-                </p>
-              </div>
-              <Button
-                onClick={() => void createFolder(selectedFolderId)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <FolderPlus className="size-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-3 p-3">
-            <div className="rounded-md border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-              {activeDragAssets.length > 0 ? (
-                <span className="inline-flex items-center gap-2">
-                  <MoveRight className="size-3.5" />
-                  Drop{" "}
-                  <span className="font-medium text-foreground">
-                    {activeDragAssets.length === 1
-                      ? activeDragLeadAsset?.title
-                      : `${activeDragAssets.length} selected assets`}
-                  </span>{" "}
-                  on a folder
-                </span>
-              ) : (
-                "Use folders for campaigns, seasonal sets, and evergreen content."
-              )}
-            </div>
-            <LibraryFolderTree
-              activeDragType={activeDragAssets.length > 0 ? "asset" : null}
-              droppableScope="media"
-              folders={folders}
-              onDelete={(folder) => void deleteFolder(folder)}
-              onRename={(folder) => void renameFolder(folder)}
-              onSelect={setSelectedFolderId}
-              rootLabel="All media"
-              selectedFolderId={selectedFolderId}
-            />
-          </div>
-        </aside>
-
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-5 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -795,7 +772,7 @@ export function MediaLibraryManager({
                   </button>
                   {folderTrail.map((folder) => (
                     <span key={folder.id} className="inline-flex items-center gap-2">
-                      <span>/</span>
+                      <ChevronRight className="size-4" />
                       <button
                         className="truncate hover:text-foreground"
                         onClick={() => setSelectedFolderId(folder.id)}
@@ -808,6 +785,9 @@ export function MediaLibraryManager({
                 </div>
                 <p className="mt-2 text-base font-medium text-foreground">
                   {selectedFolderId ? folderMap.get(selectedFolderId)?.name : "All media"}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Drag cards straight into the folder lanes below. The overlay will preview the destination before drop.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -853,6 +833,37 @@ export function MediaLibraryManager({
           </div>
 
           <div className="space-y-6 p-5">
+            <div className="rounded-xl border border-dashed border-border bg-background/30 px-4 py-3 text-sm text-muted-foreground">
+              {activeDragAssets.length > 0 ? (
+                <span className="inline-flex items-center gap-2">
+                  <MoveRight className="size-4" />
+                  {activeDropFolderName ? (
+                    <>
+                      Move{" "}
+                      <span className="font-medium text-foreground">
+                        {activeDragAssets.length === 1
+                          ? activeDragLeadAsset?.title
+                          : `${activeDragAssets.length} selected assets`}
+                      </span>{" "}
+                      to{" "}
+                      <span className="font-medium text-foreground">{activeDropFolderName}</span>
+                    </>
+                  ) : (
+                    <>
+                      Drag onto a folder card to move{" "}
+                      <span className="font-medium text-foreground">
+                        {activeDragAssets.length === 1
+                          ? activeDragLeadAsset?.title
+                          : `${activeDragAssets.length} selected assets`}
+                      </span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                "Folders are drop lanes now. Drag from the media cards into the folder you want."
+              )}
+            </div>
+
             {selectionCount > 0 ? (
               <div className="rounded-xl border border-border bg-accent/40 p-4">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -919,9 +930,14 @@ export function MediaLibraryManager({
               </div>
             ) : null}
 
-            {childFolders.length > 0 ? (
+            {(childFolders.length > 0 || selectedFolderId !== null) ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <FolderTile
+                  activeDropLabel={
+                    activeDropFolderId === null && activeDragAssets.length > 0
+                      ? `Release to move ${activeDragAssets.length === 1 ? "item" : `${activeDragAssets.length} items`} here`
+                      : null
+                  }
                   count={assets.filter((asset) => (asset.folderId ?? null) === null).length}
                   folder={null}
                   isActive={selectedFolderId === null}
@@ -933,6 +949,11 @@ export function MediaLibraryManager({
                 />
                 {childFolders.map((folder) => (
                   <FolderTile
+                    activeDropLabel={
+                      activeDropFolderId === folder.id && activeDragAssets.length > 0
+                        ? `Release to move ${activeDragAssets.length === 1 ? "item" : `${activeDragAssets.length} items`} here`
+                        : null
+                    }
                     count={assets.filter((asset) => (asset.folderId ?? null) === folder.id).length}
                     folder={folder}
                     isActive={selectedFolderId === folder.id}
@@ -1245,10 +1266,24 @@ export function MediaLibraryManager({
 
       <DragOverlay dropAnimation={null}>
         {activeDragAssets.length > 0 ? (
-          <div className="rounded-md border border-border bg-card px-3 py-3 text-sm font-medium text-foreground shadow-xl">
-            {activeDragAssets.length === 1
-              ? activeDragLeadAsset?.title
-              : `${activeDragAssets.length} selected assets`}
+          <div className="min-w-64 rounded-xl border border-foreground/15 bg-card/95 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-accent text-foreground">
+                <MoveRight className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate font-medium">
+                  {activeDragAssets.length === 1
+                    ? activeDragLeadAsset?.title
+                    : `${activeDragAssets.length} selected assets`}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {activeDropFolderName
+                    ? `Release to move into ${activeDropFolderName}`
+                    : "Drag onto a folder lane"}
+                </div>
+              </div>
+            </div>
           </div>
         ) : null}
       </DragOverlay>
