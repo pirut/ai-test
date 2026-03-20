@@ -1136,7 +1136,7 @@ export function PlaylistManager({
       sensors={sensors}
     >
       <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_380px]">
-        <aside className="space-y-5">
+        <aside className="space-y-5 xl:sticky xl:top-[6.5rem] xl:max-h-[calc(100vh-7.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           <section className="rounded-lg border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <p className="text-sm font-medium text-foreground">Playlist folders</p>
