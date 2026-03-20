@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-primary": "#002e6a",
+              "on-primary-fixed-variant": "#004395",
+              "tertiary-fixed-dim": "#a4c9ff",
+              "surface-container-low": "#1c1b1b",
+              "on-secondary-fixed-variant": "#404754",
+              "secondary-container": "#404754",
+              "inverse-primary": "#005ac2",
+              "on-tertiary-container": "#002a51",
+              "tertiary": "#a4c9ff",
+              "secondary": "#c0c7d6",
+              "inverse-surface": "#e5e2e1",
+              "surface": "#131313",
+              "on-secondary-fixed": "#151c27",
+              "background": "#131313",
+              "on-primary-container": "#00285d",
+              "on-background": "#e5e2e1",
+              "tertiary-container": "#4c93e7",
+              "tertiary-fixed": "#d4e3ff",
+              "on-tertiary": "#00315d",
+              "outline-variant": "#424754",
+              "secondary-fixed-dim": "#c0c7d6",
+              "secondary-fixed": "#dce2f3",
+              "surface-dim": "#131313",
+              "on-surface-variant": "#c2c6d6",
+              "error": "#ffb4ab",
+              "surface-bright": "#3a3939",
+              "inverse-on-surface": "#313030",
+              "primary": "#adc6ff",
+              "surface-container-highest": "#353534",
+              "on-tertiary-fixed-variant": "#004883",
+              "primary-container": "#4d8eff",
+              "primary-fixed-dim": "#adc6ff",
+              "primary-fixed": "#d8e2ff",
+              "on-secondary": "#2a313d",
+              "on-error-container": "#ffdad6",
+              "surface-container-lowest": "#0e0e0e",
+              "on-surface": "#e5e2e1",
+              "surface-container-high": "#2a2a2a",
+              "error-container": "#93000a",
+              "outline": "#8c909f",
+              "surface-tint": "#adc6ff",
+              "on-error": "#690005",
+              "on-tertiary-fixed": "#001c39",
+              "on-secondary-container": "#aeb5c5",
+              "surface-container": "#201f1f",
+              "on-primary-fixed": "#001a42",
+              "surface-variant": "#353534"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-hero-gradient {
+            background: radial-gradient(circle at 50% 50%, rgba(77, 142, 255, 0.08) 0%, rgba(19, 19, 19, 0) 70%);
+        }
+        .primary-cta-gradient {
+            background: linear-gradient(135deg, #ADC6FF 0%, #4D8EFF 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary/30">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-[#131313]/80 backdrop-blur-xl shadow-2xl shadow-black/40">
+<div class="flex justify-between items-center px-8 py-4 max-w-7xl mx-auto">
+<div class="text-2xl font-black tracking-tighter text-white">Screen</div>
+<div class="hidden md:flex gap-8 items-center">
+<a class="font-['Inter'] tracking-tight text-sm font-medium text-white font-semibold hover:text-white transition-colors duration-300" href="#">Features</a>
+<a class="font-['Inter'] tracking-tight text-sm font-medium text-[#C2C6D6] hover:text-white transition-colors duration-300" href="#">Solutions</a>
+<a class="font-['Inter'] tracking-tight text-sm font-medium text-[#C2C6D6] hover:text-white transition-colors duration-300" href="#">Library</a>
+<a class="font-['Inter'] tracking-tight text-sm font-medium text-[#C2C6D6] hover:text-white transition-colors duration-300" href="#">Pricing</a>
+</div>
+<div class="flex items-center gap-6">
+<button class="font-['Inter'] tracking-tight text-sm font-medium text-[#C2C6D6] hover:text-white transition-colors duration-300">Sign In</button>
+<button class="primary-cta-gradient text-on-primary px-6 py-2.5 rounded-xl font-['Inter'] tracking-tight text-sm font-bold active:scale-95 transition-transform shadow-lg shadow-primary/20">Get Started</button>
+</div>
+</div>
+</nav>
+<main>
+<!-- Hero Section -->
+<section class="relative pt-40 pb-24 overflow-hidden bg-hero-gradient">
+<div class="max-w-7xl mx-auto px-8 flex flex-col items-center text-center">
+<span class="text-primary font-label text-[10px] uppercase tracking-[0.4em] mb-6">Digital Curation Reinvented</span>
+<h1 class="text-5xl md:text-8xl font-black tracking-tighter text-white leading-[0.9] max-w-4xl mb-8">
+                    Curate your digital assets with precision
+                </h1>
+<p class="text-on-surface-variant text-lg md:text-xl max-w-2xl leading-relaxed mb-12">
+                    A cinematic workspace for designers, curators, and architects to organize media with intentional asymmetry and tonal depth.
+                </p>
+<div class="flex flex-col sm:flex-row gap-4 mb-20">
+<button class="primary-cta-gradient text-on-primary px-10 py-4 rounded-xl font-bold text-lg active:scale-95 transition-transform shadow-2xl shadow-primary/30">Get Started Now</button>
+<button class="bg-surface-container-high/50 backdrop-blur-md text-white border border-outline-variant/20 px-10 py-4 rounded-xl font-bold text-lg hover:bg-surface-container-highest transition-colors">Watch Demo</button>
+</div>
+<!-- Hero Image / Mockup -->
+<div class="w-full max-w-6xl mt-12 relative group">
+<div class="absolute inset-0 bg-primary/20 blur-[120px] rounded-full opacity-20 -z-10"></div>
+<div class="bg-surface-container-low rounded-2xl p-2 border border-outline-variant/10 shadow-3xl">
+<img alt="Digital Curator Interface Mockup" class="w-full aspect-[16/9] object-cover rounded-xl grayscale hover:grayscale-0 transition-all duration-700 opacity-90" data-alt="Abstract 3D shapes with dark minimalist interface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDfvNBQCoIb4yk87gsrKg7-LQLw_qFCt2sK8vt4v6pfGSGa4Bt4s1vA7J7_pryxEbmHHuWumNZeRvmKeLWJnfugWsKNjVu93_vaCeZqktJgUF4l4-UFVjsJMQe8u16Lu6W1JEmi1lZd1RroXmY6pHWkkJal0cfMjwvmCu7Nmqs6xSIwrHqAXgQfpizjU2J_lbAZ0neQ8T0I-KndGc-PBARiE52ctNvzOWX2tXSDWobqB1xQrluz6PBG_KlJVW4e2_wZicToqiOEX-4"/>
+</div>
+</div>
+</div>
+</section>
+<!-- Social Proof: Logo Cloud -->
+<section class="py-24 bg-surface">
+<div class="max-w-7xl mx-auto px-8">
+<p class="text-on-surface-variant font-label text-[10px] uppercase tracking-[0.3em] text-center mb-12 opacity-60">Trusted by modern design teams</p>
+<div class="flex flex-wrap justify-center items-center gap-12 md:gap-24 opacity-40 grayscale transition-all">
+<span class="text-2xl font-bold text-white tracking-tighter">VOLT</span>
+<span class="text-2xl font-bold text-white tracking-tighter">AXON</span>
+<span class="text-2xl font-bold text-white tracking-tighter">NEXUS</span>
+<span class="text-2xl font-bold text-white tracking-tighter">ORBIT</span>
+<span class="text-2xl font-bold text-white tracking-tighter">FLUX</span>
+</div>
+</div>
+</section>
+<!-- Features Section -->
+<section class="py-32 bg-surface-container-lowest">
+<div class="max-w-7xl mx-auto px-8">
+<div class="mb-20">
+<h2 class="text-4xl font-black tracking-tight text-white mb-4">Precision Engineering</h2>
+<div class="h-1 w-20 bg-primary"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<!-- Feature 1 -->
+<div class="group p-10 bg-surface border border-outline-variant/10 rounded-2xl hover:bg-surface-container-high transition-all duration-500">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-8 group-hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-primary" data-icon="auto_awesome_motion">auto_awesome_motion</span>
+</div>
+<h3 class="text-xl font-bold text-white mb-4">Advanced Media Library</h3>
+<p class="text-on-surface-variant leading-relaxed">A high-contrast gallery designed to treat your data as artifacts. Zero visual clutter, maximum tonal depth.</p>
+</div>
+<!-- Feature 2 -->
+<div class="group p-10 bg-surface border border-outline-variant/10 rounded-2xl hover:bg-surface-container-high transition-all duration-500">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-8 group-hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-primary" data-icon="group_work">group_work</span>
+</div>
+<h3 class="text-xl font-bold text-white mb-4">Seamless Collaboration</h3>
+<p class="text-on-surface-variant leading-relaxed">Invite partners into a quiet, authoritative environment built for decision-making and creative feedback.</p>
+</div>
+<!-- Feature 3 -->
+<div class="group p-10 bg-surface border border-outline-variant/10 rounded-2xl hover:bg-surface-container-high transition-all duration-500">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-8 group-hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-primary" data-icon="language">language</span>
+</div>
+<h3 class="text-xl font-bold text-white mb-4">Global Content Delivery</h3>
+<p class="text-on-surface-variant leading-relaxed">Lightning-fast edge delivery that ensures your high-end media loads instantly, anywhere on the planet.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- How it works section -->
+<section class="py-32 bg-surface">
+<div class="max-w-7xl mx-auto px-8">
+<div class="mb-20 flex flex-col items-start">
+<span class="text-primary font-label text-[10px] uppercase tracking-[0.4em] mb-4">The Process</span>
+<h2 class="text-4xl md:text-5xl font-black tracking-tight text-white mb-4">How Screen Works</h2>
+<div class="h-1 w-20 bg-primary"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+<!-- Step 1 -->
+<div class="relative">
+<div class="flex items-baseline gap-4 mb-6">
+<span class="text-5xl font-black text-primary/20 leading-none">01</span>
+<h3 class="text-2xl font-bold text-white">Import &amp; Organize</h3>
+</div>
+<div class="p-8 bg-surface-container-low border border-outline-variant/10 rounded-2xl hover:border-primary/30 transition-colors">
+<p class="text-on-surface-variant leading-relaxed">
+                        Drag and drop your high-resolution assets into a structured, cinematic gallery.
+                    </p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="relative">
+<div class="flex items-baseline gap-4 mb-6">
+<span class="text-5xl font-black text-primary/20 leading-none">02</span>
+<h3 class="text-2xl font-bold text-white">Curate with Precision</h3>
+</div>
+<div class="p-8 bg-surface-container-low border border-outline-variant/10 rounded-2xl hover:border-primary/30 transition-colors">
+<p class="text-on-surface-variant leading-relaxed">
+                        Use intentional asymmetry and tonal depth to present your work as a digital artifact.
+                    </p>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="relative">
+<div class="flex items-baseline gap-4 mb-6">
+<span class="text-5xl font-black text-primary/20 leading-none">03</span>
+<h3 class="text-2xl font-bold text-white">Share &amp; Collaborate</h3>
+</div>
+<div class="p-8 bg-surface-container-low border border-outline-variant/10 rounded-2xl hover:border-primary/30 transition-colors">
+<p class="text-on-surface-variant leading-relaxed">
+                        Invite partners into a secure, high-end environment for real-time decision making.
+                    </p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Value Proposition Section -->
+<section class="py-32 bg-surface-container-low border-y border-outline-variant/5">
+<div class="max-w-7xl mx-auto px-8 flex flex-col md:flex-row items-center gap-16">
+<div class="flex-1 space-y-8">
+<span class="text-primary font-label text-[10px] uppercase tracking-[0.4em]">Vertical Integration</span>
+<h2 class="text-4xl md:text-6xl font-black tracking-tighter text-white leading-[1.1]">Uncompromising Power, Radical Value</h2>
+<p class="text-on-surface-variant text-lg leading-relaxed max-w-xl">
+                    By building our own specialized hardware from the ground up, we've eliminated the overhead of third-party cloud providers. We pass these architectural savings directly to you.
+                </p>
+<div class="flex items-center gap-4 py-4 border-t border-outline-variant/10">
+<div class="p-3 bg-primary/10 rounded-lg">
+<span class="material-symbols-outlined text-primary" data-icon="settings_input_component">settings_input_component</span>
+</div>
+<div>
+<p class="text-white font-bold">Custom Build Architecture</p>
+<p class="text-on-surface-variant text-sm">Engineered for maximum archival stability</p>
+</div>
+</div>
+</div>
+<div class="flex-1 w-full">
+<div class="relative p-1 bg-gradient-to-br from-outline-variant/20 to-transparent rounded-2xl">
+<div class="bg-surface rounded-xl p-8 space-y-6">
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant text-sm font-medium">Monthly Infrastructure Cost</span>
+<span class="text-primary font-bold">80% Lower</span>
+</div>
+<div class="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary w-[20%] h-full"></div>
+</div>
+<div class="pt-4 space-y-4">
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-primary text-sm mt-1" data-icon="check_circle">check_circle</span>
+<p class="text-on-surface text-sm">Self-built server arrays for zero margin markup</p>
+</div>
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-primary text-sm mt-1" data-icon="check_circle">check_circle</span>
+<p class="text-on-surface text-sm">Proprietary cooling logic for energy efficiency</p>
+</div>
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-primary text-sm mt-1" data-icon="check_circle">check_circle</span>
+<p class="text-on-surface text-sm">Direct-to-user performance optimization</p>
+</div>
+</div>
+<div class="pt-6">
+<button class="w-full bg-surface-container-highest text-white py-3 rounded-xl font-bold border border-outline-variant/20 hover:border-primary/40 transition-all">View Pricing Specs</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Featured Testimonial -->
+<section class="py-32 bg-surface-container-lowest">
+<div class="max-w-5xl mx-auto px-8">
+<div class="relative">
+<span class="text-9xl font-serif text-primary/10 absolute -top-16 -left-12 leading-none">“</span>
+<blockquote class="relative z-10">
+<p class="text-3xl md:text-4xl font-light italic text-white leading-snug mb-10">
+                            Screen has completely transformed how we present our digital vision. It isn't just a tool; it's a gallery that treats our work with the respect it deserves.
+                        </p>
+<footer class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest overflow-hidden">
+<img alt="Julian Thorne Portrait" class="w-full h-full object-cover" data-alt="Close up portrait of a male creative director" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBw3U9zNBFX1Vb-mzofBPGn0XtE0G7fKTTS38Ohd8_-tLr2zosLMtr7ez0UUsC554QykTck7MCrZDM2pHt5KUbSpOwp2FWG6lvFoxJkI20LK5S1NCQNLlEzOW5Q_Gj9juo9IZRDw8cbBHfNVlc6Ggw2tEupwp5BSX4ta0-xy9_gIcgfZeqeMaRmwwyjCjLuTOaJn_afnnU_E5Doe3TGyFjbxNzuRm4BEOf5XYar9_yhVQbsJ7WLuZDGZ_x15U3NT-L4qHEfnC6wKAM"/>
+</div>
+<div>
+<cite class="not-italic font-bold text-white block">Julian Thorne</cite>
+<span class="text-on-surface-variant text-sm uppercase tracking-widest">Creative Director, Nexa Design</span>
+</div>
+</footer>
+</blockquote>
+</div>
+</div>
+</section>
+<!-- Final CTA Section -->
+<section class="py-32 bg-surface-container-low relative overflow-hidden">
+<div class="absolute bottom-0 right-0 w-[500px] h-[500px] bg-primary/5 blur-[100px] rounded-full translate-x-1/2 translate-y-1/2"></div>
+<div class="max-w-4xl mx-auto px-8 text-center relative z-10">
+<h2 class="text-4xl md:text-6xl font-black tracking-tighter text-white mb-8">Join the Future of Digital Curation</h2>
+<p class="text-on-surface-variant text-lg mb-12 max-w-xl mx-auto">Experience the quiet authority of Screen. Start your curated journey today.</p>
+<form class="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto" onsubmit="return false;">
+<input class="flex-1 bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all" placeholder="Enter your email" type="email"/>
+<button class="primary-cta-gradient text-on-primary px-8 py-4 rounded-xl font-bold whitespace-nowrap active:scale-95 transition-transform">Notify Me</button>
+</form>
+<p class="text-[10px] text-on-surface-variant/40 mt-6 uppercase tracking-[0.2em]">No credit card required. Cancel anytime.</p>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-[#0E0E0E] w-full py-12 border-t border-[#424754]/15">
+<div class="flex flex-col md:flex-row justify-between items-center px-12 gap-6 max-w-7xl mx-auto">
+<div class="text-lg font-bold text-white">Screen</div>
+<div class="flex flex-wrap justify-center gap-8">
+<a class="font-['Inter'] text-xs uppercase tracking-widest text-[#C2C6D6] hover:text-[#3B82F6] transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
+<a class="font-['Inter'] text-xs uppercase tracking-widest text-[#C2C6D6] hover:text-[#3B82F6] transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
+<a class="font-['Inter'] text-xs uppercase tracking-widest text-[#C2C6D6] hover:text-[#3B82F6] transition-colors opacity-80 hover:opacity-100" href="#">Cookie Policy</a>
+<a class="font-['Inter'] text-xs uppercase tracking-widest text-[#C2C6D6] hover:text-[#3B82F6] transition-colors opacity-80 hover:opacity-100" href="#">Security</a>
+</div>
+<div class="text-[#C2C6D6] font-['Inter'] text-[10px] opacity-60">
+                © 2024 Screen Digital Curator. All rights reserved.
+            </div>
+</div>
+</footer>
+</body></html>

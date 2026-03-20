@@ -1,25 +1,40 @@
+import { auth } from "@clerk/nextjs/server";
 import { SignUp } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 
-export default function SignUpPage() {
+import { PublicAuthShell } from "@/components/public-site";
+
+export default async function SignUpPage() {
+  if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    const session = await auth();
+
+    if (session.userId) {
+      redirect(session.orgId ? "/dashboard" : "/team");
+    }
+  }
+
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     return (
-      <main className="authShell">
-        <section className="authCard">
-          <p className="eyebrow">Authentication</p>
-          <h1>Configure Clerk</h1>
-          <p>
-            Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` to
-            enable the live sign-up flow.
-          </p>
-        </section>
-      </main>
+      <PublicAuthShell
+        mode="sign-up"
+        title="Configure Clerk"
+        description="Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY to enable the live sign-up flow."
+      >
+        <div className="rounded-[22px] bg-[#131313] p-5 text-sm leading-7 text-[#c2c6d6]">
+          Clerk is not configured in this environment yet. Once the keys are present,
+          this panel will render the live account creation flow.
+        </div>
+      </PublicAuthShell>
     );
   }
 
   return (
-    <main className="authShell">
+    <PublicAuthShell
+      mode="sign-up"
+      title="Create a Screen workspace"
+      description="Set up your team, choose the active organization, and move directly into the admin app."
+    >
       <SignUp />
-    </main>
+    </PublicAuthShell>
   );
 }
-
