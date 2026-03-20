@@ -1,11 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { ChevronRight, Folder, FolderOpen, Pencil, Trash2 } from "lucide-react";
 import type { LibraryFolder } from "@showroom/contracts";
 
 import { cn } from "@/lib/utils";
-import { getFolderChildren } from "@/lib/library";
+import { getFolderChildren, getFolderMap, getFolderTrail } from "@/lib/library";
 
 export type FolderTreeDragType = "asset" | "playlist";
 export type FolderTreeScope = "media" | "playlist";
@@ -61,6 +62,8 @@ export function LibraryFolderTree({
   onDelete,
   droppableScope,
   activeDragType,
+  filterQuery,
+  itemCounts,
 }: {
   folders: LibraryFolder[];
   selectedFolderId: string | null;
@@ -70,7 +73,43 @@ export function LibraryFolderTree({
   onDelete?: (folder: LibraryFolder) => void;
   droppableScope?: FolderTreeScope;
   activeDragType?: FolderTreeDragType | null;
+  filterQuery?: string;
+  itemCounts?: Map<string | null, number>;
 }) {
+  const folderMap = useMemo(() => getFolderMap(folders), [folders]);
+  const normalizedFilter = filterQuery?.trim().toLowerCase() ?? "";
+  const visibleFolderIds = useMemo(() => {
+    if (!normalizedFilter) {
+      return null;
+    }
+
+    const ids = new Set<string>();
+    for (const folder of folders) {
+      const trail = getFolderTrail(folder.id, folderMap);
+      const searchText = trail.map((entry) => entry.name).join(" / ").toLowerCase();
+      if (!searchText.includes(normalizedFilter)) {
+        continue;
+      }
+
+      for (const entry of trail) {
+        ids.add(entry.id);
+      }
+    }
+
+    return ids;
+  }, [folderMap, folders, normalizedFilter]);
+
+  function shouldShowFolder(folderId: string) {
+    return !visibleFolderIds || visibleFolderIds.has(folderId);
+  }
+
+  function getFolderPath(folderId: string) {
+    return getFolderTrail(folderId, folderMap)
+      .slice(0, -1)
+      .map((entry) => entry.name)
+      .join(" / ");
+  }
+
   function FolderNode({
     folder,
     depth,
@@ -78,8 +117,10 @@ export function LibraryFolderTree({
     folder: LibraryFolder;
     depth: number;
   }) {
-    const children = getFolderChildren(folders, folder.id);
+    const children = getFolderChildren(folders, folder.id).filter((child) => shouldShowFolder(child.id));
     const isSelected = selectedFolderId === folder.id;
+    const path = normalizedFilter ? getFolderPath(folder.id) : "";
+    const itemCount = itemCounts?.get(folder.id) ?? 0;
 
     return (
       <div>
@@ -92,7 +133,7 @@ export function LibraryFolderTree({
           >
             <button
               className={cn(
-                "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
+                "flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
                 isSelected
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -111,7 +152,13 @@ export function LibraryFolderTree({
               ) : (
                 <Folder className="size-4" />
               )}
-              <span className="truncate">{folder.name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate">{folder.name}</div>
+                {path ? (
+                  <div className="truncate text-[11px] text-muted-foreground">{path}</div>
+                ) : null}
+              </div>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{itemCount}</span>
             </button>
           </FolderDropRow>
           {(onRename || onDelete) ? (
@@ -149,6 +196,8 @@ export function LibraryFolderTree({
   }
 
   const rootSelected = selectedFolderId === null;
+  const visibleRootFolders = getFolderChildren(folders, null).filter((folder) => shouldShowFolder(folder.id));
+  const rootCount = itemCounts?.get(null) ?? 0;
 
   return (
     <div className="space-y-1">
@@ -160,7 +209,7 @@ export function LibraryFolderTree({
       >
         <button
           className={cn(
-            "flex h-9 w-full items-center gap-2 rounded-md px-3 text-sm transition-colors",
+            "flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
             rootSelected
               ? "text-foreground"
               : "text-muted-foreground hover:text-foreground",
@@ -169,12 +218,16 @@ export function LibraryFolderTree({
           type="button"
         >
           <Folder className="size-4" />
-          <span>{rootLabel}</span>
+          <span className="flex-1 text-left">{rootLabel}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{rootCount}</span>
         </button>
       </FolderDropRow>
-      {getFolderChildren(folders, null).map((folder) => (
+      {visibleRootFolders.map((folder) => (
         <FolderNode key={folder.id} depth={0} folder={folder} />
       ))}
+      {normalizedFilter && visibleRootFolders.length === 0 ? (
+        <div className="px-3 py-2 text-sm text-muted-foreground">No matching folders.</div>
+      ) : null}
     </div>
   );
 }

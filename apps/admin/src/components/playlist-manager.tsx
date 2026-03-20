@@ -139,42 +139,51 @@ function PlaylistLibraryRow({
   onSelect: () => void;
   playlist: Playlist;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `playlist:${playlist.id}`,
-    data: {
-      type: "playlist",
-      playlistId: playlist.id,
-    },
-  });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `playlist:${playlist.id}`,
+      data: {
+        type: "playlist",
+        playlistId: playlist.id,
+      },
+    });
 
   return (
-    <button
+    <div
       className={cn(
-        "w-full rounded-md border px-3 py-3 text-left transition-colors",
+        "rounded-md border transition-colors",
         isSelected ? "border-foreground/20 bg-accent" : "border-border hover:bg-accent/45",
         isDragging ? "opacity-40" : "",
       )}
-      onClick={onSelect}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      type="button"
-      {...attributes}
-      {...listeners}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-foreground">{playlist.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
+      <div className="flex items-center gap-2 px-3 py-3">
+        <button
+          aria-label={`Drag ${playlist.name}`}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
+          ref={setActivatorNodeRef}
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+        <button className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left" onClick={onSelect} type="button">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-foreground">{playlist.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
+            </div>
           </div>
-        </div>
-        {playlist.isDefault ? (
-          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            Default
-          </span>
-        ) : null}
+          {playlist.isDefault ? (
+            <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Default
+            </span>
+          ) : null}
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -187,13 +196,14 @@ function SourceAssetRow({
   folderName: string;
   onAdd: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `asset:${asset.id}`,
-    data: {
-      type: "asset",
-      assetId: asset.id,
-    },
-  });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `asset:${asset.id}`,
+      data: {
+        type: "asset",
+        assetId: asset.id,
+      },
+    });
 
   return (
     <article
@@ -203,10 +213,19 @@ function SourceAssetRow({
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      {...attributes}
-      {...listeners}
     >
-      <div className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="grid gap-3 px-3 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+        <button
+          aria-label={`Drag ${asset.title}`}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
+          ref={setActivatorNodeRef}
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+
         <button className="flex min-w-0 items-start gap-3 text-left" onClick={onAdd} type="button">
           <AssetPreview asset={asset} />
           <div className="min-w-0 flex-1">
@@ -386,6 +405,8 @@ export function PlaylistManager({
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [mediaSearch, setMediaSearch] = useState("");
+  const [playlistFolderSearch, setPlaylistFolderSearch] = useState("");
+  const [mediaFolderSearch, setMediaFolderSearch] = useState("");
   const [name, setName] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [makeDefault, setMakeDefault] = useState(false);
@@ -400,6 +421,8 @@ export function PlaylistManager({
 
   const deferredPlaylistSearch = useDeferredValue(playlistSearch);
   const deferredMediaSearch = useDeferredValue(mediaSearch);
+  const deferredPlaylistFolderSearch = useDeferredValue(playlistFolderSearch);
+  const deferredMediaFolderSearch = useDeferredValue(mediaFolderSearch);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -416,6 +439,22 @@ export function PlaylistManager({
     () => playlists.find((playlist) => playlist.isDefault) ?? null,
     [playlists],
   );
+  const playlistFolderCounts = useMemo(() => {
+    const counts = new Map<string | null, number>();
+    for (const playlist of playlists) {
+      const key = playlist.folderId ?? null;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [playlists]);
+  const mediaFolderCounts = useMemo(() => {
+    const counts = new Map<string | null, number>();
+    for (const asset of assets) {
+      const key = asset.folderId ?? null;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [assets]);
   const visiblePlaylists = useMemo(() => {
     const query = deferredPlaylistSearch.trim().toLowerCase();
     return sortPlaylists(playlists).filter((playlist) => {
@@ -618,22 +657,44 @@ export function PlaylistManager({
   }
 
   async function movePlaylistToFolder(playlistId: string, folderId: string | null) {
-    const response = await fetch(`/api/playlists/${playlistId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folderId }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      setStatus({ ok: false, text: payload.error ?? "Unable to move playlist" });
-      return;
-    }
+    const previousFolderId =
+      playlists.find((playlist) => playlist.id === playlistId)?.folderId ?? null;
 
-    const nextPlaylist = payload.playlist as Playlist;
     setPlaylists((current) =>
-      current.map((playlist) => (playlist.id === playlistId ? nextPlaylist : playlist)),
+      current.map((playlist) =>
+        playlist.id === playlistId ? { ...playlist, folderId } : playlist,
+      ),
     );
-    refreshData();
+    setStatus({ ok: true, text: "Moving playlist..." });
+
+    try {
+      const response = await fetch(`/api/playlists/${playlistId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to move playlist");
+      }
+
+      const nextPlaylist = payload.playlist as Playlist;
+      setPlaylists((current) =>
+        current.map((playlist) => (playlist.id === playlistId ? nextPlaylist : playlist)),
+      );
+      setStatus({ ok: true, text: "Moved playlist." });
+      refreshData();
+    } catch (error) {
+      setPlaylists((current) =>
+        current.map((playlist) =>
+          playlist.id === playlistId ? { ...playlist, folderId: previousFolderId } : playlist,
+        ),
+      );
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to move playlist",
+      });
+    }
   }
 
   async function handleImportYouTubePlaylist() {
@@ -890,10 +951,18 @@ export function PlaylistManager({
                 </div>
               </div>
 
+              <Input
+                onChange={(event) => setPlaylistFolderSearch(event.target.value)}
+                placeholder="Find folder"
+                value={playlistFolderSearch}
+              />
+
               <LibraryFolderTree
                 activeDragType={activeDrag?.type === "playlist" ? "playlist" : null}
                 droppableScope="playlist"
                 folders={playlistFolders}
+                filterQuery={deferredPlaylistFolderSearch}
+                itemCounts={playlistFolderCounts}
                 onDelete={(folder) => void deleteFolder(folder)}
                 onRename={(folder) => void renameFolder(folder)}
                 onSelect={setSelectedPlaylistFolderId}
@@ -1125,8 +1194,16 @@ export function PlaylistManager({
             </div>
 
             <div className="space-y-4 p-3">
+              <Input
+                onChange={(event) => setMediaFolderSearch(event.target.value)}
+                placeholder="Find folder"
+                value={mediaFolderSearch}
+              />
+
               <LibraryFolderTree
+                filterQuery={deferredMediaFolderSearch}
                 folders={mediaFolders}
+                itemCounts={mediaFolderCounts}
                 onSelect={setSelectedMediaFolderId}
                 rootLabel="Root media"
                 selectedFolderId={selectedMediaFolderId}

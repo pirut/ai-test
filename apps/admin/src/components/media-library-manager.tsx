@@ -28,6 +28,7 @@ import {
   Check,
   ChevronRight,
   FolderPlus,
+  GripVertical,
   ImageIcon,
   MoveRight,
   Pencil,
@@ -169,32 +170,33 @@ function MediaAssetRow({
   onSelect,
   onToggleSelect,
   selectionBadge,
+  dragLabel,
 }: {
   asset: MediaAsset;
   isSelected: boolean;
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggleSelect: () => void;
   selectionBadge: string | null;
+  dragLabel: string;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `media-asset:${asset.id}`,
-    data: {
-      type: "asset",
-      assetId: asset.id,
-    },
-  });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `media-asset:${asset.id}`,
+      data: {
+        type: "asset",
+        assetId: asset.id,
+      },
+    });
 
   return (
     <article
       className={cn(
-        "cursor-grab border-b border-border/75 transition-colors last:border-b-0 hover:bg-accent/35 active:cursor-grabbing",
+        "border-b border-border/75 transition-colors last:border-b-0 hover:bg-accent/35",
         isSelected ? "bg-accent/55" : "",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      {...attributes}
-      {...listeners}
     >
       <div className="grid gap-3 px-3 py-3 md:grid-cols-[auto_minmax(0,1fr)_112px_132px] md:items-center">
         <div className="flex items-start gap-3">
@@ -212,6 +214,17 @@ function MediaAssetRow({
             type="button"
           >
             {selectionBadge === "check" ? <Check className="size-3.5" /> : selectionBadge ?? ""}
+          </button>
+
+          <button
+            aria-label={dragLabel}
+            className="mt-1 flex size-6 shrink-0 items-center justify-center rounded border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
+            ref={setActivatorNodeRef}
+            type="button"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-3.5" />
           </button>
 
           <button
@@ -307,6 +320,7 @@ export function MediaLibraryManager({
   const [activeDragAssetIds, setActiveDragAssetIds] = useState<string[]>([]);
   const [activeDropFolderId, setActiveDropFolderId] = useState<string | null | undefined>(undefined);
   const [search, setSearch] = useState("");
+  const [folderSearch, setFolderSearch] = useState("");
   const [bulkTags, setBulkTags] = useState("");
 
   const [uploadTitle, setUploadTitle] = useState("");
@@ -322,6 +336,7 @@ export function MediaLibraryManager({
   const [isImportingYouTube, setIsImportingYouTube] = useState(false);
 
   const deferredSearch = useDeferredValue(search);
+  const deferredFolderSearch = useDeferredValue(folderSearch);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -410,6 +425,37 @@ export function MediaLibraryManager({
     }
   }, [assetMap, focusedAssetId, selectedAssetIds, selectedFolderId]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target.isContentEditable ||
+          target.closest("[contenteditable='true']"))
+      ) {
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        const nextIds = visibleAssets.map((asset) => asset.id);
+        setSelection(nextIds, nextIds[0] ?? null);
+        setLastSelectedIndex(nextIds.length > 0 ? nextIds.length - 1 : null);
+        return;
+      }
+
+      if (event.key === "Escape" && selectedAssetIds.length > 0) {
+        event.preventDefault();
+        clearSelection();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedAssetIds.length, visibleAssets]);
+
   function refreshData() {
     startTransition(() => {
       router.refresh();
@@ -419,6 +465,11 @@ export function MediaLibraryManager({
   function setSelection(assetIds: string[], focusAssetId?: string | null) {
     setSelectedAssetIds(assetIds);
     setFocusedAssetId(focusAssetId ?? assetIds[0] ?? null);
+  }
+
+  function clearSelection() {
+    setSelection([]);
+    setLastSelectedIndex(null);
   }
 
   async function finalizeUpload(uploaded: UploadedFile, sourceFile?: File) {
@@ -581,7 +632,7 @@ export function MediaLibraryManager({
         }),
       );
       setAssets((current) => current.filter((asset) => !assetIds.includes(asset.id)));
-      setSelection([]);
+      clearSelection();
       setStatus({
         ok: true,
         text: `Deleted ${assetIds.length} asset${assetIds.length !== 1 ? "s" : ""}.`,
@@ -683,7 +734,43 @@ export function MediaLibraryManager({
       return;
     }
 
-    await saveBulkAssetEdit(assetIds, { folderId });
+    const previousFolders = new Map(
+      assetIds.map((assetId) => [assetId, assetMap.get(assetId)?.folderId ?? null]),
+    );
+
+    setAssets((current) =>
+      current.map((asset) =>
+        previousFolders.has(asset.id) ? { ...asset, folderId } : asset,
+      ),
+    );
+    setStatus({
+      ok: true,
+      text: `Moving ${assetIds.length} asset${assetIds.length !== 1 ? "s" : ""}...`,
+    });
+
+    try {
+      const updatedAssets = await Promise.all(
+        assetIds.map((assetId) => updateAssetRequest(assetId, { folderId })),
+      );
+      applyUpdatedAssets(updatedAssets);
+      setStatus({
+        ok: true,
+        text: `Moved ${updatedAssets.length} asset${updatedAssets.length !== 1 ? "s" : ""}.`,
+      });
+      refreshData();
+    } catch (error) {
+      setAssets((current) =>
+        current.map((asset) =>
+          previousFolders.has(asset.id)
+            ? { ...asset, folderId: previousFolders.get(asset.id) ?? null }
+            : asset,
+        ),
+      );
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Unable to move selected assets",
+      });
+    }
   }
 
   function handleAssetSelect(assetId: string, event: MouseEvent<HTMLButtonElement>) {
@@ -812,6 +899,12 @@ export function MediaLibraryManager({
                 </div>
               </div>
 
+              <Input
+                onChange={(event) => setFolderSearch(event.target.value)}
+                placeholder="Find folder"
+                value={folderSearch}
+              />
+
               {activeDragAssets.length > 0 ? (
                 <div className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
                   {activeDropFolderName ? (
@@ -835,8 +928,10 @@ export function MediaLibraryManager({
                 droppableScope="media"
                 folders={folders}
                 onDelete={(folder) => void deleteFolder(folder)}
+                filterQuery={deferredFolderSearch}
                 onRename={(folder) => void renameFolder(folder)}
                 onSelect={setSelectedFolderId}
+                itemCounts={folderAssetCounts}
                 rootLabel="Root library"
                 selectedFolderId={selectedFolderId}
               />
@@ -939,6 +1034,30 @@ export function MediaLibraryManager({
                 value={search}
               />
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {visibleAssets.length > 0 ? (
+                <Button
+                  onClick={() => {
+                    const nextIds = visibleAssets.map((asset) => asset.id);
+                    setSelection(nextIds, nextIds[0] ?? null);
+                    setLastSelectedIndex(nextIds.length > 0 ? nextIds.length - 1 : null);
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Select all
+                </Button>
+              ) : null}
+              {selectionCount > 0 ? (
+                <Button onClick={clearSelection} type="button" variant="outline">
+                  Clear selection
+                </Button>
+              ) : null}
+              <span className="text-xs text-muted-foreground">
+                Shift-click ranges. Ctrl/Cmd-click toggles. Ctrl/Cmd+A selects visible.
+              </span>
+            </div>
           </div>
 
           {selectionCount > 0 ? (
@@ -950,7 +1069,7 @@ export function MediaLibraryManager({
                   </span>
                   <span className="text-muted-foreground">
                     {" "}
-                    • drag to a folder or use the bulk actions here
+                    • drag from the handle or use the bulk actions here
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -987,7 +1106,7 @@ export function MediaLibraryManager({
                       Move to root
                     </Button>
                   ) : null}
-                  <Button onClick={() => setSelection([])} type="button" variant="outline">
+                  <Button onClick={clearSelection} type="button" variant="outline">
                     <X className="size-4" />
                     Clear
                   </Button>
@@ -1017,6 +1136,7 @@ export function MediaLibraryManager({
                 {visibleAssets.map((asset) => (
                   <MediaAssetRow
                     asset={asset}
+                    dragLabel={`Drag ${asset.title}`}
                     isSelected={selectedAssetSet.has(asset.id)}
                     key={asset.id}
                     onSelect={(event) => handleAssetSelect(asset.id, event)}
