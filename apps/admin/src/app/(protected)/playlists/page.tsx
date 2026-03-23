@@ -1,4 +1,3 @@
-import { PageHeader } from "@/components/page-header";
 import { PlaylistManagerShell } from "@/components/playlist-manager-shell";
 import { requireOrgId } from "@/lib/auth";
 import {
@@ -18,14 +17,11 @@ export default async function PlaylistsPage() {
   ]);
 
   return (
-    <div className="space-y-8">
-      <PageHeader title="Playlists" />
-      <PlaylistManagerShell
-        initialMediaFolders={mediaFolders}
-        initialPlaylistFolders={playlistFolders}
-        initialPlaylists={playlists}
-        mediaAssets={mediaAssets}
-      />
-    </div>
+    <PlaylistManagerShell
+      initialMediaFolders={mediaFolders}
+      initialPlaylistFolders={playlistFolders}
+      initialPlaylists={playlists}
+      mediaAssets={mediaAssets}
+    />
   );
 }

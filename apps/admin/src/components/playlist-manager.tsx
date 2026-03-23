@@ -194,6 +194,7 @@ function PlaylistRow({
 function MediaRow({
   asset,
   isSelected,
+  isInQueue,
   onSelect,
   onToggleSelect,
   onAdd,
@@ -201,6 +202,7 @@ function MediaRow({
 }: {
   asset: MediaAsset;
   isSelected: boolean;
+  isInQueue: boolean;
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggleSelect: () => void;
   onAdd: () => void;
@@ -277,7 +279,12 @@ function MediaRow({
       </button>
 
       <Button
-        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+        className={cn(
+          "shrink-0 transition-opacity",
+          isInQueue
+            ? "text-primary opacity-100"
+            : "opacity-0 group-hover:opacity-100",
+        )}
         onClick={(e) => {
           e.stopPropagation();
           onAdd();
@@ -286,7 +293,7 @@ function MediaRow({
         type="button"
         variant="ghost"
       >
-        <Plus className="size-3.5" />
+        {isInQueue ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
       </Button>
     </div>
   );
@@ -524,6 +531,10 @@ export function PlaylistManager({
     : "All media";
 
   const sourceSelectionCount = selectedSourceAssetIds.length;
+  const queueAssetIdSet = useMemo(
+    () => new Set(queue.map((item) => item.assetId)),
+    [queue],
+  );
 
   /* ── Effects ── */
 
@@ -993,12 +1004,12 @@ export function PlaylistManager({
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
         {/* ──────────── Playlist browser sidebar ──────────── */}
-        <aside className="space-y-4 xl:sticky xl:top-[7.5rem] xl:max-h-[calc(100vh-8.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
+        <aside className="space-y-3 xl:sticky xl:top-[8rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             {/* Header */}
-            <div className="border-b border-white/5 px-4 py-4">
+            <div className="border-b border-white/5 px-4 py-3">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Playlists
@@ -1184,10 +1195,10 @@ export function PlaylistManager({
         </aside>
 
         {/* ──────────── Editor area ──────────── */}
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
           {/* Queue editor */}
-          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="border-b border-white/5 px-5 py-4">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="shrink-0 border-b border-white/5 px-5 py-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   {selectedPlaylistId ? "Editing playlist" : "New playlist"}
@@ -1214,7 +1225,7 @@ export function PlaylistManager({
                 </div>
               </div>
 
-              <div className="mt-4 flex gap-3">
+              <div className="mt-3 flex gap-3">
                 <Input
                   className="flex-1"
                   onChange={(e) => setName(e.target.value)}
@@ -1253,7 +1264,7 @@ export function PlaylistManager({
             </div>
 
             {/* Queue body */}
-            <div className="p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <QueueDropZone
                 isActive={
                   activeDrag?.type === "asset" ||
@@ -1319,7 +1330,7 @@ export function PlaylistManager({
             </div>
 
             {selectedPlaylistId ? (
-              <div className="border-t border-white/5 px-5 py-3">
+              <div className="shrink-0 border-t border-white/5 px-5 py-3">
                 <button
                   className="text-[13px] text-muted-foreground transition-colors hover:text-destructive"
                   onClick={() => void handleDelete(selectedPlaylistId)}
@@ -1332,9 +1343,9 @@ export function PlaylistManager({
           </section>
 
           {/* ──────────── Media picker ──────────── */}
-          <aside className="2xl:sticky 2xl:top-[7.5rem] 2xl:max-h-[calc(100vh-8.5rem)] 2xl:self-start 2xl:overflow-y-auto 2xl:pr-1">
-            <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <div className="border-b border-white/5 px-4 py-4">
+          <aside className="2xl:sticky 2xl:top-[8rem] 2xl:max-h-[calc(100vh-10rem)] 2xl:self-start 2xl:overflow-y-auto">
+            <section className="flex flex-col overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="shrink-0 border-b border-white/5 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Media library
                 </p>
@@ -1373,7 +1384,7 @@ export function PlaylistManager({
               </div>
 
               {/* Folder tree (collapsible) */}
-              <div className="border-b border-white/5">
+              <div className="shrink-0 border-b border-white/5">
                 <button
                   className="flex w-full items-center justify-between px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => setShowMediaFolders((v) => !v)}
@@ -1402,7 +1413,7 @@ export function PlaylistManager({
 
               {/* Selection bar */}
               {visibleAssets.length > 0 || sourceSelectionCount > 0 ? (
-                <div className="flex items-center gap-1.5 border-b border-white/5 px-4 py-2">
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-white/5 px-4 py-2">
                   {visibleAssets.length > 0 ? (
                     <Button
                       onClick={() => {
@@ -1449,11 +1460,12 @@ export function PlaylistManager({
               ) : null}
 
               {/* Asset list */}
-              <div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {visibleAssets.length > 0 ? (
                   visibleAssets.map((asset) => (
                     <MediaRow
                       asset={asset}
+                      isInQueue={queueAssetIdSet.has(asset.id)}
                       isSelected={selectedSourceAssetSet.has(asset.id)}
                       key={asset.id}
                       onAdd={() => addAssetToQueue(asset.id)}
