@@ -40,7 +40,9 @@ import {
 import type { LibraryFolder, MediaAsset, Playlist } from "@showroom/contracts";
 
 import { LibraryFolderTree } from "@/components/library-folder-tree";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getFolderMap, getFolderTrail } from "@/lib/library";
@@ -182,9 +184,7 @@ function PlaylistRow({
         </div>
 
         {playlist.isDefault ? (
-          <span className="shrink-0 rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
-            Default
-          </span>
+          <Badge className="shrink-0">Default</Badge>
         ) : null}
       </button>
     </div>
@@ -1007,27 +1007,17 @@ export function PlaylistManager({
       <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
         {/* ──────────── Playlist browser sidebar ──────────── */}
         <aside className="space-y-3 xl:sticky xl:top-[8rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
-          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <Card className="gap-0 py-0">
             {/* Header */}
             <div className="border-b border-white/5 px-4 py-3">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Playlists
                 </p>
-                <div className="flex gap-1">
-                  <Button
-                    onClick={() => void createFolder(selectedPlaylistFolderId)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <FolderPlus className="size-3.5" />
-                  </Button>
-                  <Button onClick={startNewPlaylist} size="sm" type="button">
-                    <Plus className="size-3.5" />
-                    New
-                  </Button>
-                </div>
+                <Button onClick={startNewPlaylist} size="sm" type="button">
+                  <Plus className="size-3.5" />
+                  New
+                </Button>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
@@ -1066,14 +1056,26 @@ export function PlaylistManager({
             </div>
 
             {/* Folder tree */}
-            <div className="border-b border-white/5 px-2 py-2">
-              {activeDrag?.type === "playlist" ? (
-                <div className="mb-2 rounded-md bg-primary/5 px-3 py-2 text-[11px] text-primary">
-                  Drop onto a folder to move{" "}
-                  <span className="font-medium">{activePlaylist?.name}</span>
-                </div>
-              ) : null}
-              <LibraryFolderTree
+            <div className="border-b border-white/5">
+              <div className="flex items-center justify-between px-4 py-1.5">
+                <span className="text-[11px] text-muted-foreground">Folders</span>
+                <Button
+                  onClick={() => void createFolder(selectedPlaylistFolderId)}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <FolderPlus className="size-3.5" />
+                </Button>
+              </div>
+              <div className="px-2 pb-2">
+                {activeDrag?.type === "playlist" ? (
+                  <div className="mb-2 rounded-md bg-primary/5 px-3 py-2 text-[11px] text-primary">
+                    Drop onto a folder to move{" "}
+                    <span className="font-medium">{activePlaylist?.name}</span>
+                  </div>
+                ) : null}
+                <LibraryFolderTree
                 activeDragType={
                   activeDrag?.type === "playlist" ? "playlist" : null
                 }
@@ -1086,6 +1088,7 @@ export function PlaylistManager({
                 rootLabel="All playlists"
                 selectedFolderId={selectedPlaylistFolderId}
               />
+              </div>
             </div>
 
             {/* Playlist list */}
@@ -1108,10 +1111,10 @@ export function PlaylistManager({
                 </div>
               )}
             </div>
-          </section>
+          </Card>
 
           {/* YouTube import (collapsible) */}
-          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <Card className="gap-0 py-0">
             <button
               className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-accent/30"
               onClick={() => setShowYoutubeImport((v) => !v)}
@@ -1191,13 +1194,13 @@ export function PlaylistManager({
                 </p>
               </div>
             ) : null}
-          </section>
+          </Card>
         </aside>
 
         {/* ──────────── Editor area ──────────── */}
         <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
           {/* Queue editor */}
-          <section className="flex flex-col overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <Card className="gap-0 py-0">
             <div className="shrink-0 border-b border-white/5 px-5 py-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -1340,11 +1343,11 @@ export function PlaylistManager({
                 </button>
               </div>
             ) : null}
-          </section>
+          </Card>
 
           {/* ──────────── Media picker ──────────── */}
-          <aside className="2xl:sticky 2xl:top-[8rem] 2xl:max-h-[calc(100vh-10rem)] 2xl:self-start 2xl:overflow-y-auto">
-            <section className="flex flex-col overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <aside className="2xl:sticky 2xl:top-[8rem] 2xl:self-start">
+            <Card className="gap-0 py-0 2xl:max-h-[calc(100vh-10rem)]">
               <div className="shrink-0 border-b border-white/5 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Media library
@@ -1492,7 +1495,7 @@ export function PlaylistManager({
                   </div>
                 )}
               </div>
-            </section>
+            </Card>
           </aside>
         </div>
       </div>
