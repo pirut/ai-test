@@ -29,13 +29,11 @@ import {
 } from "react";
 import {
   Check,
+  ChevronDown,
   ChevronRight,
   FolderPlus,
   GripVertical,
-  ImageIcon,
-  Pencil,
   Plus,
-  Trash2,
   Video,
   X,
 } from "lucide-react";
@@ -47,6 +45,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getFolderMap, getFolderTrail } from "@/lib/library";
 import { cn } from "@/lib/utils";
+
+/* ── Types ──────────────────────────────────────────── */
 
 type QueueItem = {
   id: string;
@@ -60,6 +60,8 @@ type ActiveDrag =
   | { type: "queue-item"; queueItemId: string }
   | null;
 
+/* ── Utilities ──────────────────────────────────────── */
+
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -68,12 +70,8 @@ function formatDuration(seconds: number) {
 }
 
 function prettyBytes(bytes: number) {
-  if (bytes <= 0) {
-    return "remote";
-  }
-  if (bytes < 1024 * 1024) {
-    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  }
+  if (bytes <= 0) return "remote";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
 }
 
@@ -87,10 +85,7 @@ function createQueueItem(assetId: string, dwellSeconds?: number | null): QueueIt
 
 function getPlaylistRuntimeSeconds(items: Playlist["items"]) {
   return items.reduce((sum, item) => {
-    if (item.asset.type === "video") {
-      return sum + Math.ceil(item.asset.durationSeconds ?? 0);
-    }
-
+    if (item.asset.type === "video") return sum + Math.ceil(item.asset.durationSeconds ?? 0);
     return sum + (item.dwellSeconds ?? 10);
   }, 0);
 }
@@ -101,35 +96,19 @@ function getPlaylistRuntimeLabel(items: Playlist["items"]) {
 
 function sortPlaylists(playlists: Playlist[]) {
   return [...playlists].sort((a, b) => {
-    if (a.isDefault !== b.isDefault) {
-      return Number(b.isDefault) - Number(a.isDefault);
-    }
-
+    if (a.isDefault !== b.isDefault) return Number(b.isDefault) - Number(a.isDefault);
     return a.name.localeCompare(b.name);
   });
 }
 
-function AssetPreview({
-  asset,
-  className,
-}: {
-  asset: MediaAsset;
-  className?: string;
-}) {
-  const showImage = asset.type === "image" || asset.sourceType === "youtube";
-  const metaLabel =
-    asset.type === "video" && asset.durationSeconds
-      ? formatDuration(Math.ceil(asset.durationSeconds))
-      : asset.type === "video"
-        ? asset.sourceType === "youtube"
-          ? "YouTube"
-          : "Video"
-        : "Image";
+/* ── Sub-components ─────────────────────────────────── */
 
+function AssetThumb({ asset, className }: { asset: MediaAsset; className?: string }) {
+  const showImage = asset.type === "image" || asset.sourceType === "youtube";
   return (
     <div
       className={cn(
-        "relative flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20",
+        "relative flex h-10 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/5 bg-[var(--surface-high)]",
         className,
       )}
     >
@@ -142,20 +121,13 @@ function AssetPreview({
           src={asset.previewUrl}
         />
       ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-secondary/35 text-muted-foreground">
-          <Video className="size-4" />
-          <span className="text-[10px] font-medium uppercase tracking-[0.16em]">Video</span>
-        </div>
+        <Video className="size-4 text-muted-foreground" />
       )}
-      <div className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white">
-        {asset.type === "video" ? <Video className="size-3" /> : <ImageIcon className="size-3" />}
-        <span>{metaLabel}</span>
-      </div>
     </div>
   );
 }
 
-function PlaylistLibraryRow({
+function PlaylistRow({
   isSelected,
   onSelect,
   playlist,
@@ -169,76 +141,58 @@ function PlaylistLibraryRow({
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
     useDraggable({
       id: `playlist:${playlist.id}`,
-      data: {
-        type: "playlist",
-        playlistId: playlist.id,
-      },
+      data: { type: "playlist", playlistId: playlist.id },
     });
 
   return (
-    <article
+    <div
       className={cn(
-        "border-b border-border/75 transition-colors last:border-b-0 hover:bg-accent/35",
-        isSelected ? "bg-accent/55" : "",
+        "group flex items-center gap-2 border-b border-white/5 px-3 py-2.5 transition-colors last:border-b-0",
+        isSelected ? "bg-accent/50" : "hover:bg-accent/30",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
     >
-      <div className="grid gap-3 px-3 py-3 lg:grid-cols-[auto_minmax(0,1fr)_96px_72px_80px] lg:items-center">
-        <button
-          aria-label={`Drag ${playlist.name}`}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
-          ref={setActivatorNodeRef}
-          type="button"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
+      <button
+        aria-label={`Drag ${playlist.name}`}
+        className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+        ref={setActivatorNodeRef}
+        type="button"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-3.5" />
+      </button>
 
-        <button
-          className="flex min-w-0 items-center justify-between gap-3 text-left"
-          onClick={onSelect}
-          type="button"
-        >
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-foreground">{playlist.name}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground lg:hidden">
-              <span>{runtimeLabel}</span>
-              <span>•</span>
-              <span>
-                {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
-              </span>
-              {playlist.isDefault ? (
-                <>
-                  <span>•</span>
-                  <span>Default</span>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </button>
-
-        <div className="hidden text-xs text-muted-foreground lg:block">{runtimeLabel}</div>
-        <div className="hidden text-xs text-muted-foreground lg:block">
-          {playlist.items.length}
-        </div>
-        <div className="hidden justify-self-end lg:block">
-          {playlist.isDefault ? (
-            <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              Default
+      <button
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        onClick={onSelect}
+        type="button"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-foreground">{playlist.name}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>
+              {playlist.items.length} item{playlist.items.length !== 1 ? "s" : ""}
             </span>
-          ) : null}
+            <span className="text-muted-foreground/40">&middot;</span>
+            <span>{runtimeLabel}</span>
+          </div>
         </div>
-      </div>
-    </article>
+
+        {playlist.isDefault ? (
+          <span className="shrink-0 rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+            Default
+          </span>
+        ) : null}
+      </button>
+    </div>
   );
 }
 
-function SourceAssetRow({
+function MediaRow({
   asset,
-  folderName,
   isSelected,
   onSelect,
   onToggleSelect,
@@ -246,7 +200,6 @@ function SourceAssetRow({
   selectionBadge,
 }: {
   asset: MediaAsset;
-  folderName: string;
   isSelected: boolean;
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggleSelect: () => void;
@@ -256,119 +209,100 @@ function SourceAssetRow({
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
     useDraggable({
       id: `asset:${asset.id}`,
-      data: {
-        type: "asset",
-        assetId: asset.id,
-      },
+      data: { type: "asset", assetId: asset.id },
     });
 
+  const meta =
+    asset.type === "video" && asset.durationSeconds
+      ? formatDuration(Math.ceil(asset.durationSeconds))
+      : prettyBytes(asset.sizeBytes);
+
   return (
-    <article
+    <div
       className={cn(
-        "border-b border-border/75 transition-colors last:border-b-0 hover:bg-accent/35",
-        isSelected ? "bg-accent/55" : "",
+        "group flex items-center gap-2 border-b border-white/5 px-3 py-2 transition-colors last:border-b-0",
+        isSelected ? "bg-accent/50" : "hover:bg-accent/30",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
     >
-      <div className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex items-start gap-2 pt-1">
-            <button
-              className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded border text-[11px] font-semibold transition-colors",
-                isSelected
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border bg-background text-muted-foreground hover:border-foreground/25 hover:text-foreground",
-              )}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleSelect();
-              }}
-              type="button"
-            >
-              {selectionBadge === "check" ? <Check className="size-3.5" /> : selectionBadge ?? ""}
-            </button>
+      <button
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded border text-[10px] font-semibold transition-colors",
+          isSelected
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-white/10 text-transparent hover:border-white/25",
+        )}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect();
+        }}
+        type="button"
+      >
+        {selectionBadge === "check" ? <Check className="size-3" /> : (selectionBadge ?? "")}
+      </button>
 
-            <button
-              aria-label={`Drag ${asset.title}`}
-              className="flex size-6 shrink-0 items-center justify-center rounded border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
-              ref={setActivatorNodeRef}
-              type="button"
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="size-3.5" />
-            </button>
+      <button
+        aria-label={`Drag ${asset.title}`}
+        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:text-foreground"
+        ref={setActivatorNodeRef}
+        type="button"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-3" />
+      </button>
+
+      <button
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        onClick={onSelect}
+        type="button"
+      >
+        <AssetThumb asset={asset} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium text-foreground">{asset.title}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>{asset.type === "video" ? "Video" : "Image"}</span>
+            <span className="text-muted-foreground/40">&middot;</span>
+            <span>{meta}</span>
+            {asset.sourceType === "youtube" ? (
+              <>
+                <span className="text-muted-foreground/40">&middot;</span>
+                <span>YouTube</span>
+              </>
+            ) : null}
           </div>
-
-          <button
-            className="flex min-w-0 flex-1 items-start gap-3 text-left"
-            onClick={onSelect}
-            type="button"
-          >
-            <AssetPreview asset={asset} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
-                {asset.sourceType === "youtube" ? (
-                  <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    YouTube
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>{asset.type === "video" ? "Video" : "Image"}</span>
-                <span>•</span>
-                <span>{prettyBytes(asset.sizeBytes)}</span>
-                {asset.type === "video" && asset.durationSeconds ? (
-                  <>
-                    <span>•</span>
-                    <span>{formatDuration(Math.ceil(asset.durationSeconds))}</span>
-                  </>
-                ) : null}
-              </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">{folderName}</div>
-            </div>
-          </button>
         </div>
+      </button>
 
-        <Button
-          onClick={(event) => {
-            event.stopPropagation();
-            onAdd();
-          }}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Add
-        </Button>
-      </div>
-    </article>
+      <Button
+        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+        onClick={(e) => {
+          e.stopPropagation();
+          onAdd();
+        }}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <Plus className="size-3.5" />
+      </Button>
+    </div>
   );
 }
 
-function QueueRoot({
-  children,
-  isActive,
-}: {
-  children: React.ReactNode;
-  isActive: boolean;
-}) {
+function QueueDropZone({ children, isActive }: { children: React.ReactNode; isActive: boolean }) {
   const { isOver, setNodeRef } = useDroppable({
     id: "playlist-queue-root",
-    data: {
-      type: "queue-root",
-    },
+    data: { type: "queue-root" },
   });
 
   return (
     <div
       className={cn(
-        "space-y-3 rounded-md border border-dashed border-border bg-background/40 p-3 transition-colors",
-        isOver && isActive ? "border-foreground/25 bg-accent/30" : "",
+        "rounded-lg border border-dashed border-white/8 bg-background/40 p-3 transition-colors",
+        isOver && isActive ? "border-primary/30 bg-accent/30" : "",
       )}
       ref={setNodeRef}
     >
@@ -392,79 +326,63 @@ function QueueCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `queue:${item.id}`,
-    data: {
-      type: "queue-item",
-      queueItemId: item.id,
-    },
+    data: { type: "queue-item", queueItemId: item.id },
   });
 
   return (
     <div
       className={cn(
-        "rounded-md border border-border bg-card transition-colors",
+        "group flex items-center gap-2 rounded-lg border border-white/5 bg-card px-2.5 py-2 transition-colors hover:border-white/10",
         isDragging ? "opacity-40" : "",
       )}
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
-      <div className="grid gap-3 px-3 py-3 md:grid-cols-[auto_auto_minmax(0,1fr)_96px_auto] md:items-center">
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          type="button"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
+      <button
+        className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground"
+        type="button"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-3.5" />
+      </button>
 
-        <div className="hidden md:flex h-8 w-8 items-center justify-center rounded-md bg-background text-xs font-medium text-muted-foreground">
-          {order + 1}
-        </div>
-
-        <div className="flex min-w-0 items-start gap-3">
-          <AssetPreview asset={asset} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">{asset.title}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span>{asset.type === "video" ? "Video" : "Image"}</span>
-              {asset.type === "video" && asset.durationSeconds ? (
-                <>
-                  <span>•</span>
-                  <span>{formatDuration(Math.ceil(asset.durationSeconds))}</span>
-                </>
-              ) : null}
-              {asset.type === "image" ? (
-                <>
-                  <span>•</span>
-                  <span>{item.dwellSeconds || "10"}s dwell</span>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {asset.type === "image" ? (
-          <Input
-            className="h-8 w-24"
-            onChange={(event) => onChangeDwell(event.target.value)}
-            placeholder="10"
-            value={item.dwellSeconds ?? ""}
-          />
-        ) : (
-          <div className="hidden md:block text-xs text-muted-foreground">Fixed runtime</div>
-        )}
-
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onRemove}
-          type="button"
-        >
-          <Trash2 className="size-4" />
-        </button>
+      <div className="flex size-6 shrink-0 items-center justify-center rounded bg-white/5 text-[11px] font-medium text-muted-foreground">
+        {order + 1}
       </div>
+
+      <AssetThumb asset={asset} className="h-9 w-12" />
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium text-foreground">{asset.title}</div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
+          {asset.type === "video" && asset.durationSeconds
+            ? formatDuration(Math.ceil(asset.durationSeconds))
+            : `${item.dwellSeconds || "10"}s dwell`}
+        </div>
+      </div>
+
+      {asset.type === "image" ? (
+        <Input
+          className="h-7 w-16 text-center text-xs"
+          onChange={(e) => onChangeDwell(e.target.value)}
+          placeholder="10"
+          value={item.dwellSeconds ?? ""}
+        />
+      ) : null}
+
+      <button
+        className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
+        onClick={onRemove}
+        type="button"
+      >
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }
+
+/* ── Main component ─────────────────────────────────── */
 
 export function PlaylistManager({
   initialPlaylists,
@@ -478,6 +396,7 @@ export function PlaylistManager({
   initialMediaFolders: LibraryFolder[];
 }) {
   const router = useRouter();
+
   const [playlists, setPlaylists] = useState(initialPlaylists);
   const [assets, setAssets] = useState(mediaAssets);
   const [playlistFolders, setPlaylistFolders] = useState(initialPlaylistFolders);
@@ -487,8 +406,6 @@ export function PlaylistManager({
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [mediaSearch, setMediaSearch] = useState("");
-  const [playlistFolderSearch, setPlaylistFolderSearch] = useState("");
-  const [mediaFolderSearch, setMediaFolderSearch] = useState("");
   const [name, setName] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [makeDefault, setMakeDefault] = useState(false);
@@ -502,21 +419,19 @@ export function PlaylistManager({
   const [youtubePlaylistDefault, setYoutubePlaylistDefault] = useState(false);
   const [isImportingYouTubePlaylist, setIsImportingYouTubePlaylist] = useState(false);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
+  const [showYoutubeImport, setShowYoutubeImport] = useState(false);
+  const [showMediaFolders, setShowMediaFolders] = useState(true);
 
   const deferredPlaylistSearch = useDeferredValue(playlistSearch);
   const deferredMediaSearch = useDeferredValue(mediaSearch);
-  const deferredPlaylistFolderSearch = useDeferredValue(playlistFolderSearch);
-  const deferredMediaFolderSearch = useDeferredValue(mediaFolderSearch);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 6,
-      },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  /* ── Derived ── */
+
+  const assetMap = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
   const playlistFolderMap = useMemo(() => getFolderMap(playlistFolders), [playlistFolders]);
   const mediaFolderMap = useMemo(() => getFolderMap(mediaFolders), [mediaFolders]);
   const selectedSourceAssetSet = useMemo(
@@ -524,113 +439,102 @@ export function PlaylistManager({
     [selectedSourceAssetIds],
   );
   const currentDefault = useMemo(
-    () => playlists.find((playlist) => playlist.isDefault) ?? null,
+    () => playlists.find((p) => p.isDefault) ?? null,
     [playlists],
   );
+
   const playlistFolderCounts = useMemo(() => {
-    const counts = new Map<string | null, number>();
-    for (const playlist of playlists) {
-      const key = playlist.folderId ?? null;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+    const m = new Map<string | null, number>();
+    for (const p of playlists) {
+      const k = p.folderId ?? null;
+      m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return counts;
+    return m;
   }, [playlists]);
+
   const mediaFolderCounts = useMemo(() => {
-    const counts = new Map<string | null, number>();
-    for (const asset of assets) {
-      const key = asset.folderId ?? null;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+    const m = new Map<string | null, number>();
+    for (const a of assets) {
+      const k = a.folderId ?? null;
+      m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return counts;
+    return m;
   }, [assets]);
+
   const visiblePlaylists = useMemo(() => {
-    const query = deferredPlaylistSearch.trim().toLowerCase();
-    return sortPlaylists(playlists).filter((playlist) => {
-      if ((playlist.folderId ?? null) !== selectedPlaylistFolderId) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      return playlist.name.toLowerCase().includes(query);
+    const q = deferredPlaylistSearch.trim().toLowerCase();
+    return sortPlaylists(playlists).filter((p) => {
+      if ((p.folderId ?? null) !== selectedPlaylistFolderId) return false;
+      return !q || p.name.toLowerCase().includes(q);
     });
   }, [deferredPlaylistSearch, playlists, selectedPlaylistFolderId]);
+
   const visibleAssets = useMemo(() => {
-    const query = deferredMediaSearch.trim().toLowerCase();
-    return assets.filter((asset) => {
-      if ((asset.folderId ?? null) !== selectedMediaFolderId) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      return [asset.title, asset.fileName, ...asset.tags]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
+    const q = deferredMediaSearch.trim().toLowerCase();
+    return assets.filter((a) => {
+      if ((a.folderId ?? null) !== selectedMediaFolderId) return false;
+      return !q || [a.title, a.fileName, ...a.tags].join(" ").toLowerCase().includes(q);
     });
   }, [assets, deferredMediaSearch, selectedMediaFolderId]);
+
   const queueDurationLabel = useMemo(() => {
-    const totalSeconds = queue.reduce((sum, item) => {
-      const asset = assetMap.get(item.assetId);
-      if (!asset) {
-        return sum;
-      }
-
-      if (asset.type === "video") {
-        return sum + Math.ceil(asset.durationSeconds ?? 0);
-      }
-
-      const dwell = Number(item.dwellSeconds);
-      return sum + (Number.isFinite(dwell) && dwell > 0 ? dwell : 10);
+    const total = queue.reduce((sum, item) => {
+      const a = assetMap.get(item.assetId);
+      if (!a) return sum;
+      if (a.type === "video") return sum + Math.ceil(a.durationSeconds ?? 0);
+      const d = Number(item.dwellSeconds);
+      return sum + (Number.isFinite(d) && d > 0 ? d : 10);
     }, 0);
-
-    return totalSeconds > 0 ? formatDuration(totalSeconds) : "0:00";
+    return total > 0 ? formatDuration(total) : "0:00";
   }, [assetMap, queue]);
+
   const playlistFolderTrail = useMemo(
     () =>
-      selectedPlaylistFolderId ? getFolderTrail(selectedPlaylistFolderId, playlistFolderMap) : [],
+      selectedPlaylistFolderId
+        ? getFolderTrail(selectedPlaylistFolderId, playlistFolderMap)
+        : [],
     [playlistFolderMap, selectedPlaylistFolderId],
   );
   const mediaFolderTrail = useMemo(
-    () => (selectedMediaFolderId ? getFolderTrail(selectedMediaFolderId, mediaFolderMap) : []),
+    () =>
+      selectedMediaFolderId ? getFolderTrail(selectedMediaFolderId, mediaFolderMap) : [],
     [mediaFolderMap, selectedMediaFolderId],
   );
+
   const activePlaylist =
     activeDrag?.type === "playlist"
-      ? playlists.find((playlist) => playlist.id === activeDrag.playlistId) ?? null
+      ? playlists.find((p) => p.id === activeDrag.playlistId) ?? null
       : null;
   const activeAsset =
     activeDrag?.type === "asset"
-      ? assets.find((asset) => asset.id === activeDrag.leadAssetId) ?? null
+      ? assets.find((a) => a.id === activeDrag.leadAssetId) ?? null
       : null;
   const activeQueueAsset =
     activeDrag?.type === "queue-item"
-      ? assetMap.get(queue.find((item) => item.id === activeDrag.queueItemId)?.assetId ?? "")
+      ? assetMap.get(
+          queue.find((i) => i.id === activeDrag.queueItemId)?.assetId ?? "",
+        )
       : null;
+
   const selectedPlaylistFolderName = selectedPlaylistFolderId
-    ? playlistFolderMap.get(selectedPlaylistFolderId)?.name ?? "Folder"
-    : "Root playlists";
+    ? (playlistFolderMap.get(selectedPlaylistFolderId)?.name ?? "Folder")
+    : "All playlists";
   const selectedMediaFolderName = selectedMediaFolderId
-    ? mediaFolderMap.get(selectedMediaFolderId)?.name ?? "Folder"
-    : "Root media";
-  const currentPlaylistFolderCount = playlistFolderCounts.get(selectedPlaylistFolderId ?? null) ?? 0;
-  const currentMediaFolderCount = mediaFolderCounts.get(selectedMediaFolderId ?? null) ?? 0;
+    ? (mediaFolderMap.get(selectedMediaFolderId)?.name ?? "Folder")
+    : "All media";
+
   const sourceSelectionCount = selectedSourceAssetIds.length;
 
-  useEffect(() => {
-    const scopedIds = selectedSourceAssetIds.filter((assetId) => {
-      const asset = assetMap.get(assetId);
-      return asset ? (asset.folderId ?? null) === selectedMediaFolderId : false;
-    });
+  /* ── Effects ── */
 
-    if (scopedIds.length !== selectedSourceAssetIds.length) {
-      setSelectedSourceAssetIds(scopedIds);
-      setLastSelectedSourceIndex(scopedIds.length > 0 ? 0 : null);
+  useEffect(() => {
+    const scoped = selectedSourceAssetIds.filter((id) => {
+      const a = assetMap.get(id);
+      return a ? (a.folderId ?? null) === selectedMediaFolderId : false;
+    });
+    if (scoped.length !== selectedSourceAssetIds.length) {
+      setSelectedSourceAssetIds(scoped);
+      setLastSelectedSourceIndex(scoped.length > 0 ? 0 : null);
     }
   }, [assetMap, selectedMediaFolderId, selectedSourceAssetIds]);
 
@@ -643,15 +547,14 @@ export function PlaylistManager({
           target instanceof HTMLTextAreaElement ||
           target.isContentEditable ||
           target.closest("[contenteditable='true']"))
-      ) {
+      )
         return;
-      }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        const nextIds = visibleAssets.map((asset) => asset.id);
-        setSelectedSourceAssetIds(nextIds);
-        setLastSelectedSourceIndex(nextIds.length > 0 ? nextIds.length - 1 : null);
+        const ids = visibleAssets.map((a) => a.id);
+        setSelectedSourceAssetIds(ids);
+        setLastSelectedSourceIndex(ids.length > 0 ? ids.length - 1 : null);
         return;
       }
 
@@ -665,10 +568,10 @@ export function PlaylistManager({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedSourceAssetIds.length, visibleAssets]);
 
+  /* ── Helpers ── */
+
   function refreshData() {
-    startTransition(() => {
-      router.refresh();
-    });
+    startTransition(() => router.refresh());
   }
 
   function loadPlaylist(playlist: Playlist) {
@@ -692,8 +595,8 @@ export function PlaylistManager({
     setStatus(null);
   }
 
-  function setSourceSelection(assetIds: string[]) {
-    setSelectedSourceAssetIds(assetIds);
+  function setSourceSelection(ids: string[]) {
+    setSelectedSourceAssetIds(ids);
   }
 
   function clearSourceSelection() {
@@ -702,18 +605,17 @@ export function PlaylistManager({
   }
 
   function addAssetsToQueue(assetIds: string[], targetIndex?: number) {
-    if (!assetIds.length) {
-      return;
-    }
-
+    if (!assetIds.length) return;
     setQueue((current) => {
-      const nextItems = assetIds.map((assetId) => createQueueItem(assetId));
-      if (typeof targetIndex !== "number" || targetIndex < 0 || targetIndex > current.length) {
-        return [...current, ...nextItems];
-      }
-
+      const items = assetIds.map((id) => createQueueItem(id));
+      if (
+        typeof targetIndex !== "number" ||
+        targetIndex < 0 ||
+        targetIndex > current.length
+      )
+        return [...current, ...items];
       const next = [...current];
-      next.splice(targetIndex, 0, ...nextItems);
+      next.splice(targetIndex, 0, ...items);
       return next;
     });
   }
@@ -722,144 +624,110 @@ export function PlaylistManager({
     addAssetsToQueue([assetId], targetIndex);
   }
 
-  function updateQueueItem(queueItemId: string, updates: Partial<QueueItem>) {
-    setQueue((current) =>
-      current.map((item) => (item.id === queueItemId ? { ...item, ...updates } : item)),
-    );
+  function updateQueueItem(id: string, updates: Partial<QueueItem>) {
+    setQueue((c) => c.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   }
 
-  function removeQueueItem(queueItemId: string) {
-    setQueue((current) => current.filter((item) => item.id !== queueItemId));
+  function removeQueueItem(id: string) {
+    setQueue((c) => c.filter((i) => i.id !== id));
   }
+
+  /* ── Folder ops ── */
 
   async function createFolder(parentId: string | null) {
-    const name = window.prompt("Folder name");
-    if (!name?.trim()) {
-      return;
-    }
-
-    const response = await fetch("/api/folders", {
+    const folderName = window.prompt("Folder name");
+    if (!folderName?.trim()) return;
+    const res = await fetch("/api/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: "playlist",
-        name: name.trim(),
-        parentId,
-      }),
+      body: JSON.stringify({ kind: "playlist", name: folderName.trim(), parentId }),
     });
-    const payload = await response.json();
-    if (!response.ok) {
-      setStatus({ ok: false, text: payload.error ?? "Unable to create folder" });
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus({ ok: false, text: data.error ?? "Unable to create folder" });
       return;
     }
-
-    const nextFolder = payload.folder as LibraryFolder;
-    setPlaylistFolders((current) => [...current, nextFolder]);
-    setSelectedPlaylistFolderId(nextFolder.id);
+    const f = data.folder as LibraryFolder;
+    setPlaylistFolders((c) => [...c, f]);
+    setSelectedPlaylistFolderId(f.id);
     refreshData();
   }
 
   async function renameFolder(folder: LibraryFolder) {
-    const name = window.prompt("Rename folder", folder.name);
-    if (!name?.trim() || name.trim() === folder.name) {
-      return;
-    }
-
-    const response = await fetch(`/api/folders/${folder.id}`, {
+    const folderName = window.prompt("Rename folder", folder.name);
+    if (!folderName?.trim() || folderName.trim() === folder.name) return;
+    const res = await fetch(`/api/folders/${folder.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
+      body: JSON.stringify({ name: folderName.trim() }),
     });
-    const payload = await response.json();
-    if (!response.ok) {
-      setStatus({ ok: false, text: payload.error ?? "Unable to rename folder" });
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus({ ok: false, text: data.error ?? "Unable to rename folder" });
       return;
     }
-
-    const nextFolder = payload.folder as LibraryFolder;
-    setPlaylistFolders((current) =>
-      current.map((entry) => (entry.id === folder.id ? nextFolder : entry)),
+    setPlaylistFolders((c) =>
+      c.map((e) => (e.id === folder.id ? (data.folder as LibraryFolder) : e)),
     );
     refreshData();
   }
 
   async function deleteFolder(folder: LibraryFolder) {
-    const confirmed = window.confirm(
-      "Delete this folder? Child folders and playlists will move to the parent.",
-    );
-    if (!confirmed) {
+    if (
+      !window.confirm(
+        "Delete this folder? Child folders and playlists will move to the parent.",
+      )
+    )
+      return;
+    const res = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      setStatus({ ok: false, text: data.error ?? "Unable to delete folder" });
       return;
     }
-
-    const response = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
-    if (!response.ok) {
-      const payload = await response.json();
-      setStatus({ ok: false, text: payload.error ?? "Unable to delete folder" });
-      return;
-    }
-
-    setPlaylistFolders((current) =>
-      current
-        .filter((entry) => entry.id !== folder.id)
-        .map((entry) =>
-          entry.parentId === folder.id ? { ...entry, parentId: folder.parentId } : entry,
+    setPlaylistFolders((c) =>
+      c
+        .filter((e) => e.id !== folder.id)
+        .map((e) =>
+          e.parentId === folder.id ? { ...e, parentId: folder.parentId } : e,
         ),
     );
-    setPlaylists((current) =>
-      current.map((playlist) =>
-        playlist.folderId === folder.id ? { ...playlist, folderId: folder.parentId } : playlist,
+    setPlaylists((c) =>
+      c.map((p) =>
+        p.folderId === folder.id ? { ...p, folderId: folder.parentId } : p,
       ),
     );
-    if (selectedPlaylistFolderId === folder.id) {
+    if (selectedPlaylistFolderId === folder.id)
       setSelectedPlaylistFolderId(folder.parentId ?? null);
-    }
     refreshData();
   }
 
   async function movePlaylistToFolder(playlistId: string, folderId: string | null) {
-    const previousFolderId =
-      playlists.find((playlist) => playlist.id === playlistId)?.folderId ?? null;
-    const movingSelectedPlaylist = selectedPlaylistId === playlistId;
-
-    setPlaylists((current) =>
-      current.map((playlist) =>
-        playlist.id === playlistId ? { ...playlist, folderId } : playlist,
-      ),
+    const prev = playlists.find((p) => p.id === playlistId)?.folderId ?? null;
+    const isEditing = selectedPlaylistId === playlistId;
+    setPlaylists((c) =>
+      c.map((p) => (p.id === playlistId ? { ...p, folderId } : p)),
     );
-    if (movingSelectedPlaylist) {
-      setSelectedPlaylistFolderId(folderId);
-    }
-    setStatus({ ok: true, text: "Moving playlist..." });
-
+    if (isEditing) setSelectedPlaylistFolderId(folderId);
+    setStatus({ ok: true, text: "Moving playlist\u2026" });
     try {
-      const response = await fetch(`/api/playlists/${playlistId}`, {
+      const res = await fetch(`/api/playlists/${playlistId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folderId }),
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to move playlist");
-      }
-
-      const nextPlaylist = payload.playlist as Playlist;
-      setPlaylists((current) =>
-        current.map((playlist) => (playlist.id === playlistId ? nextPlaylist : playlist)),
-      );
-      if (movingSelectedPlaylist) {
-        setSelectedPlaylistFolderId(nextPlaylist.folderId ?? null);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unable to move playlist");
+      const next = data.playlist as Playlist;
+      setPlaylists((c) => c.map((p) => (p.id === playlistId ? next : p)));
+      if (isEditing) setSelectedPlaylistFolderId(next.folderId ?? null);
       setStatus({ ok: true, text: "Moved playlist." });
       refreshData();
     } catch (error) {
-      setPlaylists((current) =>
-        current.map((playlist) =>
-          playlist.id === playlistId ? { ...playlist, folderId: previousFolderId } : playlist,
-        ),
+      setPlaylists((c) =>
+        c.map((p) => (p.id === playlistId ? { ...p, folderId: prev } : p)),
       );
-      if (movingSelectedPlaylist) {
-        setSelectedPlaylistFolderId(previousFolderId);
-      }
+      if (isEditing) setSelectedPlaylistFolderId(prev);
       setStatus({
         ok: false,
         text: error instanceof Error ? error.message : "Unable to move playlist",
@@ -867,11 +735,13 @@ export function PlaylistManager({
     }
   }
 
+  /* ── YouTube import ── */
+
   async function handleImportYouTubePlaylist() {
     try {
       setIsImportingYouTubePlaylist(true);
-      setStatus({ ok: true, text: "Importing YouTube playlist..." });
-      const response = await fetch("/api/playlists/youtube", {
+      setStatus({ ok: true, text: "Importing YouTube playlist\u2026" });
+      const res = await fetch("/api/playlists/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -879,64 +749,62 @@ export function PlaylistManager({
           name: youtubePlaylistName.trim() || undefined,
           tags: youtubePlaylistTags
             .split(",")
-            .map((entry) => entry.trim())
+            .map((t) => t.trim())
             .filter(Boolean),
           url: youtubePlaylistUrl.trim(),
           folderId: selectedPlaylistFolderId,
           assetFolderId: selectedMediaFolderId,
         }),
       });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to import YouTube playlist");
-      }
-
-      const nextPlaylist = payload.playlist as Playlist;
-      const nextAssets = payload.assets as MediaAsset[];
-
-      setAssets((current) => [
-        ...nextAssets,
-        ...current.filter((asset) => !nextAssets.some((nextAsset) => nextAsset.id === asset.id)),
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error ?? "Unable to import YouTube playlist");
+      const pl = data.playlist as Playlist;
+      const newAssets = data.assets as MediaAsset[];
+      setAssets((c) => [
+        ...newAssets,
+        ...c.filter((a) => !newAssets.some((n) => n.id === a.id)),
       ]);
-      setPlaylists((current) => {
-        const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
-        const merged = [nextPlaylist, ...remaining].map((playlist) => ({
-          ...playlist,
-          isDefault: nextPlaylist.isDefault ? playlist.id === nextPlaylist.id : playlist.isDefault,
+      setPlaylists((c) => {
+        const rest = c.filter((p) => p.id !== pl.id);
+        return [pl, ...rest].map((p) => ({
+          ...p,
+          isDefault: pl.isDefault ? p.id === pl.id : p.isDefault,
         }));
-        return merged;
       });
-
-      loadPlaylist(nextPlaylist);
+      loadPlaylist(pl);
       setYoutubePlaylistUrl("");
       setYoutubePlaylistName("");
       setYoutubePlaylistTags("");
       setYoutubePlaylistDefault(false);
       setStatus({
         ok: true,
-        text: `Imported "${nextPlaylist.name}" with ${nextPlaylist.items.length} videos.`,
+        text: `Imported "${pl.name}" with ${pl.items.length} videos.`,
       });
       refreshData();
     } catch (error) {
       setStatus({
         ok: false,
-        text: error instanceof Error ? error.message : "Unable to import YouTube playlist",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to import YouTube playlist",
       });
     } finally {
       setIsImportingYouTubePlaylist(false);
     }
   }
 
+  /* ── Save / Delete ── */
+
   async function handleSave() {
     if (!name.trim() || queue.length === 0) {
       setStatus({ ok: false, text: "Add a name and at least one item." });
       return;
     }
-
     setSaving(true);
     try {
-      const response = await fetch("/api/playlists", {
+      const res = await fetch("/api/playlists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -945,31 +813,26 @@ export function PlaylistManager({
           folderId: selectedPlaylistFolderId,
           makeDefault,
           itemIds: queue.map((item) => {
-            const dwell = Number(item.dwellSeconds);
+            const d = Number(item.dwellSeconds);
             return {
               mediaAssetId: item.assetId,
-              dwellSeconds: Number.isFinite(dwell) && dwell > 0 ? dwell : undefined,
+              dwellSeconds: Number.isFinite(d) && d > 0 ? d : undefined,
             };
           }),
         }),
       });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to save playlist");
-      }
-
-      const nextPlaylist = payload.playlist as Playlist;
-      setPlaylists((current) => {
-        const remaining = current.filter((playlist) => playlist.id !== nextPlaylist.id);
-        const merged = [nextPlaylist, ...remaining].map((playlist) => ({
-          ...playlist,
-          isDefault: nextPlaylist.isDefault ? playlist.id === nextPlaylist.id : playlist.isDefault,
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unable to save playlist");
+      const pl = data.playlist as Playlist;
+      setPlaylists((c) => {
+        const rest = c.filter((p) => p.id !== pl.id);
+        return [pl, ...rest].map((p) => ({
+          ...p,
+          isDefault: pl.isDefault ? p.id === pl.id : p.isDefault,
         }));
-        return merged;
       });
-      loadPlaylist(nextPlaylist);
-      setStatus({ ok: true, text: `Saved "${nextPlaylist.name}".` });
+      loadPlaylist(pl);
+      setStatus({ ok: true, text: `Saved "${pl.name}".` });
       refreshData();
     } catch (error) {
       setStatus({
@@ -982,141 +845,138 @@ export function PlaylistManager({
   }
 
   async function handleDelete(playlistId: string) {
-    const confirmed = window.confirm("Delete this playlist?");
-    if (!confirmed) {
+    if (!window.confirm("Delete this playlist?")) return;
+    const res = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      setStatus({ ok: false, text: data.error ?? "Unable to delete playlist" });
       return;
     }
-
-    const response = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" });
-    if (!response.ok) {
-      const payload = await response.json();
-      setStatus({ ok: false, text: payload.error ?? "Unable to delete playlist" });
-      return;
-    }
-
-    setPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
-    if (selectedPlaylistId === playlistId) {
-      startNewPlaylist();
-    }
+    setPlaylists((c) => c.filter((p) => p.id !== playlistId));
+    if (selectedPlaylistId === playlistId) startNewPlaylist();
     refreshData();
   }
 
-  function handleSourceAssetSelect(assetId: string, event: MouseEvent<HTMLButtonElement>) {
-    const assetIndex = visibleAssets.findIndex((asset) => asset.id === assetId);
-    if (assetIndex === -1) {
-      return;
-    }
+  /* ── Selection ── */
+
+  function handleSourceAssetSelect(
+    assetId: string,
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    const idx = visibleAssets.findIndex((a) => a.id === assetId);
+    if (idx === -1) return;
 
     if (event.shiftKey && lastSelectedSourceIndex !== null) {
-      const start = Math.min(lastSelectedSourceIndex, assetIndex);
-      const end = Math.max(lastSelectedSourceIndex, assetIndex);
-      setSourceSelection(visibleAssets.slice(start, end + 1).map((asset) => asset.id));
-      setLastSelectedSourceIndex(assetIndex);
+      const s = Math.min(lastSelectedSourceIndex, idx);
+      const e = Math.max(lastSelectedSourceIndex, idx);
+      setSourceSelection(visibleAssets.slice(s, e + 1).map((a) => a.id));
+      setLastSelectedSourceIndex(idx);
       return;
     }
 
     if (event.metaKey || event.ctrlKey) {
-      if (selectedSourceAssetSet.has(assetId)) {
-        const nextIds = selectedSourceAssetIds.filter((id) => id !== assetId);
-        setSourceSelection(nextIds);
-      } else {
-        setSourceSelection([...selectedSourceAssetIds, assetId]);
-      }
-      setLastSelectedSourceIndex(assetIndex);
+      setSourceSelection(
+        selectedSourceAssetSet.has(assetId)
+          ? selectedSourceAssetIds.filter((id) => id !== assetId)
+          : [...selectedSourceAssetIds, assetId],
+      );
+      setLastSelectedSourceIndex(idx);
       return;
     }
 
     setSourceSelection([assetId]);
-    setLastSelectedSourceIndex(assetIndex);
+    setLastSelectedSourceIndex(idx);
   }
 
   function toggleSourceAssetSelection(assetId: string) {
-    const assetIndex = visibleAssets.findIndex((asset) => asset.id === assetId);
+    const idx = visibleAssets.findIndex((a) => a.id === assetId);
     if (selectedSourceAssetSet.has(assetId)) {
       setSourceSelection(selectedSourceAssetIds.filter((id) => id !== assetId));
       return;
     }
-
     setSourceSelection([...selectedSourceAssetIds, assetId]);
-    if (assetIndex !== -1) {
-      setLastSelectedSourceIndex(assetIndex);
-    }
+    if (idx !== -1) setLastSelectedSourceIndex(idx);
   }
 
+  /* ── DnD ── */
+
   function handleDragStart(event: DragStartEvent) {
-    const data = event.active.data.current as
-      | { type?: string; assetId?: string; playlistId?: string; queueItemId?: string }
+    const d = event.active.data.current as
+      | {
+          type?: string;
+          assetId?: string;
+          playlistId?: string;
+          queueItemId?: string;
+        }
       | undefined;
-
-    if (data?.type === "playlist" && data.playlistId) {
-      setActiveDrag({ type: "playlist", playlistId: data.playlistId });
-      return;
-    }
-
-    if (data?.type === "asset" && data.assetId) {
-      const assetIds = selectedSourceAssetSet.has(data.assetId)
+    if (d?.type === "playlist" && d.playlistId) {
+      setActiveDrag({ type: "playlist", playlistId: d.playlistId });
+    } else if (d?.type === "asset" && d.assetId) {
+      const ids = selectedSourceAssetSet.has(d.assetId)
         ? selectedSourceAssetIds
-        : [data.assetId];
-      setSourceSelection(assetIds);
-      setActiveDrag({ type: "asset", assetIds, leadAssetId: data.assetId });
-      return;
-    }
-
-    if (data?.type === "queue-item" && data.queueItemId) {
-      setActiveDrag({ type: "queue-item", queueItemId: data.queueItemId });
+        : [d.assetId];
+      setSourceSelection(ids);
+      setActiveDrag({ type: "asset", assetIds: ids, leadAssetId: d.assetId });
+    } else if (d?.type === "queue-item" && d.queueItemId) {
+      setActiveDrag({ type: "queue-item", queueItemId: d.queueItemId });
     }
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    const activeData = event.active.data.current as
-      | { type?: string; assetId?: string; playlistId?: string; queueItemId?: string }
+    const active = event.active.data.current as
+      | {
+          type?: string;
+          assetId?: string;
+          playlistId?: string;
+          queueItemId?: string;
+        }
       | undefined;
-    const overData = event.over?.data.current as
-      | { type?: string; scope?: string; folderId?: string | null; queueItemId?: string }
+    const over = event.over?.data.current as
+      | {
+          type?: string;
+          scope?: string;
+          folderId?: string | null;
+          queueItemId?: string;
+        }
       | undefined;
 
-    if (!activeData || !overData) {
+    if (!active || !over) {
       setActiveDrag(null);
       return;
     }
 
     if (
-      activeData.type === "playlist" &&
-      activeData.playlistId &&
-      overData.type === "folder" &&
-      overData.scope === "playlist"
+      active.type === "playlist" &&
+      active.playlistId &&
+      over.type === "folder" &&
+      over.scope === "playlist"
     ) {
-      void movePlaylistToFolder(activeData.playlistId, overData.folderId ?? null);
+      void movePlaylistToFolder(active.playlistId, over.folderId ?? null);
       setActiveDrag(null);
       return;
     }
 
-    if (activeData.type === "asset" && activeData.assetId) {
-      const draggedAssetIds =
-        activeDrag?.type === "asset" ? activeDrag.assetIds : [activeData.assetId];
-      if (overData.type === "queue-root") {
-        addAssetsToQueue(draggedAssetIds);
-      } else if (overData.type === "queue-item" && overData.queueItemId) {
-        const targetIndex = queue.findIndex((item) => item.id === overData.queueItemId);
-        addAssetsToQueue(draggedAssetIds, targetIndex === -1 ? undefined : targetIndex);
+    if (active.type === "asset" && active.assetId) {
+      const ids =
+        activeDrag?.type === "asset" ? activeDrag.assetIds : [active.assetId];
+      if (over.type === "queue-root") {
+        addAssetsToQueue(ids);
+      } else if (over.type === "queue-item" && over.queueItemId) {
+        const ti = queue.findIndex((i) => i.id === over.queueItemId);
+        addAssetsToQueue(ids, ti === -1 ? undefined : ti);
       }
       setActiveDrag(null);
       return;
     }
 
-    if (activeData.type === "queue-item" && activeData.queueItemId) {
-      const fromIndex = queue.findIndex((item) => item.id === activeData.queueItemId);
-      if (fromIndex === -1) {
-        setActiveDrag(null);
-        return;
-      }
-
-      if (overData.type === "queue-root") {
-        setQueue((current) => arrayMove(current, fromIndex, current.length - 1));
-      } else if (overData.type === "queue-item" && overData.queueItemId) {
-        const toIndex = queue.findIndex((item) => item.id === overData.queueItemId);
-        if (toIndex !== -1 && toIndex !== fromIndex) {
-          setQueue((current) => arrayMove(current, fromIndex, toIndex));
+    if (active.type === "queue-item" && active.queueItemId) {
+      const from = queue.findIndex((i) => i.id === active.queueItemId);
+      if (from !== -1) {
+        if (over.type === "queue-root") {
+          setQueue((c) => arrayMove(c, from, c.length - 1));
+        } else if (over.type === "queue-item" && over.queueItemId) {
+          const to = queue.findIndex((i) => i.id === over.queueItemId);
+          if (to !== -1 && to !== from) setQueue((c) => arrayMove(c, from, to));
         }
       }
     }
@@ -1124,248 +984,267 @@ export function PlaylistManager({
     setActiveDrag(null);
   }
 
-  function handleDragCancel() {
-    setActiveDrag(null);
-  }
+  /* ── Render ── */
 
   return (
     <DndContext
-      onDragCancel={handleDragCancel}
+      onDragCancel={() => setActiveDrag(null)}
       onDragEnd={handleDragEnd}
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_380px]">
-        <aside className="space-y-5 xl:sticky xl:top-[6.5rem] xl:max-h-[calc(100vh-7.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
-          <section className="rounded-lg border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <p className="text-sm font-medium text-foreground">Playlist folders</p>
-              <Button
-                onClick={() => void createFolder(selectedPlaylistFolderId)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <FolderPlus className="size-4" />
-              </Button>
-            </div>
-            <div className="space-y-4 p-3">
-              <Input
-                onChange={(event) => setPlaylistFolderSearch(event.target.value)}
-                placeholder="Find folder"
-                value={playlistFolderSearch}
-              />
-
-              {activeDrag?.type === "playlist" ? (
-                <div className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
-                  Drop <span className="font-medium text-foreground">{activePlaylist?.name ?? "playlist"}</span> onto a folder to move it.
-                </div>
-              ) : null}
-
-              <LibraryFolderTree
-                activeDragType={activeDrag?.type === "playlist" ? "playlist" : null}
-                droppableScope="playlist"
-                folders={playlistFolders}
-                filterQuery={deferredPlaylistFolderSearch}
-                itemCounts={playlistFolderCounts}
-                onDelete={(folder) => void deleteFolder(folder)}
-                onRename={(folder) => void renameFolder(folder)}
-                onSelect={setSelectedPlaylistFolderId}
-                rootLabel="Root playlists"
-                selectedFolderId={selectedPlaylistFolderId}
-              />
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-4 py-3">
-              <p className="text-sm font-medium text-foreground">Current folder</p>
-            </div>
-            <div className="space-y-3 p-4">
-              <div>
-                <div className="text-sm font-medium text-foreground">{selectedPlaylistFolderName}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {currentPlaylistFolderCount} playlist{currentPlaylistFolderCount !== 1 ? "s" : ""}
-                </div>
-              </div>
-              {selectedPlaylistFolderId ? (
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      const folder = playlistFolderMap.get(selectedPlaylistFolderId);
-                      if (folder) {
-                        void renameFolder(folder);
-                      }
-                    }}
-                    type="button"
-                    variant="outline"
-                  >
-                    <Pencil className="size-4" />
-                    Rename
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      const folder = playlistFolderMap.get(selectedPlaylistFolderId);
-                      if (folder) {
-                        void deleteFolder(folder);
-                      }
-                    }}
-                    type="button"
-                    variant="outline"
-                  >
-                    <Trash2 className="size-4" />
-                    Delete
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Root playlists stay visible here until you move them into a folder.
+      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+        {/* ──────────── Playlist browser sidebar ──────────── */}
+        <aside className="space-y-4 xl:sticky xl:top-[7.5rem] xl:max-h-[calc(100vh-8.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
+          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            {/* Header */}
+            <div className="border-b border-white/5 px-4 py-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Playlists
                 </p>
-              )}
-            </div>
-          </section>
-        </aside>
-
-        <div className="space-y-5">
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-5 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <button
-                      className="hover:text-foreground"
-                      onClick={() => setSelectedPlaylistFolderId(null)}
-                      type="button"
-                    >
-                      Root playlists
-                    </button>
-                    {playlistFolderTrail.map((folder) => (
-                      <span key={folder.id} className="inline-flex min-w-0 items-center gap-2">
-                        <ChevronRight className="size-4 shrink-0" />
-                        <button
-                          className="truncate hover:text-foreground"
-                          onClick={() => setSelectedPlaylistFolderId(folder.id)}
-                          type="button"
-                        >
-                          {folder.name}
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <h2 className="text-lg font-semibold text-foreground">{selectedPlaylistFolderName}</h2>
-                    <span className="text-sm text-muted-foreground">{visiblePlaylists.length} shown</span>
-                    {playlistSearch.trim() ? (
-                      <span className="text-sm text-muted-foreground">
-                        {currentPlaylistFolderCount} total in folder
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex w-full gap-2 xl:w-auto">
-                  <Input
-                    className="flex-1 xl:w-72"
-                    onChange={(event) => setPlaylistSearch(event.target.value)}
-                    placeholder="Search playlists"
-                    value={playlistSearch}
-                  />
-                  <Button onClick={startNewPlaylist} type="button" variant="outline">
-                    <Plus className="size-4" />
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => void createFolder(selectedPlaylistFolderId)}
+                    size="icon-xs"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <FolderPlus className="size-3.5" />
+                  </Button>
+                  <Button onClick={startNewPlaylist} size="sm" type="button">
+                    <Plus className="size-3.5" />
                     New
                   </Button>
                 </div>
               </div>
-            </div>
 
-            <div className="px-5 py-3">
-              <div className="hidden border-b border-border/75 pb-2 text-xs font-medium text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_96px_72px_80px] lg:pl-10">
-                <span>Playlist</span>
-                <span>Runtime</span>
-                <span>Items</span>
-                <span className="justify-self-end">Status</span>
+              <div className="mt-3 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                <button
+                  className="shrink-0 transition-colors hover:text-foreground"
+                  onClick={() => setSelectedPlaylistFolderId(null)}
+                  type="button"
+                >
+                  Root
+                </button>
+                {playlistFolderTrail.map((folder) => (
+                  <span
+                    key={folder.id}
+                    className="inline-flex min-w-0 items-center gap-1"
+                  >
+                    <ChevronRight className="size-3 shrink-0 text-muted-foreground/40" />
+                    <button
+                      className="truncate transition-colors hover:text-foreground"
+                      onClick={() => setSelectedPlaylistFolderId(folder.id)}
+                      type="button"
+                    >
+                      {folder.name}
+                    </button>
+                  </span>
+                ))}
               </div>
 
-              {visiblePlaylists.length > 0 ? (
-                <div>
-                  {visiblePlaylists.map((playlist) => (
-                    <PlaylistLibraryRow
-                      isSelected={selectedPlaylistId === playlist.id}
-                      key={playlist.id}
-                      onSelect={() => loadPlaylist(playlist)}
-                      playlist={playlist}
-                      runtimeLabel={getPlaylistRuntimeLabel(playlist.items)}
-                    />
-                  ))}
+              <div className="mt-3">
+                <Input
+                  className="h-8 text-xs"
+                  onChange={(e) => setPlaylistSearch(e.target.value)}
+                  placeholder="Search playlists\u2026"
+                  value={playlistSearch}
+                />
+              </div>
+            </div>
+
+            {/* Folder tree */}
+            <div className="border-b border-white/5 px-2 py-2">
+              {activeDrag?.type === "playlist" ? (
+                <div className="mb-2 rounded-md bg-primary/5 px-3 py-2 text-[11px] text-primary">
+                  Drop onto a folder to move{" "}
+                  <span className="font-medium">{activePlaylist?.name}</span>
                 </div>
+              ) : null}
+              <LibraryFolderTree
+                activeDragType={
+                  activeDrag?.type === "playlist" ? "playlist" : null
+                }
+                droppableScope="playlist"
+                folders={playlistFolders}
+                itemCounts={playlistFolderCounts}
+                onDelete={(folder) => void deleteFolder(folder)}
+                onRename={(folder) => void renameFolder(folder)}
+                onSelect={setSelectedPlaylistFolderId}
+                rootLabel="All playlists"
+                selectedFolderId={selectedPlaylistFolderId}
+              />
+            </div>
+
+            {/* Playlist list */}
+            <div>
+              {visiblePlaylists.length > 0 ? (
+                visiblePlaylists.map((playlist) => (
+                  <PlaylistRow
+                    isSelected={selectedPlaylistId === playlist.id}
+                    key={playlist.id}
+                    onSelect={() => loadPlaylist(playlist)}
+                    playlist={playlist}
+                    runtimeLabel={getPlaylistRuntimeLabel(playlist.items)}
+                  />
+                ))
               ) : (
-                <div className="rounded-md border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
                   {playlistSearch.trim()
-                    ? "No matching playlists in this folder."
-                    : "No playlists in this folder."}
+                    ? "No matching playlists."
+                    : "No playlists yet."}
                 </div>
               )}
             </div>
           </section>
 
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-5 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {selectedPlaylistId ? "Edit playlist" : "New playlist"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Saving into <span className="text-foreground">{selectedPlaylistFolderName}</span>
-                  </div>
-                </div>
-
-                <div className="flex shrink-0 gap-2">
-                  <Button disabled={saving} onClick={() => void handleSave()} type="button">
-                    {saving ? "Saving..." : "Save playlist"}
-                  </Button>
-                  <Button onClick={startNewPlaylist} type="button" variant="outline">
-                    Reset
-                  </Button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+          {/* YouTube import (collapsible) */}
+          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <button
+              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-accent/30"
+              onClick={() => setShowYoutubeImport((v) => !v)}
+              type="button"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Import YouTube playlist
+              </p>
+              <ChevronDown
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform",
+                  showYoutubeImport ? "rotate-180" : "",
+                )}
+              />
+            </button>
+            {showYoutubeImport ? (
+              <div className="space-y-3 border-t border-white/5 px-4 py-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="playlist-name">Playlist name</Label>
+                  <Label className="text-[11px]" htmlFor="yt-url">
+                    Playlist URL
+                  </Label>
                   <Input
-                    id="playlist-name"
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Main showroom loop"
-                    value={name}
+                    className="h-8 text-xs"
+                    id="yt-url"
+                    onChange={(e) => setYoutubePlaylistUrl(e.target.value)}
+                    placeholder="https://youtube.com/playlist?list=\u2026"
+                    value={youtubePlaylistUrl}
                   />
                 </div>
-
-                <label className="flex items-center justify-between gap-4 rounded-md border border-border bg-background px-3 py-2">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">Fallback playlist</div>
-                    <div className="text-xs text-muted-foreground">
-                      {currentDefault
-                        ? `Current default: ${currentDefault.name}`
-                        : "No fallback playlist yet"}
-                    </div>
-                  </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px]" htmlFor="yt-name">
+                    Name override
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    id="yt-name"
+                    onChange={(e) => setYoutubePlaylistName(e.target.value)}
+                    placeholder="Optional"
+                    value={youtubePlaylistName}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px]" htmlFor="yt-tags">
+                    Tags
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    id="yt-tags"
+                    onChange={(e) => setYoutubePlaylistTags(e.target.value)}
+                    placeholder="youtube, campaign"
+                    value={youtubePlaylistTags}
+                  />
+                </div>
+                <label className="flex items-center justify-between rounded-md border border-white/5 bg-[var(--surface-high)] px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Set as default</span>
                   <input
-                    checked={makeDefault}
-                    className="size-4 accent-[var(--primary)]"
-                    onChange={(event) => setMakeDefault(event.target.checked)}
+                    checked={youtubePlaylistDefault}
+                    className="size-3.5 accent-[var(--primary)]"
+                    onChange={(e) => setYoutubePlaylistDefault(e.target.checked)}
                     type="checkbox"
                   />
                 </label>
+                <Button
+                  className="w-full"
+                  disabled={
+                    !youtubePlaylistUrl.trim() || isImportingYouTubePlaylist
+                  }
+                  onClick={() => void handleImportYouTubePlaylist()}
+                  size="sm"
+                  type="button"
+                >
+                  {isImportingYouTubePlaylist ? "Importing\u2026" : "Import"}
+                </Button>
+                <p className="text-[11px] text-muted-foreground">
+                  Saves to {selectedPlaylistFolderName}. Media lands in{" "}
+                  {selectedMediaFolderName}.
+                </p>
               </div>
+            ) : null}
+          </section>
+        </aside>
+
+        {/* ──────────── Editor area ──────────── */}
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
+          {/* Queue editor */}
+          <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="border-b border-white/5 px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  {selectedPlaylistId ? "Editing playlist" : "New playlist"}
+                </p>
+                <div className="flex shrink-0 gap-2">
+                  {selectedPlaylistId ? (
+                    <Button
+                      onClick={startNewPlaylist}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Reset
+                    </Button>
+                  ) : null}
+                  <Button
+                    disabled={saving}
+                    onClick={() => void handleSave()}
+                    size="sm"
+                    type="button"
+                  >
+                    {saving ? "Saving\u2026" : "Save playlist"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <Input
+                  className="flex-1"
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Playlist name"
+                  value={name}
+                />
+                <label className="flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md border border-input bg-[var(--surface-high)] px-3 text-[13px] text-foreground">
+                  <input
+                    checked={makeDefault}
+                    className="size-3.5 accent-[var(--primary)]"
+                    onChange={(e) => setMakeDefault(e.target.checked)}
+                    type="checkbox"
+                  />
+                  Fallback
+                </label>
+              </div>
+
+              {currentDefault && !makeDefault ? (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Current fallback: {currentDefault.name}
+                </p>
+              ) : null}
 
               {status ? (
                 <div
                   className={cn(
-                    "mt-4 rounded-md border border-border px-3 py-2 text-sm",
-                    status.ok ? "text-foreground" : "text-destructive",
+                    "mt-3 rounded-md border px-3 py-2 text-[13px]",
+                    status.ok
+                      ? "border-primary/15 bg-primary/5 text-foreground"
+                      : "border-destructive/15 bg-destructive/5 text-destructive",
                   )}
                 >
                   {status.text}
@@ -1373,43 +1252,55 @@ export function PlaylistManager({
               ) : null}
             </div>
 
-            <div className="space-y-4 p-5">
-              <QueueRoot isActive={activeDrag?.type === "asset" || activeDrag?.type === "queue-item"}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="text-sm font-medium text-foreground">Queue</div>
-                    <span className="text-xs text-muted-foreground">
+            {/* Queue body */}
+            <div className="p-4">
+              <QueueDropZone
+                isActive={
+                  activeDrag?.type === "asset" ||
+                  activeDrag?.type === "queue-item"
+                }
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="font-semibold uppercase tracking-[0.12em]">
+                      Queue
+                    </span>
+                    <span className="text-muted-foreground/40">&middot;</span>
+                    <span>
                       {queue.length} item{queue.length !== 1 ? "s" : ""}
                     </span>
-                    <span className="text-xs text-muted-foreground">{queueDurationLabel}</span>
+                    <span className="text-muted-foreground/40">&middot;</span>
+                    <span>{queueDurationLabel}</span>
                   </div>
                   {queue.length > 0 ? (
-                    <Button onClick={() => setQueue([])} type="button" variant="outline">
-                      Clear queue
+                    <Button
+                      onClick={() => setQueue([])}
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Clear
                     </Button>
                   ) : null}
                 </div>
 
                 {queue.length > 0 ? (
                   <SortableContext
-                    items={queue.map((item) => `queue:${item.id}`)}
+                    items={queue.map((i) => `queue:${i.id}`)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       {queue.map((item, index) => {
                         const asset = assetMap.get(item.assetId);
-                        if (!asset) {
-                          return null;
-                        }
-
+                        if (!asset) return null;
                         return (
                           <QueueCard
                             asset={asset}
                             item={item}
                             key={item.id}
-                            onChangeDwell={(value) =>
+                            onChangeDwell={(v) =>
                               updateQueueItem(item.id, {
-                                dwellSeconds: value || null,
+                                dwellSeconds: v || null,
                               })
                             }
                             onRemove={() => removeQueueItem(item.id)}
@@ -1420,229 +1311,195 @@ export function PlaylistManager({
                     </div>
                   </SortableContext>
                 ) : (
-                  <div className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                    Drop media here to build the playlist.
+                  <div className="py-10 text-center text-[13px] text-muted-foreground">
+                    Drag media here or browse the library to add items.
                   </div>
                 )}
-              </QueueRoot>
+              </QueueDropZone>
+            </div>
 
-              {selectedPlaylistId ? (
-                <Button
-                  className="justify-start"
+            {selectedPlaylistId ? (
+              <div className="border-t border-white/5 px-5 py-3">
+                <button
+                  className="text-[13px] text-muted-foreground transition-colors hover:text-destructive"
                   onClick={() => void handleDelete(selectedPlaylistId)}
                   type="button"
-                  variant="outline"
                 >
-                  <Trash2 className="size-4" />
-                  Delete playlist
-                </Button>
-              ) : null}
-            </div>
+                  Delete this playlist
+                </button>
+              </div>
+            ) : null}
           </section>
-        </div>
 
-        <aside className="space-y-5">
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-4 py-4">
-              <div className="space-y-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <button
-                      className="hover:text-foreground"
-                      onClick={() => setSelectedMediaFolderId(null)}
-                      type="button"
+          {/* ──────────── Media picker ──────────── */}
+          <aside className="2xl:sticky 2xl:top-[7.5rem] 2xl:max-h-[calc(100vh-8.5rem)] 2xl:self-start 2xl:overflow-y-auto 2xl:pr-1">
+            <section className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="border-b border-white/5 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Media library
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                  <button
+                    className="shrink-0 transition-colors hover:text-foreground"
+                    onClick={() => setSelectedMediaFolderId(null)}
+                    type="button"
+                  >
+                    Root
+                  </button>
+                  {mediaFolderTrail.map((folder) => (
+                    <span
+                      key={folder.id}
+                      className="inline-flex min-w-0 items-center gap-1"
                     >
-                      Root media
-                    </button>
-                    {mediaFolderTrail.map((folder) => (
-                      <span key={folder.id} className="inline-flex min-w-0 items-center gap-2">
-                        <ChevronRight className="size-4 shrink-0" />
-                        <button
-                          className="truncate hover:text-foreground"
-                          onClick={() => setSelectedMediaFolderId(folder.id)}
-                          type="button"
-                        >
-                          {folder.name}
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <h2 className="text-lg font-semibold text-foreground">{selectedMediaFolderName}</h2>
-                    <span className="text-sm text-muted-foreground">{visibleAssets.length} shown</span>
-                    {mediaSearch.trim() ? (
-                      <span className="text-sm text-muted-foreground">
-                        {currentMediaFolderCount} total in folder
-                      </span>
-                    ) : null}
-                  </div>
+                      <ChevronRight className="size-3 shrink-0 text-muted-foreground/40" />
+                      <button
+                        className="truncate transition-colors hover:text-foreground"
+                        onClick={() => setSelectedMediaFolderId(folder.id)}
+                        type="button"
+                      >
+                        {folder.name}
+                      </button>
+                    </span>
+                  ))}
                 </div>
-
-                <Input
-                  onChange={(event) => setMediaSearch(event.target.value)}
-                  placeholder="Search media"
-                  value={mediaSearch}
-                />
+                <div className="mt-3">
+                  <Input
+                    className="h-8 text-xs"
+                    onChange={(e) => setMediaSearch(e.target.value)}
+                    placeholder="Search media\u2026"
+                    value={mediaSearch}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-4 p-3">
-              <Input
-                onChange={(event) => setMediaFolderSearch(event.target.value)}
-                placeholder="Find folder"
-                value={mediaFolderSearch}
-              />
+              {/* Folder tree (collapsible) */}
+              <div className="border-b border-white/5">
+                <button
+                  className="flex w-full items-center justify-between px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setShowMediaFolders((v) => !v)}
+                  type="button"
+                >
+                  <span>Folders</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-3.5 transition-transform",
+                      showMediaFolders ? "rotate-180" : "",
+                    )}
+                  />
+                </button>
+                {showMediaFolders ? (
+                  <div className="px-2 pb-2">
+                    <LibraryFolderTree
+                      folders={mediaFolders}
+                      itemCounts={mediaFolderCounts}
+                      onSelect={setSelectedMediaFolderId}
+                      rootLabel="All media"
+                      selectedFolderId={selectedMediaFolderId}
+                    />
+                  </div>
+                ) : null}
+              </div>
 
-              <LibraryFolderTree
-                filterQuery={deferredMediaFolderSearch}
-                folders={mediaFolders}
-                itemCounts={mediaFolderCounts}
-                onSelect={setSelectedMediaFolderId}
-                rootLabel="Root media"
-                selectedFolderId={selectedMediaFolderId}
-              />
+              {/* Selection bar */}
+              {visibleAssets.length > 0 || sourceSelectionCount > 0 ? (
+                <div className="flex items-center gap-1.5 border-b border-white/5 px-4 py-2">
+                  {visibleAssets.length > 0 ? (
+                    <Button
+                      onClick={() => {
+                        const ids = visibleAssets.map((a) => a.id);
+                        setSourceSelection(ids);
+                        setLastSelectedSourceIndex(
+                          ids.length > 0 ? ids.length - 1 : null,
+                        );
+                      }}
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Select all
+                    </Button>
+                  ) : null}
+                  {sourceSelectionCount > 0 ? (
+                    <>
+                      <Button
+                        onClick={() =>
+                          addAssetsToQueue(selectedSourceAssetIds)
+                        }
+                        size="xs"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Add {sourceSelectionCount}
+                      </Button>
+                      <Button
+                        onClick={clearSourceSelection}
+                        size="xs"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X className="size-3" />
+                      </Button>
+                    </>
+                  ) : null}
+                  <span className="ml-auto text-[10px] text-muted-foreground/50">
+                    {visibleAssets.length} asset
+                    {visibleAssets.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              ) : null}
 
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Asset list */}
+              <div>
                 {visibleAssets.length > 0 ? (
-                  <Button
-                    onClick={() => {
-                      const nextIds = visibleAssets.map((asset) => asset.id);
-                      setSourceSelection(nextIds);
-                      setLastSelectedSourceIndex(nextIds.length > 0 ? nextIds.length - 1 : null);
-                    }}
-                    type="button"
-                    variant="outline"
-                  >
-                    Select all
-                  </Button>
-                ) : null}
-                {sourceSelectionCount > 0 ? (
-                  <Button
-                    onClick={() => addAssetsToQueue(selectedSourceAssetIds)}
-                    type="button"
-                    variant="outline"
-                  >
-                    Add selected
-                  </Button>
-                ) : null}
-                {sourceSelectionCount > 0 ? (
-                  <Button onClick={clearSourceSelection} type="button" variant="outline">
-                    <X className="size-4" />
-                    Clear
-                  </Button>
-                ) : null}
-                <span className="text-xs text-muted-foreground">
-                  Shift-click ranges. Ctrl/Cmd-click toggles. Ctrl/Cmd+A selects visible.
-                </span>
-              </div>
-
-              {visibleAssets.length > 0 ? (
-                <div>
-                  {visibleAssets.map((asset) => (
-                    <SourceAssetRow
+                  visibleAssets.map((asset) => (
+                    <MediaRow
                       asset={asset}
-                      folderName={
-                        asset.folderId
-                          ? mediaFolderMap.get(asset.folderId)?.name ?? "Folder"
-                          : "Root media"
-                      }
                       isSelected={selectedSourceAssetSet.has(asset.id)}
                       key={asset.id}
                       onAdd={() => addAssetToQueue(asset.id)}
-                      onSelect={(event) => handleSourceAssetSelect(asset.id, event)}
-                      onToggleSelect={() => toggleSourceAssetSelection(asset.id)}
+                      onSelect={(e) => handleSourceAssetSelect(asset.id, e)}
+                      onToggleSelect={() =>
+                        toggleSourceAssetSelection(asset.id)
+                      }
                       selectionBadge={
                         selectedSourceAssetSet.has(asset.id)
                           ? sourceSelectionCount > 1
-                            ? String(selectedSourceAssetIds.indexOf(asset.id) + 1)
+                            ? String(
+                                selectedSourceAssetIds.indexOf(asset.id) + 1,
+                              )
                             : "check"
                           : null
                       }
                     />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
-                  {mediaSearch.trim()
-                    ? "No matching media in this folder."
-                    : "No media in this folder."}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-4 py-3">
-              <p className="text-sm font-medium text-foreground">Import YouTube playlist</p>
-            </div>
-            <div className="space-y-3 p-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="youtube-playlist-url">Playlist URL</Label>
-                <Input
-                  id="youtube-playlist-url"
-                  onChange={(event) => setYoutubePlaylistUrl(event.target.value)}
-                  placeholder="https://www.youtube.com/playlist?list=..."
-                  value={youtubePlaylistUrl}
-                />
+                  ))
+                ) : (
+                  <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+                    {mediaSearch.trim()
+                      ? "No matching media."
+                      : "No media in this folder."}
+                  </div>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="youtube-playlist-name">Override name</Label>
-                <Input
-                  id="youtube-playlist-name"
-                  onChange={(event) => setYoutubePlaylistName(event.target.value)}
-                  placeholder="Optional"
-                  value={youtubePlaylistName}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="youtube-playlist-tags">Tags</Label>
-                <Input
-                  id="youtube-playlist-tags"
-                  onChange={(event) => setYoutubePlaylistTags(event.target.value)}
-                  placeholder="youtube, campaign"
-                  value={youtubePlaylistTags}
-                />
-              </div>
-              <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
-                <span>Set as default</span>
-                <input
-                  checked={youtubePlaylistDefault}
-                  className="size-4 accent-[var(--primary)]"
-                  onChange={(event) => setYoutubePlaylistDefault(event.target.checked)}
-                  type="checkbox"
-                />
-              </label>
-              <Button
-                className="w-full"
-                disabled={!youtubePlaylistUrl.trim() || isImportingYouTubePlaylist}
-                onClick={() => void handleImportYouTubePlaylist()}
-                type="button"
-              >
-                {isImportingYouTubePlaylist ? "Importing..." : "Import playlist"}
-              </Button>
-              <div className="text-xs text-muted-foreground">
-                Playlist saves to {selectedPlaylistFolderName}. Imported videos land in {selectedMediaFolderName}.
-              </div>
-            </div>
-          </section>
-        </aside>
+            </section>
+          </aside>
+        </div>
       </div>
 
       <DragOverlay>
         {activePlaylist ? (
-          <div className="rounded-md border border-border bg-card px-3 py-3 text-sm font-medium text-foreground shadow-xl">
+          <div className="rounded-lg border border-white/10 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-2xl">
             {activePlaylist.name}
           </div>
         ) : null}
         {activeAsset ? (
-          <div className="rounded-md border border-border bg-card px-3 py-3 text-sm font-medium text-foreground shadow-xl">
+          <div className="rounded-lg border border-white/10 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-2xl">
             {activeDrag?.type === "asset" && activeDrag.assetIds.length > 1
               ? `${activeDrag.assetIds.length} media items`
               : activeAsset.title}
           </div>
         ) : null}
         {activeQueueAsset ? (
-          <div className="rounded-md border border-border bg-card px-3 py-3 text-sm font-medium text-foreground shadow-xl">
+          <div className="rounded-lg border border-white/10 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-2xl">
             {activeQueueAsset.title}
           </div>
         ) : null}
