@@ -2,14 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import {
-  activateManifestForDevices,
-  compileOrgManifests,
-  deriveDeviceStatus,
-  getDefaultPlaylist,
-  serializeAsset,
-  serializePlaylist,
-} from "./showroom";
+import * as showroom from "./showroom";
 import {
   DEVICE_CREDENTIAL_TTL_MS,
   expiresAtFrom,
@@ -201,7 +194,7 @@ async function recompileAllOrgDevices(ctx: any, orgId: string) {
     return 0;
   }
 
-  await activateManifestForDevices(ctx, devices);
+  await showroom.activateManifestForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -220,7 +213,7 @@ async function recompileDevicesById(
     return 0;
   }
 
-  await activateManifestForDevices(ctx, devices);
+  await showroom.activateManifestForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -478,7 +471,7 @@ async function savePlaylistRecord(
   }
 
   return {
-    ...(await serializePlaylist(ctx, playlist)),
+    ...(await showroom.serializePlaylist(ctx, playlist)),
     isDefault: playlist.isDefault,
   };
 }
@@ -497,13 +490,13 @@ export const listScreens = query({
       devices.map(async (device) => {
         const defaultPlaylist = device.defaultPlaylistId
           ? await ctx.db.get(device.defaultPlaylistId)
-          : await getDefaultPlaylist(ctx, orgId, device);
+          : await showroom.getDefaultPlaylist(ctx, orgId, device);
 
         return {
           id: device._id,
           name: device.name ?? "Unnamed screen",
           siteName: device.siteName ?? "Unassigned",
-          status: deriveDeviceStatus(device),
+          status: showroom.deriveDeviceStatus(device),
           lastHeartbeatAt: new Date(device.lastHeartbeatAt ?? device._creationTime).toISOString(),
           screenshotUrl: device.screenshotUrl ?? null,
           currentPlaylistName:
@@ -530,13 +523,13 @@ export const getScreenDetail = query({
 
     const defaultPlaylist = device.defaultPlaylistId
       ? await ctx.db.get(device.defaultPlaylistId)
-      : await getDefaultPlaylist(ctx, orgId, device);
+      : await showroom.getDefaultPlaylist(ctx, orgId, device);
 
     return {
       id: device._id,
       name: device.name ?? "Unnamed screen",
       siteName: device.siteName ?? "Unassigned",
-      status: deriveDeviceStatus(device),
+      status: showroom.deriveDeviceStatus(device),
       lastHeartbeatAt: new Date(device.lastHeartbeatAt ?? device._creationTime).toISOString(),
       screenshotUrl: device.screenshotUrl ?? null,
       currentPlaylistName:
@@ -639,7 +632,7 @@ export const listMediaAssets = query({
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
       .collect();
 
-    return Promise.all(assets.map((asset) => serializeAsset(ctx, asset)));
+    return Promise.all(assets.map((asset) => showroom.serializeAsset(ctx, asset)));
   },
 });
 
@@ -731,7 +724,7 @@ export const listPlaylists = query({
 
     return Promise.all(
       playlists.map(async (playlist) => ({
-        ...(await serializePlaylist(ctx, playlist)),
+        ...(await showroom.serializePlaylist(ctx, playlist)),
         isDefault: playlist.isDefault,
       })),
     );
@@ -935,7 +928,7 @@ export const finalizeMediaUpload = mutation({
       throw new ConvexError("Media asset was not created");
     }
 
-    return serializeAsset(ctx, asset);
+    return showroom.serializeAsset(ctx, asset);
   },
 });
 
@@ -953,7 +946,7 @@ export const createYouTubeMediaAsset = mutation({
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
     const asset = await upsertYouTubeAsset(ctx, orgId, args);
-    return serializeAsset(ctx, asset);
+    return showroom.serializeAsset(ctx, asset);
   },
 });
 
@@ -1014,7 +1007,7 @@ export const importYouTubePlaylist = mutation({
     const uniqueAssets = [...new Map(assets.map((asset) => [asset._id, asset])).values()];
 
     return {
-      assets: await Promise.all(uniqueAssets.map((asset) => serializeAsset(ctx, asset))),
+      assets: await Promise.all(uniqueAssets.map((asset) => showroom.serializeAsset(ctx, asset))),
       playlist,
     };
   },
@@ -1400,7 +1393,7 @@ export const updatePlaylist = mutation({
     }
 
     return {
-      ...(await serializePlaylist(ctx, updated)),
+      ...(await showroom.serializePlaylist(ctx, updated)),
       isDefault: updated.isDefault,
     };
   },
@@ -1427,7 +1420,7 @@ export const setDefaultPlaylist = mutation({
     }
 
     return {
-      ...(await serializePlaylist(ctx, updated)),
+      ...(await showroom.serializePlaylist(ctx, updated)),
       isDefault: updated.isDefault,
     };
   },
@@ -1579,13 +1572,13 @@ export const updateScreen = mutation({
 
     const defaultPlaylist = updated.defaultPlaylistId
       ? await ctx.db.get(updated.defaultPlaylistId)
-      : await getDefaultPlaylist(ctx, orgId, updated);
+      : await showroom.getDefaultPlaylist(ctx, orgId, updated);
 
     return {
       id: updated._id,
       name: updated.name ?? "Unnamed screen",
       siteName: updated.siteName ?? "Unassigned",
-      status: deriveDeviceStatus(updated),
+      status: showroom.deriveDeviceStatus(updated),
       lastHeartbeatAt: new Date(updated.lastHeartbeatAt ?? updated._creationTime).toISOString(),
       screenshotUrl: updated.screenshotUrl ?? null,
       currentPlaylistName:
@@ -1624,7 +1617,7 @@ export const claimDeviceByCode = mutation({
     const credentialHash = await hashValue(credential);
     const issuedAt = Date.now();
     const expiresAt = expiresAtFrom(issuedAt, DEVICE_CREDENTIAL_TTL_MS);
-    const defaultPlaylist = await getDefaultPlaylist(ctx, orgId, null);
+    const defaultPlaylist = await showroom.getDefaultPlaylist(ctx, orgId, null);
 
     const deviceId = await ctx.db.insert("devices", {
       organizationId: orgId,
@@ -1713,7 +1706,7 @@ export const compileManifests = mutation({
   }),
   handler: async (ctx) => {
     const { orgId } = await requireAdmin(ctx);
-    const { devices, manifestVersion } = await compileOrgManifests(ctx, orgId);
+    const { devices, manifestVersion } = await showroom.compileOrgManifests(ctx, orgId);
 
     return {
       affectedDeviceCount: devices.length,
@@ -1939,6 +1932,6 @@ export const updateMediaAsset = mutation({
 
     const updated = await ctx.db.get(args.assetId);
     await recompileDevicesForMediaAsset(ctx, orgId, args.assetId);
-    return serializeAsset(ctx, updated!);
+    return showroom.serializeAsset(ctx, updated!);
   },
 });
