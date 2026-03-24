@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
 import {
   hashValue,
@@ -1355,6 +1355,71 @@ export const deployRelease = mutation({
     return {
       queuedDeviceCount: targetDevices.length,
       releaseId: release._id,
+    };
+  },
+});
+
+export const cancelReleaseRollout = internalMutation({
+  args: {
+    releaseId: v.id("releases"),
+    message: v.optional(v.string()),
+  },
+  returns: v.object({
+    cancelledRolloutCount: v.number(),
+    cancelledCommandCount: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release) {
+      throw new ConvexError("Release not found");
+    }
+
+    const now = Date.now();
+    const message = args.message ?? "Cancelled for manual SSH deployment";
+    const activeRollouts = await ctx.db
+      .query("releaseRollouts")
+      .withIndex("by_release_and_queued_at", (q) => q.eq("releaseId", args.releaseId))
+      .collect();
+
+    let cancelledRolloutCount = 0;
+    let cancelledCommandCount = 0;
+
+    for (const rollout of activeRollouts) {
+      if (rollout.status !== "queued" && rollout.status !== "in_progress") {
+        continue;
+      }
+
+      cancelledRolloutCount += 1;
+      await ctx.db.patch(rollout._id, {
+        status: "failed",
+        message,
+        completedAt: now,
+        updatedAt: now,
+      });
+
+      const command = await ctx.db.get(rollout.commandId);
+      if (!command) {
+        continue;
+      }
+      if (command.status !== "queued" && command.status !== "in_progress") {
+        continue;
+      }
+
+      cancelledCommandCount += 1;
+      await ctx.db.patch(command._id, {
+        status: "failed",
+        resultMessage: message,
+        completedAt: now,
+      });
+    }
+
+    await ctx.db.patch(release._id, {
+      updatedAt: now,
+    });
+
+    return {
+      cancelledRolloutCount,
+      cancelledCommandCount,
     };
   },
 });
