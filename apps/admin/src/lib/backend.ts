@@ -284,7 +284,10 @@ export async function finalizeMediaUpload(input: {
   }
 
   return mediaAssetSchema.parse(
-    await convexMutation(api.admin.finalizeMediaUpload, input),
+    await convexMutation(api.admin.finalizeMediaUpload, {
+      ...input,
+      folderId: input.folderId ?? undefined,
+    }),
   );
 }
 
@@ -302,7 +305,10 @@ export async function createYouTubeMediaAsset(input: {
   }
 
   return mediaAssetSchema.parse(
-    await convexMutation(api.admin.createYouTubeMediaAsset, input),
+    await convexMutation(api.admin.createYouTubeMediaAsset, {
+      ...input,
+      folderId: input.folderId ?? undefined,
+    }),
   );
 }
 
@@ -329,7 +335,13 @@ export async function importYouTubePlaylist(input: {
       assets: z.array(mediaAssetSchema),
       playlist: playlistSchema,
     })
-    .parse(await convexMutation(api.admin.importYouTubePlaylist, input));
+    .parse(
+      await convexMutation(api.admin.importYouTubePlaylist, {
+        ...input,
+        folderId: input.folderId ?? undefined,
+        assetFolderId: input.assetFolderId ?? undefined,
+      }),
+    );
 }
 
 export async function createRelease(input: {
