@@ -1625,7 +1625,11 @@ export const claimDeviceByCode = mutation({
       .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
       .first();
 
-    if (!registration || registration.claimedDeviceId || registration.expiresAt <= Date.now()) {
+    if (
+      !registration ||
+      registration.claimedDeviceId ||
+      (typeof registration.expiresAt === "number" && registration.expiresAt <= Date.now())
+    ) {
       throw new ConvexError("Invalid claim code");
     }
 
