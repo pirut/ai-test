@@ -117,7 +117,7 @@ export default defineSchema({
     claimCode: v.string(),
     claimTokenHash: v.string(),
     createdAt: v.number(),
-    expiresAt: v.number(),
+    expiresAt: v.optional(v.number()),
     claimedDeviceId: v.optional(v.id("devices")),
     credential: v.optional(v.string()),
     credentialExpiresAt: v.optional(v.number()),

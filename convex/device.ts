@@ -116,7 +116,7 @@ export const getClaimStatus = query({
     if (!registration) {
       throw new ConvexError("Unknown registration");
     }
-    if (registration.expiresAt <= now) {
+    if (typeof registration.expiresAt === "number" && registration.expiresAt <= now) {
       throw new ConvexError("Claim session expired");
     }
 
