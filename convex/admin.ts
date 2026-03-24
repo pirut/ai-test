@@ -4,13 +4,17 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
 import {
-  DEVICE_CREDENTIAL_TTL_MS,
-  expiresAtFrom,
   hashValue,
   randomToken,
   requireAdmin,
   requireOrgIdentity,
 } from "./lib";
+
+const deviceCredentialTtlMs = 24 * 60 * 60_000;
+
+function expiresAtFromNow(now: number, ttlMs: number) {
+  return now + ttlMs;
+}
 
 async function listOrgPlaylists(ctx: any, orgId: string) {
   return ctx.db
@@ -1616,7 +1620,7 @@ export const claimDeviceByCode = mutation({
     const credential = randomToken(32);
     const credentialHash = await hashValue(credential);
     const issuedAt = Date.now();
-    const expiresAt = expiresAtFrom(issuedAt, DEVICE_CREDENTIAL_TTL_MS);
+    const expiresAt = expiresAtFromNow(issuedAt, deviceCredentialTtlMs);
     const defaultPlaylist = await showroom.getDefaultPlaylist(ctx, orgId, null);
 
     const deviceId = await ctx.db.insert("devices", {
