@@ -1,7 +1,17 @@
 import { ConvexError, v } from "convex/values";
 
+import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import { hashValue, randomToken, resolveDeviceByCredential } from "./lib";
+import {
+  CLAIM_REGISTRATION_TTL_MS,
+  DEVICE_CREDENTIAL_TTL_MS,
+  expiresAtFrom,
+  hashValue,
+  randomToken,
+  resolveDeviceByCredential,
+  secondsRemainingUntil,
+} from "./lib";
 import { buildManifestForDevice } from "./showroom";
 
 export const registerTemporary = mutation({
@@ -13,6 +23,7 @@ export const registerTemporary = mutation({
     pollingIntervalSeconds: v.number(),
   }),
   handler: async (ctx) => {
+    const now = Date.now();
     const deviceSessionId = randomToken(20);
     const claimCode = randomToken(6).toUpperCase();
     const claimToken = randomToken(32);
@@ -21,7 +32,8 @@ export const registerTemporary = mutation({
       deviceSessionId,
       claimCode,
       claimTokenHash: await hashValue(claimToken),
-      createdAt: Date.now(),
+      createdAt: now,
+      expiresAt: expiresAtFrom(now, CLAIM_REGISTRATION_TTL_MS),
     });
 
     return {
@@ -42,9 +54,11 @@ export const getClaimStatus = query({
     claimed: v.boolean(),
     deviceId: v.optional(v.id("devices")),
     credential: v.optional(v.string()),
+    expiresInSeconds: v.optional(v.number()),
     pollAgainSeconds: v.number(),
   }),
   handler: async (ctx, args) => {
+    const now = Date.now();
     const registration = await ctx.db
       .query("deviceRegistrations")
       .withIndex("by_session", (q) => q.eq("deviceSessionId", args.deviceSessionId))
@@ -53,16 +67,25 @@ export const getClaimStatus = query({
     if (!registration) {
       throw new ConvexError("Unknown registration");
     }
+    if (registration.expiresAt <= now) {
+      throw new ConvexError("Claim session expired");
+    }
 
     const tokenHash = await hashValue(args.claimToken);
     if (registration.claimTokenHash !== tokenHash) {
       throw new ConvexError("Invalid claim token");
     }
 
+    let expiresInSeconds: number | undefined;
+    if (registration.credential && registration.credentialExpiresAt) {
+      expiresInSeconds = secondsRemainingUntil(registration.credentialExpiresAt, now);
+    }
+
     return {
       claimed: Boolean(registration.claimedDeviceId && registration.credential),
       deviceId: registration.claimedDeviceId,
       credential: registration.credential,
+      expiresInSeconds,
       pollAgainSeconds: 15,
     };
   },
@@ -78,6 +101,7 @@ export const refreshAuth = mutation({
     expiresInSeconds: v.number(),
   }),
   handler: async (ctx, args) => {
+    const now = Date.now();
     const device = await resolveDeviceByCredential(ctx, args.credential);
     if (!device) {
       throw new ConvexError("Unauthorized device");
@@ -85,6 +109,7 @@ export const refreshAuth = mutation({
 
     const credential = randomToken(32);
     const secretHash = await hashValue(credential);
+    const expiresAt = expiresAtFrom(now, DEVICE_CREDENTIAL_TTL_MS);
     const existing = await ctx.db
       .query("deviceCredentials")
       .withIndex("by_device", (q) => q.eq("deviceId", device._id))
@@ -92,7 +117,7 @@ export const refreshAuth = mutation({
 
     for (const record of existing.filter((entry) => !entry.revokedAt)) {
       await ctx.db.patch(record._id, {
-        revokedAt: Date.now(),
+        revokedAt: now,
       });
     }
 
@@ -100,13 +125,14 @@ export const refreshAuth = mutation({
       deviceId: device._id,
       version: existing.length + 1,
       secretHash,
-      issuedAt: Date.now(),
+      issuedAt: now,
+      expiresAt,
     });
 
     return {
       deviceId: device._id,
       credential,
-      expiresInSeconds: 86_400,
+      expiresInSeconds: secondsRemainingUntil(expiresAt, now),
     };
   },
 });
@@ -241,7 +267,11 @@ export const recordHeartbeat = mutation({
       appVersion: args.payload.appVersion,
       agentVersion: args.payload.agentVersion,
       manifestVersion: args.payload.manifestVersion,
-      currentPlaylistName: args.payload.currentPlaylistId ?? device.currentPlaylistName,
+      currentPlaylistName: await resolveCurrentPlaylistName(
+        ctx,
+        device.organizationId,
+        args.payload.currentPlaylistId,
+      ) ?? device.currentPlaylistName,
       lastHeartbeatAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -253,6 +283,23 @@ export const recordHeartbeat = mutation({
     };
   },
 });
+
+async function resolveCurrentPlaylistName(
+  ctx: MutationCtx,
+  orgId: string | undefined,
+  playlistId: string | undefined,
+) {
+  if (!orgId || !playlistId) {
+    return null;
+  }
+
+  const records = await ctx.db
+    .query("playlists")
+    .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+    .collect() as Array<Doc<"playlists">>;
+
+  return records.find((record: Doc<"playlists">) => record._id === playlistId)?.name ?? null;
+}
 
 export const recordScreenshot = mutation({
   args: {
