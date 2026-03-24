@@ -1,5 +1,8 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+export const CLAIM_REGISTRATION_TTL_MS = 15 * 60_000;
+export const DEVICE_CREDENTIAL_TTL_MS = 24 * 60 * 60_000;
 
 export async function hashValue(value: string) {
   const buffer = await crypto.subtle.digest(
@@ -15,6 +18,27 @@ export function randomToken(length = 24) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnopqrstuvwxyz";
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+export function expiresAtFrom(now: number, ttlMs: number) {
+  return now + ttlMs;
+}
+
+export function secondsRemainingUntil(expiresAt: number, now: number) {
+  return Math.max(0, Math.ceil((expiresAt - now) / 1000));
+}
+
+export function isCredentialRecordActive(
+  record: { expiresAt?: number; revokedAt?: number },
+  now = Date.now(),
+) {
+  if (record.revokedAt) {
+    return false;
+  }
+  if (typeof record.expiresAt !== "number") {
+    return true;
+  }
+  return record.expiresAt > now;
 }
 
 function extractClaim(identity: Record<string, unknown>, keys: string[]) {
@@ -85,13 +109,14 @@ export async function resolveDeviceByCredential(
   ctx: QueryCtx | MutationCtx,
   credential: string,
 ) {
+  const now = Date.now();
   const secretHash = await hashValue(credential);
   const record = await ctx.db
     .query("deviceCredentials")
     .withIndex("by_secret_hash", (q) => q.eq("secretHash", secretHash))
     .unique();
 
-  if (!record || record.revokedAt) {
+  if (!record || !isCredentialRecordActive(record, now)) {
     return null;
   }
 

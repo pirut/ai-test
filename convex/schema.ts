@@ -106,7 +106,7 @@ export default defineSchema({
     version: v.number(),
     secretHash: v.string(),
     issuedAt: v.number(),
-    expiresAt: v.number(),
+    expiresAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
   })
     .index("by_secret_hash", ["secretHash"])

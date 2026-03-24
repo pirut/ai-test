@@ -33,10 +33,16 @@ function secondsRemainingUntil(expiresAt: number, now: number) {
 }
 
 function isCredentialRecordActive(
-  record: { expiresAt: number; revokedAt?: number },
+  record: { expiresAt?: number; revokedAt?: number },
   now = Date.now(),
 ) {
-  return !record.revokedAt && record.expiresAt > now;
+  if (record.revokedAt) {
+    return false;
+  }
+  if (typeof record.expiresAt !== 'number') {
+    return true;
+  }
+  return record.expiresAt > now;
 }
 
 async function resolveDeviceByCredential(
