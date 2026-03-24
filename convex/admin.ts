@@ -16,6 +16,18 @@ function expiresAtFromNow(now: number, ttlMs: number) {
   return now + ttlMs;
 }
 
+async function activateManifestsForDevices(
+  ctx: any,
+  devices: Array<Doc<"devices">>,
+  manifestVersion = `manifest-${Date.now()}`,
+) {
+  for (const device of devices) {
+    await showroom.activateManifestForDevice(ctx, device, manifestVersion);
+  }
+
+  return manifestVersion;
+}
+
 async function listOrgPlaylists(ctx: any, orgId: string) {
   return ctx.db
     .query("playlists")
@@ -198,7 +210,7 @@ async function recompileAllOrgDevices(ctx: any, orgId: string) {
     return 0;
   }
 
-  await showroom.activateManifestForDevices(ctx, devices);
+  await activateManifestsForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -217,7 +229,7 @@ async function recompileDevicesById(
     return 0;
   }
 
-  await showroom.activateManifestForDevices(ctx, devices);
+  await activateManifestsForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -1710,7 +1722,8 @@ export const compileManifests = mutation({
   }),
   handler: async (ctx) => {
     const { orgId } = await requireAdmin(ctx);
-    const { devices, manifestVersion } = await showroom.compileOrgManifests(ctx, orgId);
+    const devices = await listOrgDevices(ctx, orgId);
+    const manifestVersion = await activateManifestsForDevices(ctx, devices);
 
     return {
       affectedDeviceCount: devices.length,
