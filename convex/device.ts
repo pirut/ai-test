@@ -1,18 +1,61 @@
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import {
-  CLAIM_REGISTRATION_TTL_MS,
-  DEVICE_CREDENTIAL_TTL_MS,
-  expiresAtFrom,
-  hashValue,
-  randomToken,
-  resolveDeviceByCredential,
-  secondsRemainingUntil,
-} from "./lib";
 import { buildManifestForDevice } from "./showroom";
+
+const claimRegistrationTtlMs = 15 * 60_000;
+const deviceCredentialTtlMs = 24 * 60 * 60_000;
+
+async function hashValue(value: string) {
+  const buffer = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(buffer))
+    .map((entry) => entry.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function randomToken(length = 24) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnopqrstuvwxyz";
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+function expiresAtFrom(now: number, ttlMs: number) {
+  return now + ttlMs;
+}
+
+function secondsRemainingUntil(expiresAt: number, now: number) {
+  return Math.max(0, Math.ceil((expiresAt - now) / 1000));
+}
+
+function isCredentialRecordActive(
+  record: { expiresAt: number; revokedAt?: number },
+  now = Date.now(),
+) {
+  return !record.revokedAt && record.expiresAt > now;
+}
+
+async function resolveDeviceByCredential(
+  ctx: QueryCtx | MutationCtx,
+  credential: string,
+) {
+  const now = Date.now();
+  const secretHash = await hashValue(credential);
+  const record = await ctx.db
+    .query("deviceCredentials")
+    .withIndex("by_secret_hash", (q) => q.eq("secretHash", secretHash))
+    .unique();
+
+  if (!record || !isCredentialRecordActive(record, now)) {
+    return null;
+  }
+
+  return ctx.db.get(record.deviceId);
+}
 
 export const registerTemporary = mutation({
   args: {},
@@ -33,7 +76,7 @@ export const registerTemporary = mutation({
       claimCode,
       claimTokenHash: await hashValue(claimToken),
       createdAt: now,
-      expiresAt: expiresAtFrom(now, CLAIM_REGISTRATION_TTL_MS),
+      expiresAt: expiresAtFrom(now, claimRegistrationTtlMs),
     });
 
     return {
@@ -109,7 +152,7 @@ export const refreshAuth = mutation({
 
     const credential = randomToken(32);
     const secretHash = await hashValue(credential);
-    const expiresAt = expiresAtFrom(now, DEVICE_CREDENTIAL_TTL_MS);
+    const expiresAt = expiresAtFrom(now, deviceCredentialTtlMs);
     const existing = await ctx.db
       .query("deviceCredentials")
       .withIndex("by_device", (q) => q.eq("deviceId", device._id))
