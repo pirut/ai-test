@@ -13,9 +13,11 @@ const schema = z
     playerSha256: z.string().trim().optional(),
     agentUrl: z.string().url().optional(),
     agentSha256: z.string().trim().optional(),
+    systemUrl: z.string().url().optional(),
+    systemSha256: z.string().trim().optional(),
   })
-  .refine((value) => Boolean(value.playerUrl || value.agentUrl), {
-    message: "Provide a player URL and/or agent URL",
+  .refine((value) => Boolean(value.playerUrl || value.agentUrl || value.systemUrl), {
+    message: "Provide a player URL, agent URL, and/or system bundle URL",
     path: ["playerUrl"],
   });
 

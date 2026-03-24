@@ -41,6 +41,19 @@ Use the helper script before running `pi-gen` manually:
 
 It builds the React player bundle and cross-compiles the Go agent for Linux ARM64 into `infra/pi-image/artifacts/`.
 
+For OTA fleet rollouts, use:
+
+```bash
+./infra/pi-image/prepare-release-artifacts.sh
+```
+
+That produces:
+- `infra/pi-image/artifacts/showroom-agent`
+- `infra/pi-image/artifacts/player-release.tar.gz`
+- `infra/pi-image/artifacts/system-release.tar.gz`
+
+`system-release.tar.gz` is the system-level Pi bundle used by the admin release API for files such as `/usr/local/bin/showroom-start-kiosk`.
+
 ## Wi-Fi
 
 By default the kiosk now handles first-time Wi-Fi setup on-screen. If the Pi boots without network access and has not registered yet, the local player shows a form that saves credentials through `nmcli` and retries registration automatically.
@@ -69,7 +82,9 @@ The custom stage turns that file into `/boot/firmware/network-config` inside the
 
 - `SHOWROOM_IMAGE_NAME` default `showroom`
 - `SHOWROOM_DEPLOY_COMPRESSION` default `xz`
-- `SHOWROOM_HOSTNAME` default `showroom`
+- `SHOWROOM_HOSTNAME_PREFIX` default `showroom`; used to derive unique first-boot hostnames like `showroom-ab12`
+- `SHOWROOM_HOSTNAME` optional fixed hostname override; when set, the image keeps that exact hostname
+- `SHOWROOM_UNIQUE_HOSTNAME` default `1`; set to `0` to skip first-boot hostname derivation
 - `SHOWROOM_TIMEZONE` default `America/New_York`
 - `SHOWROOM_WPA_COUNTRY` default `US`
 - `SHOWROOM_ENABLE_SSH` default `1`

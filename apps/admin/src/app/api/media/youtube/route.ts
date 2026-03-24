@@ -33,6 +33,7 @@ export async function POST(request: Request) {
           sourceUrl: youtube.sourceUrl,
           previewUrl: youtube.previewUrl,
           fileName: youtube.fileName,
+          durationSeconds: youtube.durationSeconds,
           tags: payload.tags,
           folderId: payload.folderId,
         }),

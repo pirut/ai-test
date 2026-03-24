@@ -106,6 +106,7 @@ export default defineSchema({
     version: v.number(),
     secretHash: v.string(),
     issuedAt: v.number(),
+    expiresAt: v.number(),
     revokedAt: v.optional(v.number()),
   })
     .index("by_secret_hash", ["secretHash"])
@@ -116,8 +117,10 @@ export default defineSchema({
     claimCode: v.string(),
     claimTokenHash: v.string(),
     createdAt: v.number(),
+    expiresAt: v.number(),
     claimedDeviceId: v.optional(v.id("devices")),
     credential: v.optional(v.string()),
+    credentialExpiresAt: v.optional(v.number()),
   })
     .index("by_session", ["deviceSessionId"])
     .index("by_claim_code", ["claimCode"]),
@@ -190,6 +193,8 @@ export default defineSchema({
     playerSha256: v.optional(v.string()),
     agentUrl: v.optional(v.string()),
     agentSha256: v.optional(v.string()),
+    systemUrl: v.optional(v.string()),
+    systemSha256: v.optional(v.string()),
     createdByUserId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),

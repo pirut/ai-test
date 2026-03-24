@@ -3,13 +3,21 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import {
+  activateManifestForDevices,
   compileOrgManifests,
   deriveDeviceStatus,
   getDefaultPlaylist,
   serializeAsset,
   serializePlaylist,
 } from "./showroom";
-import { requireAdmin, requireOrgIdentity, hashValue, randomToken } from "./lib";
+import {
+  DEVICE_CREDENTIAL_TTL_MS,
+  expiresAtFrom,
+  hashValue,
+  randomToken,
+  requireAdmin,
+  requireOrgIdentity,
+} from "./lib";
 
 async function listOrgPlaylists(ctx: any, orgId: string) {
   return ctx.db
@@ -23,6 +31,13 @@ async function listOrgMediaAssets(ctx: any, orgId: string) {
     .query("mediaAssets")
     .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
     .collect() as Promise<Array<Doc<"mediaAssets">>>;
+}
+
+async function listOrgDevices(ctx: any, orgId: string) {
+  return ctx.db
+    .query("devices")
+    .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+    .collect() as Promise<Array<Doc<"devices">>>;
 }
 
 async function listOrgFolders(
@@ -178,6 +193,110 @@ async function ensureOrgHasDefaultPlaylist(
   });
 
   return nextDefault._id;
+}
+
+async function recompileAllOrgDevices(ctx: any, orgId: string) {
+  const devices = await listOrgDevices(ctx, orgId);
+  if (!devices.length) {
+    return 0;
+  }
+
+  await activateManifestForDevices(ctx, devices);
+  return devices.length;
+}
+
+async function recompileDevicesById(
+  ctx: any,
+  orgId: string,
+  deviceIds: Iterable<Id<"devices">>,
+) {
+  const wanted = new Set(deviceIds);
+  if (!wanted.size) {
+    return 0;
+  }
+
+  const devices = (await listOrgDevices(ctx, orgId)).filter((device) => wanted.has(device._id));
+  if (!devices.length) {
+    return 0;
+  }
+
+  await activateManifestForDevices(ctx, devices);
+  return devices.length;
+}
+
+async function recompileDevicesForPlaylists(
+  ctx: any,
+  orgId: string,
+  playlistIds: Iterable<Id<"playlists">>,
+  options?: { forceAll?: boolean },
+) {
+  const wanted = new Set(playlistIds);
+  if (!wanted.size) {
+    return 0;
+  }
+  if (options?.forceAll) {
+    return recompileAllOrgDevices(ctx, orgId);
+  }
+
+  const [devices, playlists, targets] = await Promise.all([
+    listOrgDevices(ctx, orgId),
+    listOrgPlaylists(ctx, orgId),
+    ctx.db
+      .query("scheduleTargets")
+      .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+      .collect() as Promise<Array<Doc<"scheduleTargets">>>,
+  ]);
+
+  if (playlists.some((playlist) => playlist.isDefault && wanted.has(playlist._id))) {
+    return recompileAllOrgDevices(ctx, orgId);
+  }
+
+  if (
+    targets.some(
+      (target) =>
+        wanted.has(target.playlistId) &&
+        !target.deviceId &&
+        !target.groupId &&
+        !target.siteId,
+    )
+  ) {
+    return recompileAllOrgDevices(ctx, orgId);
+  }
+
+  const affectedDeviceIds = new Set<Id<"devices">>();
+  for (const device of devices) {
+    if (device.defaultPlaylistId && wanted.has(device.defaultPlaylistId)) {
+      affectedDeviceIds.add(device._id);
+    }
+  }
+
+  for (const target of targets) {
+    if (target.deviceId && wanted.has(target.playlistId)) {
+      affectedDeviceIds.add(target.deviceId);
+    }
+  }
+
+  return recompileDevicesById(ctx, orgId, affectedDeviceIds);
+}
+
+async function recompileDevicesForMediaAsset(
+  ctx: any,
+  orgId: string,
+  assetId: Id<"mediaAssets">,
+) {
+  const items = await ctx.db
+    .query("playlistItems")
+    .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
+    .collect();
+
+  const playlistIds = new Set<Id<"playlists">>();
+  for (const item of items) {
+    if (item.mediaAssetId === assetId) {
+      playlistIds.add(item.playlistId);
+    }
+  }
+
+  return recompileDevicesForPlaylists(ctx, orgId, playlistIds);
 }
 
 function mergeTags(current: string[], incoming: string[]) {
@@ -349,7 +468,9 @@ async function savePlaylistRecord(
     ),
   );
 
-  await compileOrgManifests(ctx, orgId);
+  await recompileDevicesForPlaylists(ctx, orgId, [playlistId], {
+    forceAll: nextIsDefault || existing?.isDefault,
+  });
 
   const playlist = await ctx.db.get(playlistId);
   if (!playlist) {
@@ -572,6 +693,8 @@ export const listReleases = query({
         playerSha256: release.playerSha256 ?? null,
         agentUrl: release.agentUrl ?? null,
         agentSha256: release.agentSha256 ?? null,
+        systemUrl: release.systemUrl ?? null,
+        systemSha256: release.systemSha256 ?? null,
         createdAt: new Date(release.createdAt).toISOString(),
         updatedAt: new Date(release.updatedAt).toISOString(),
         rolloutSummary: {
@@ -906,12 +1029,14 @@ export const createRelease = mutation({
     playerSha256: v.optional(v.string()),
     agentUrl: v.optional(v.string()),
     agentSha256: v.optional(v.string()),
+    systemUrl: v.optional(v.string()),
+    systemSha256: v.optional(v.string()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const identity = await requireAdmin(ctx);
-    if (!args.playerUrl && !args.agentUrl) {
-      throw new ConvexError("Provide a player URL and/or agent URL");
+    if (!args.playerUrl && !args.agentUrl && !args.systemUrl) {
+      throw new ConvexError("Provide a player URL, agent URL, and/or system bundle URL");
     }
 
     const releaseId = await ctx.db.insert("releases", {
@@ -923,6 +1048,8 @@ export const createRelease = mutation({
       playerSha256: args.playerSha256,
       agentUrl: args.agentUrl,
       agentSha256: args.agentSha256,
+      systemUrl: args.systemUrl,
+      systemSha256: args.systemSha256,
       createdByUserId: identity.userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -937,6 +1064,8 @@ export const createRelease = mutation({
       playerSha256: args.playerSha256 ?? null,
       agentUrl: args.agentUrl ?? null,
       agentSha256: args.agentSha256 ?? null,
+      systemUrl: args.systemUrl ?? null,
+      systemSha256: args.systemSha256 ?? null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       rolloutSummary: {
@@ -947,6 +1076,201 @@ export const createRelease = mutation({
         failed: 0,
       },
       latestRollouts: [],
+    };
+  },
+});
+
+export const generateReleaseArtifactUploadUrl = mutation({
+  args: {
+    fileName: v.string(),
+    mimeType: v.string(),
+    bytes: v.number(),
+  },
+  returns: v.object({
+    uploadUrl: v.string(),
+    expiresInSeconds: v.number(),
+  }),
+  handler: async (ctx, _args) => {
+    await requireAdmin(ctx);
+
+    return {
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+      expiresInSeconds: 3600,
+    };
+  },
+});
+
+export const publishReleaseArtifacts = mutation({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    notes: v.optional(v.string()),
+    deployToAll: v.optional(v.boolean()),
+    deviceIds: v.optional(v.array(v.id("devices"))),
+    player: v.optional(
+      v.object({
+        fileName: v.string(),
+        sha256: v.string(),
+        storageId: v.id("_storage"),
+      }),
+    ),
+    agent: v.optional(
+      v.object({
+        fileName: v.string(),
+        sha256: v.string(),
+        storageId: v.id("_storage"),
+      }),
+    ),
+    system: v.optional(
+      v.object({
+        fileName: v.string(),
+        sha256: v.string(),
+        storageId: v.id("_storage"),
+      }),
+    ),
+  },
+  returns: v.object({
+    release: v.any(),
+    rollout: v.optional(
+      v.object({
+        queuedDeviceCount: v.number(),
+        releaseId: v.id("releases"),
+      }),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await requireAdmin(ctx);
+    if (!args.player && !args.agent && !args.system) {
+      throw new ConvexError("Provide a player artifact, agent artifact, and/or system bundle");
+    }
+
+    const playerUrl = args.player
+      ? await ctx.storage.getUrl(args.player.storageId)
+      : null;
+    const agentUrl = args.agent
+      ? await ctx.storage.getUrl(args.agent.storageId)
+      : null;
+    const systemUrl = args.system
+      ? await ctx.storage.getUrl(args.system.storageId)
+      : null;
+
+    if (args.player && !playerUrl) {
+      throw new ConvexError("Unable to resolve player artifact URL");
+    }
+    if (args.agent && !agentUrl) {
+      throw new ConvexError("Unable to resolve agent artifact URL");
+    }
+    if (args.system && !systemUrl) {
+      throw new ConvexError("Unable to resolve system artifact URL");
+    }
+
+    const now = Date.now();
+    const releaseId = await ctx.db.insert("releases", {
+      organizationId: identity.orgId,
+      name: args.name,
+      version: args.version,
+      notes: args.notes,
+      playerUrl: playerUrl ?? undefined,
+      playerSha256: args.player?.sha256,
+      agentUrl: agentUrl ?? undefined,
+      agentSha256: args.agent?.sha256,
+      systemUrl: systemUrl ?? undefined,
+      systemSha256: args.system?.sha256,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: identity.userId,
+    });
+
+    const release = await ctx.db.get(releaseId);
+    if (!release) {
+      throw new ConvexError("Release was not created");
+    }
+
+    let rollout:
+      | {
+          queuedDeviceCount: number;
+          releaseId: Id<"releases">;
+        }
+      | undefined;
+
+    if (args.deployToAll || (args.deviceIds && args.deviceIds.length > 0)) {
+      const orgDevices = await ctx.db
+        .query("devices")
+        .withIndex("by_org", (q) => q.eq("organizationId", identity.orgId))
+        .collect();
+
+      const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
+      const targetDevices = requestedIds
+        ? orgDevices.filter((device) => requestedIds.has(device._id))
+        : orgDevices;
+
+      if (!targetDevices.length) {
+        throw new ConvexError("No target devices selected");
+      }
+
+      for (const device of targetDevices) {
+        const commandId = await ctx.db.insert("deviceCommands", {
+          organizationId: identity.orgId,
+          deviceId: device._id,
+          commandType: "update_release",
+          status: "queued",
+          payload: {
+            version: release.version,
+            agentVersion: release.agentUrl ? release.version : undefined,
+            agentUrl: release.agentUrl,
+            agentSha256: release.agentSha256,
+            playerVersion: release.playerUrl ? release.version : undefined,
+            playerUrl: release.playerUrl,
+            playerSha256: release.playerSha256,
+            systemVersion: release.systemUrl ? release.version : undefined,
+            systemUrl: release.systemUrl,
+            systemSha256: release.systemSha256,
+          },
+          queuedAt: now,
+        });
+
+        await ctx.db.insert("releaseRollouts", {
+          organizationId: identity.orgId,
+          releaseId: release._id,
+          deviceId: device._id,
+          commandId,
+          status: "queued",
+          queuedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      rollout = {
+        queuedDeviceCount: targetDevices.length,
+        releaseId: release._id,
+      };
+    }
+
+    return {
+      release: {
+        id: release._id,
+        name: release.name,
+        version: release.version,
+        notes: release.notes ?? null,
+        playerUrl: release.playerUrl ?? null,
+        playerSha256: release.playerSha256 ?? null,
+        agentUrl: release.agentUrl ?? null,
+        agentSha256: release.agentSha256 ?? null,
+        systemUrl: release.systemUrl ?? null,
+        systemSha256: release.systemSha256 ?? null,
+        createdAt: new Date(release.createdAt).toISOString(),
+        updatedAt: new Date(release.updatedAt).toISOString(),
+        rolloutSummary: {
+          total: rollout?.queuedDeviceCount ?? 0,
+          queued: rollout?.queuedDeviceCount ?? 0,
+          inProgress: 0,
+          succeeded: 0,
+          failed: 0,
+        },
+        latestRollouts: [],
+      },
+      rollout,
     };
   },
 });
@@ -996,6 +1320,9 @@ export const deployRelease = mutation({
           playerVersion: release.playerUrl ? release.version : undefined,
           playerUrl: release.playerUrl,
           playerSha256: release.playerSha256,
+          systemVersion: release.systemUrl ? release.version : undefined,
+          systemUrl: release.systemUrl,
+          systemSha256: release.systemSha256,
         },
         queuedAt: now,
       });
@@ -1092,7 +1419,7 @@ export const setDefaultPlaylist = mutation({
     }
 
     await assignOrgDefaultPlaylist(ctx, orgId, args.playlistId);
-    await compileOrgManifests(ctx, orgId);
+    await recompileAllOrgDevices(ctx, orgId);
 
     const updated = await ctx.db.get(args.playlistId);
     if (!updated) {
@@ -1175,7 +1502,24 @@ export const saveSchedule = mutation({
       updatedAt: Date.now(),
     });
 
-    await compileOrgManifests(ctx, orgId);
+    const affectedDeviceIds = new Set<Id<"devices">>();
+    for (const target of existingTargets) {
+      if (target.deviceId) {
+        affectedDeviceIds.add(target.deviceId);
+      }
+    }
+    if (args.deviceId) {
+      affectedDeviceIds.add(args.deviceId);
+    }
+
+    if (
+      !args.deviceId ||
+      existingTargets.some((target) => !target.deviceId && !target.groupId && !target.siteId)
+    ) {
+      await recompileAllOrgDevices(ctx, orgId);
+    } else {
+      await recompileDevicesById(ctx, orgId, affectedDeviceIds);
+    }
     const device = args.deviceId ? await ctx.db.get(args.deviceId) : null;
 
     return {
@@ -1227,7 +1571,7 @@ export const updateScreen = mutation({
       updatedAt: Date.now(),
     });
 
-    await compileOrgManifests(ctx, orgId);
+    await recompileDevicesById(ctx, orgId, [args.deviceId]);
     const updated = await ctx.db.get(args.deviceId);
     if (!updated) {
       throw new ConvexError("Device not found after update");
@@ -1272,12 +1616,14 @@ export const claimDeviceByCode = mutation({
       .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
       .first();
 
-    if (!registration || registration.claimedDeviceId) {
+    if (!registration || registration.claimedDeviceId || registration.expiresAt <= Date.now()) {
       throw new ConvexError("Invalid claim code");
     }
 
     const credential = randomToken(32);
     const credentialHash = await hashValue(credential);
+    const issuedAt = Date.now();
+    const expiresAt = expiresAtFrom(issuedAt, DEVICE_CREDENTIAL_TTL_MS);
     const defaultPlaylist = await getDefaultPlaylist(ctx, orgId, null);
 
     const deviceId = await ctx.db.insert("devices", {
@@ -1299,15 +1645,17 @@ export const claimDeviceByCode = mutation({
       deviceId,
       version: 1,
       secretHash: credentialHash,
-      issuedAt: Date.now(),
+      issuedAt,
+      expiresAt,
     });
 
     await ctx.db.patch(registration._id, {
       claimedDeviceId: deviceId,
       credential,
+      credentialExpiresAt: expiresAt,
     });
 
-    await compileOrgManifests(ctx, orgId);
+    await recompileDevicesById(ctx, orgId, [deviceId]);
 
     return {
       deviceId,
@@ -1458,13 +1806,42 @@ export const deletePlaylist = mutation({
       targets.filter((t) => t.playlistId === args.playlistId).map((t) => ctx.db.delete(t._id)),
     );
 
+    const affectedDeviceIds = new Set<Id<"devices">>();
+    const devices = await listOrgDevices(ctx, orgId);
+    for (const device of devices) {
+      if (device.defaultPlaylistId === args.playlistId) {
+        affectedDeviceIds.add(device._id);
+        await ctx.db.patch(device._id, {
+          defaultPlaylistId: undefined,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
+    const usedGlobally = targets.some(
+      (target) =>
+        target.playlistId === args.playlistId &&
+        !target.deviceId &&
+        !target.groupId &&
+        !target.siteId,
+    );
+    for (const target of targets) {
+      if (target.playlistId === args.playlistId && target.deviceId) {
+        affectedDeviceIds.add(target.deviceId);
+      }
+    }
+
     await ctx.db.delete(args.playlistId);
     if (playlist.isDefault) {
       await ensureOrgHasDefaultPlaylist(ctx, orgId, {
         excludePlaylistId: args.playlistId,
       });
     }
-    await compileOrgManifests(ctx, orgId);
+    if (playlist.isDefault || usedGlobally) {
+      await recompileAllOrgDevices(ctx, orgId);
+    } else {
+      await recompileDevicesById(ctx, orgId, affectedDeviceIds);
+    }
     return null;
   },
 });
@@ -1487,8 +1864,19 @@ export const deleteSchedule = mutation({
       .collect();
     await Promise.all(targets.map((t) => ctx.db.delete(t._id)));
 
+    const affectedDeviceIds = new Set<Id<"devices">>();
+    for (const target of targets) {
+      if (target.deviceId) {
+        affectedDeviceIds.add(target.deviceId);
+      }
+    }
+
     await ctx.db.delete(args.scheduleId);
-    await compileOrgManifests(ctx, orgId);
+    if (targets.some((target) => !target.deviceId && !target.groupId && !target.siteId)) {
+      await recompileAllOrgDevices(ctx, orgId);
+    } else {
+      await recompileDevicesById(ctx, orgId, affectedDeviceIds);
+    }
     return null;
   },
 });
@@ -1509,11 +1897,18 @@ export const deleteMediaAsset = mutation({
       .query("playlistItems")
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
       .collect();
+    const affectedPlaylistIds = new Set<Id<"playlists">>();
+    for (const item of items) {
+      if (item.mediaAssetId === args.assetId) {
+        affectedPlaylistIds.add(item.playlistId);
+      }
+    }
     await Promise.all(
       items.filter((i) => i.mediaAssetId === args.assetId).map((i) => ctx.db.delete(i._id)),
     );
 
     await ctx.db.delete(args.assetId);
+    await recompileDevicesForPlaylists(ctx, orgId, affectedPlaylistIds);
     return null;
   },
 });
@@ -1543,6 +1938,7 @@ export const updateMediaAsset = mutation({
     });
 
     const updated = await ctx.db.get(args.assetId);
+    await recompileDevicesForMediaAsset(ctx, orgId, args.assetId);
     return serializeAsset(ctx, updated!);
   },
 });

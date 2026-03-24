@@ -30,6 +30,9 @@ type releaseUpdatePayload struct {
 	PlayerVersion string `json:"playerVersion,omitempty"`
 	PlayerURL     string `json:"playerUrl,omitempty"`
 	PlayerSHA256  string `json:"playerSha256,omitempty"`
+	SystemVersion string `json:"systemVersion,omitempty"`
+	SystemURL     string `json:"systemUrl,omitempty"`
+	SystemSHA256  string `json:"systemSha256,omitempty"`
 }
 
 func (s *Service) applyReleaseUpdate(
@@ -41,8 +44,8 @@ func (s *Service) applyReleaseUpdate(
 	if err != nil {
 		return err
 	}
-	if payload.AgentURL == "" && payload.PlayerURL == "" {
-		return fmt.Errorf("update_release requires agentUrl and/or playerUrl")
+	if payload.AgentURL == "" && payload.PlayerURL == "" && payload.SystemURL == "" {
+		return fmt.Errorf("update_release requires agentUrl, playerUrl, and/or systemUrl")
 	}
 
 	workDir := filepath.Join(s.config.StateRoot, "updates", commandID)
@@ -62,6 +65,10 @@ func (s *Service) applyReleaseUpdate(
 	nextPlayerVersion := strings.TrimSpace(payload.PlayerVersion)
 	if nextPlayerVersion == "" && payload.PlayerURL != "" {
 		nextPlayerVersion = strings.TrimSpace(payload.Version)
+	}
+	nextSystemVersion := strings.TrimSpace(payload.SystemVersion)
+	if nextSystemVersion == "" && payload.SystemURL != "" {
+		nextSystemVersion = strings.TrimSpace(payload.Version)
 	}
 
 	if payload.PlayerURL != "" {
@@ -96,13 +103,32 @@ func (s *Service) applyReleaseUpdate(
 		}
 	}
 
-	if nextAgentVersion != "" || nextPlayerVersion != "" {
+	if payload.SystemURL != "" {
+		archivePath := filepath.Join(workDir, archiveFileName(payload.SystemURL, "system-release.tar.gz"))
+		if err := s.client.DownloadFile(ctx, payload.SystemURL, archivePath); err != nil {
+			return fmt.Errorf("download system bundle: %w", err)
+		}
+		if err := verifySHA256(archivePath, payload.SystemSHA256); err != nil {
+			return fmt.Errorf("verify system bundle: %w", err)
+		}
+		if err := installSystemBundle(archivePath, filepath.Join(workDir, "system")); err != nil {
+			return fmt.Errorf("install system bundle: %w", err)
+		}
+		if strings.TrimSpace(s.config.RestartPlayerCommand) != "" {
+			restartCommands = append(restartCommands, s.config.RestartPlayerCommand)
+		}
+	}
+
+	if nextAgentVersion != "" || nextPlayerVersion != "" || nextSystemVersion != "" {
 		if err := s.store.Update(func(next *state.DeviceState) {
 			if nextAgentVersion != "" {
 				next.AgentVersion = nextAgentVersion
 			}
 			if nextPlayerVersion != "" {
 				next.PlayerVersion = nextPlayerVersion
+			}
+			if nextSystemVersion != "" && next.PlayerVersion == "" {
+				next.PlayerVersion = nextSystemVersion
 			}
 		}); err != nil {
 			return err
@@ -247,6 +273,55 @@ func installPlayerBundle(archivePath string, targetPath string, workDir string) 
 	}
 
 	return os.RemoveAll(backupPath)
+}
+
+func installSystemBundle(archivePath string, workDir string) error {
+	extractRoot := filepath.Join(workDir, "extract")
+	if err := os.RemoveAll(extractRoot); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(extractRoot, 0o755); err != nil {
+		return err
+	}
+
+	if err := extractArchive(archivePath, extractRoot); err != nil {
+		return err
+	}
+
+	sourceRoot, err := resolveExtractedRoot(extractRoot)
+	if err != nil {
+		return err
+	}
+
+	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relativePath, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return err
+		}
+		if relativePath == "." {
+			return nil
+		}
+
+		targetPath := filepath.Join(string(filepath.Separator), relativePath)
+		if targetPath == "/" {
+			return fmt.Errorf("invalid system bundle path")
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			return os.MkdirAll(targetPath, info.Mode())
+		}
+
+		return copyFile(path, targetPath, info.Mode())
+	})
 }
 
 func resolveExtractedRoot(root string) (string, error) {

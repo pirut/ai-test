@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,8 @@ import (
 )
 
 const screenshotPath = "/tmp/showroom-screenshot.jpg"
+const credentialRefreshWindow = time.Hour
+const youtubeDownloadTimeout = 45 * time.Second
 
 type Service struct {
 	config config.Config
@@ -63,6 +66,17 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
+	go s.runPollLoop(ctx)
+	go s.runHeartbeatLoop(ctx)
+	go s.runScreenshotLoop(ctx)
+
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return httpServer.Shutdown(shutdownCtx)
+}
+
+func (s *Service) runPollLoop(ctx context.Context) {
 	if err := s.poll(ctx); err != nil {
 		log.Printf("initial poll failed: %v", err)
 	}
@@ -73,12 +87,46 @@ func (s *Service) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			return httpServer.Shutdown(shutdownCtx)
+			return
 		case <-ticker.C:
 			if err := s.poll(ctx); err != nil {
 				log.Printf("poll failed: %v", err)
+			}
+		}
+	}
+}
+
+func (s *Service) runHeartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(s.config.HeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			snapshot := s.store.Snapshot()
+			if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
+				s.recordError(err)
+				log.Printf("heartbeat failed: %v", err)
+			}
+		}
+	}
+}
+
+func (s *Service) runScreenshotLoop(ctx context.Context) {
+	ticker := time.NewTicker(s.config.ScreenshotInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			snapshot := s.store.Snapshot()
+			if err := s.maybeUploadScreenshot(ctx, snapshot, false); err != nil {
+				s.recordError(err)
+				log.Printf("screenshot upload failed: %v", err)
 			}
 		}
 	}
@@ -94,6 +142,12 @@ func (s *Service) poll(ctx context.Context) error {
 		return nil
 	}
 
+	if err := s.ensureCredentialFresh(ctx, current); err != nil {
+		s.recordError(err)
+		return err
+	}
+	current = s.store.Snapshot()
+
 	if err := s.syncManifest(ctx, current.Credential); err != nil {
 		s.recordError(err)
 	} else {
@@ -103,14 +157,6 @@ func (s *Service) poll(ctx context.Context) error {
 	}
 
 	if err := s.processCommands(ctx, current.Credential); err != nil {
-		s.recordError(err)
-	}
-
-	snapshot := s.store.Snapshot()
-	if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
-		s.recordError(err)
-	}
-	if err := s.maybeUploadScreenshot(ctx, snapshot, false); err != nil {
 		s.recordError(err)
 	}
 
@@ -143,12 +189,38 @@ func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState
 	if err := s.store.Update(func(next *state.DeviceState) {
 		next.DeviceID = status.DeviceID
 		next.Credential = status.Credential
+		next.CredentialExpiresAt = expiresAtRFC3339(status.ExpiresInSeconds)
+		next.ClaimCode = ""
+		next.ClaimToken = ""
 		next.LastError = ""
 	}); err != nil {
 		return err
 	}
 
 	return s.syncManifest(ctx, status.Credential)
+}
+
+func (s *Service) ensureCredentialFresh(ctx context.Context, current state.DeviceState) error {
+	if current.Credential == "" {
+		return nil
+	}
+
+	expiresAt, needsRefresh := credentialNeedsRefresh(current.CredentialExpiresAt)
+	if !needsRefresh {
+		_ = expiresAt
+		return nil
+	}
+
+	refreshed, err := s.client.RefreshAuth(ctx, current.Credential)
+	if err != nil {
+		return err
+	}
+
+	return s.store.Update(func(next *state.DeviceState) {
+		next.DeviceID = refreshed.DeviceID
+		next.Credential = refreshed.Credential
+		next.CredentialExpiresAt = expiresAtRFC3339(refreshed.ExpiresInSeconds)
+	})
 }
 
 func (s *Service) syncManifest(ctx context.Context, credential string) error {
@@ -210,6 +282,11 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		}
 
 		item.URL = "/assets/" + fileName
+		if item.AssetType == "video" {
+			if duration, err := probeMediaDuration(ctx, destPath); err == nil && duration > 0 {
+				item.DurationSeconds = duration
+			}
+		}
 		return item, nil
 	}
 
@@ -252,13 +329,24 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 
 	destBase := strings.TrimSuffix(destPath, filepath.Ext(destPath))
 	outputTemplate := destBase + ".%(ext)s"
+	downloadCtx, cancel := context.WithTimeout(ctx, youtubeDownloadTimeout)
 	cmd := exec.CommandContext(
-		ctx,
+		downloadCtx,
 		s.config.YouTubeDLBinary,
 		"--no-progress",
 		"--no-part",
 		"--no-playlist",
 		"--force-overwrites",
+		"--socket-timeout",
+		"15",
+		"--retries",
+		"1",
+		"--fragment-retries",
+		"1",
+		"--file-access-retries",
+		"1",
+		"--extractor-retries",
+		"1",
 		"--format",
 		s.config.YouTubeFormat,
 		"--merge-output-format",
@@ -269,9 +357,13 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		outputTemplate,
 		sourceURL,
 	)
+	defer cancel()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if downloadCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("yt-dlp download timed out after %s: %s", youtubeDownloadTimeout, strings.TrimSpace(string(output)))
+		}
 		return fmt.Errorf("yt-dlp download failed: %s", strings.TrimSpace(string(output)))
 	}
 
@@ -458,6 +550,68 @@ func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylis
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func probeMediaDuration(ctx context.Context, path string) (int, error) {
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		return 0, err
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		probeCtx,
+		"ffprobe",
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"default=noprint_wrappers=1:nokey=1",
+		path,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	value := strings.TrimSpace(string(output))
+	if value == "" {
+		return 0, fmt.Errorf("ffprobe returned empty duration")
+	}
+
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, err
+	}
+	if seconds <= 0 {
+		return 0, fmt.Errorf("invalid duration %q", value)
+	}
+
+	return int(seconds + 0.5), nil
+}
+
+func credentialNeedsRefresh(raw string) (time.Time, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return time.Time{}, true
+	}
+
+	expiresAt, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, true
+	}
+
+	return expiresAt, time.Until(expiresAt) <= credentialRefreshWindow
+}
+
+func expiresAtRFC3339(expiresInSeconds int) string {
+	if expiresInSeconds <= 0 {
+		return ""
+	}
+
+	return time.Now().UTC().Add(time.Duration(expiresInSeconds) * time.Second).Format(time.RFC3339)
 }
 
 func writeJSONFile(path string, value interface{}) error {

@@ -37,6 +37,11 @@ const uploadDraftSchema = z.object({
   expiresInSeconds: z.number(),
 });
 
+const releaseArtifactUploadSchema = z.object({
+  uploadUrl: z.string(),
+  expiresInSeconds: z.number(),
+});
+
 const deviceDetailSchema = deviceSummarySchema.extend({
   timezone: z.string(),
   orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
@@ -121,6 +126,13 @@ async function publicConvexMutation(
 ) {
   const client = publicConvexClient();
   return client.mutation(reference as never, args as never);
+}
+
+function isUnauthorizedDeviceError(error: unknown) {
+  return (
+    error instanceof Error &&
+    /Unauthorized device|Authentication required/i.test(error.message)
+  );
 }
 
 export async function getDashboardStats(orgId: string) {
@@ -328,12 +340,67 @@ export async function createRelease(input: {
   playerSha256?: string;
   agentUrl?: string;
   agentSha256?: string;
+  systemUrl?: string;
+  systemSha256?: string;
 }) {
   if (!hasConvexBackend()) {
     return mock.createRelease(input);
   }
 
   return releaseSummarySchema.parse(await convexMutation(api.admin.createRelease, input));
+}
+
+export async function createReleaseArtifactUpload(input: {
+  fileName: string;
+  mimeType: string;
+  bytes: number;
+}) {
+  if (!hasConvexBackend()) {
+    throw new Error("Release artifact uploads require Convex backend mode.");
+  }
+
+  return releaseArtifactUploadSchema.parse(
+    await convexMutation(api.admin.generateReleaseArtifactUploadUrl, input),
+  );
+}
+
+export async function publishReleaseArtifacts(input: {
+  name: string;
+  version: string;
+  notes?: string;
+  deployToAll?: boolean;
+  deviceIds?: string[];
+  player?: {
+    fileName: string;
+    sha256: string;
+    storageId: string;
+  };
+  agent?: {
+    fileName: string;
+    sha256: string;
+    storageId: string;
+  };
+  system?: {
+    fileName: string;
+    sha256: string;
+    storageId: string;
+  };
+}) {
+  if (!hasConvexBackend()) {
+    throw new Error("Publishing releases requires Convex backend mode.");
+  }
+
+  return z
+    .object({
+      release: releaseSummarySchema,
+      rollout: z
+        .object({
+          queuedDeviceCount: z.number(),
+          releaseId: z.string(),
+        })
+        .optional(),
+    })
+    .parse(await convexMutation(api.admin.publishReleaseArtifacts, input));
 }
 
 export async function deployRelease(input: {
@@ -516,13 +583,20 @@ export async function refreshDeviceAuth(credential: string | null) {
     return mock.refreshDeviceAuth(credential);
   }
 
-  return z
-    .object({
-      deviceId: z.string(),
-      credential: z.string(),
-      expiresInSeconds: z.number(),
-    })
-    .parse(await publicConvexMutation(api.device.refreshAuth, { credential }));
+  try {
+    return z
+      .object({
+        deviceId: z.string(),
+        credential: z.string(),
+        expiresInSeconds: z.number(),
+      })
+      .parse(await publicConvexMutation(api.device.refreshAuth, { credential }));
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function getManifestForCredential(credential: string | null) {
@@ -549,9 +623,16 @@ export async function getCommandsForCredential(credential: string | null) {
     return device ? mock.getCommandsForDevice(device.id) : null;
   }
 
-  return z
-    .array(deviceCommandSchema)
-    .parse(await publicConvexMutation(api.device.claimCommands, { credential }));
+  try {
+    return z
+      .array(deviceCommandSchema)
+      .parse(await publicConvexMutation(api.device.claimCommands, { credential }));
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function recordHeartbeatForCredential(
@@ -567,10 +648,17 @@ export async function recordHeartbeatForCredential(
     return device ? mock.recordHeartbeat(device.id, payload) : null;
   }
 
-  return await publicConvexMutation(api.device.recordHeartbeat, {
-    credential,
-    payload,
-  });
+  try {
+    return await publicConvexMutation(api.device.recordHeartbeat, {
+      credential,
+      payload,
+    });
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function recordScreenshotForCredential(
@@ -596,12 +684,19 @@ export async function recordScreenshotForCredential(
       : null;
   }
 
-  return screenshotSchema.parse(
-    await publicConvexMutation(api.device.recordScreenshot, {
-      credential,
-      payload,
-    }),
-  );
+  try {
+    return screenshotSchema.parse(
+      await publicConvexMutation(api.device.recordScreenshot, {
+        credential,
+        payload,
+      }),
+    );
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function generateDeviceScreenshotUploadUrl(credential: string | null) {
@@ -615,15 +710,22 @@ export async function generateDeviceScreenshotUploadUrl(credential: string | nul
     };
   }
 
-  return z
-    .object({
-      uploadUrl: z.string(),
-    })
-    .parse(
-      await publicConvexMutation(api.device.generateScreenshotUploadUrl, {
-        credential,
-      }),
-    );
+  try {
+    return z
+      .object({
+        uploadUrl: z.string(),
+      })
+      .parse(
+        await publicConvexMutation(api.device.generateScreenshotUploadUrl, {
+          credential,
+        }),
+      );
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function recordCommandResultForCredential(
@@ -638,10 +740,17 @@ export async function recordCommandResultForCredential(
     return mock.recordCommandResult(payload);
   }
 
-  return await publicConvexMutation(api.device.recordCommandResult, {
-    credential,
-    payload,
-  });
+  try {
+    return await publicConvexMutation(api.device.recordCommandResult, {
+      credential,
+      payload,
+    });
+  } catch (error) {
+    if (isUnauthorizedDeviceError(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function deletePlaylist(id: string) {

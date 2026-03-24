@@ -67,7 +67,6 @@ type MockState = {
 type FolderKind = LibraryFolder["kind"];
 
 declare global {
-  // eslint-disable-next-line no-var
   var __showroomMockState: MockState | undefined;
 }
 
@@ -659,6 +658,8 @@ export function createRelease(input: {
   playerSha256?: string;
   agentUrl?: string;
   agentSha256?: string;
+  systemUrl?: string;
+  systemSha256?: string;
 }) {
   const now = new Date().toISOString();
   const release: ReleaseSummary = {
@@ -670,6 +671,8 @@ export function createRelease(input: {
     playerSha256: input.playerSha256 ?? null,
     agentUrl: input.agentUrl ?? null,
     agentSha256: input.agentSha256 ?? null,
+    systemUrl: input.systemUrl ?? null,
+    systemSha256: input.systemSha256 ?? null,
     createdAt: now,
     updatedAt: now,
     rolloutSummary: {
@@ -731,6 +734,8 @@ export function deployRelease(input: {
         playerSha256: release.playerSha256 ?? undefined,
         agentUrl: release.agentUrl ?? undefined,
         agentSha256: release.agentSha256 ?? undefined,
+        systemUrl: release.systemUrl ?? undefined,
+        systemSha256: release.systemSha256 ?? undefined,
       },
     });
   }
@@ -950,7 +955,8 @@ export function deletePlaylist(id: string) {
   }));
 }
 
-export function deleteSchedule(_id: string) {
+export function deleteSchedule(id: string) {
+  void id;
   // No schedules in mock state.
 }
 

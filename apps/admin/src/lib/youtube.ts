@@ -25,6 +25,12 @@ export type YouTubePlaylistImport = {
   videos: YouTubePlaylistImportVideo[];
 };
 
+type YouTubeVideoImportMetadata = {
+  durationSeconds?: number;
+  previewUrl?: string;
+  title?: string;
+};
+
 function parseUrl(rawUrl: string) {
   try {
     return new URL(rawUrl);
@@ -410,12 +416,48 @@ async function fetchOEmbedMetadata(url: string) {
   };
 }
 
+async function fetchWatchPageMetadata(url: string): Promise<YouTubeVideoImportMetadata | null> {
+  const html = await fetchYouTubeText(url, "video").catch(() => null);
+  if (!html) {
+    return null;
+  }
+
+  try {
+    const playerResponse = extractJsonObject(html, "var ytInitialPlayerResponse = ");
+    const videoDetails =
+      (playerResponse.videoDetails as
+        | {
+            lengthSeconds?: string;
+            thumbnail?: { thumbnails?: Array<{ url?: string }> };
+            title?: string;
+          }
+        | undefined) ?? {};
+
+    const title = videoDetails.title?.trim() || undefined;
+    const previewUrl = getThumbnailUrl(videoDetails.thumbnail, "");
+    const durationSeconds = Number(videoDetails.lengthSeconds);
+
+    return {
+      durationSeconds:
+        Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined,
+      previewUrl: previewUrl || undefined,
+      title,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveYouTubeImport(rawUrl: string, preferredTitle?: string) {
   const normalized = normalizeYouTubeUrl(rawUrl);
-  const metadata = await fetchOEmbedMetadata(normalized.url);
+  const [pageMetadata, oembedMetadata] = await Promise.all([
+    fetchWatchPageMetadata(normalized.url),
+    fetchOEmbedMetadata(normalized.url),
+  ]);
   const title =
     preferredTitle?.trim() ||
-    metadata?.title ||
+    pageMetadata?.title ||
+    oembedMetadata?.title ||
     `YouTube video ${normalized.videoId}`;
   const fileStem = slugify(title) || normalized.videoId.toLowerCase();
 
@@ -424,8 +466,10 @@ export async function resolveYouTubeImport(rawUrl: string, preferredTitle?: stri
     sourceUrl: normalized.url,
     title,
     fileName: `${fileStem}-${normalized.videoId}.mp4`,
+    durationSeconds: pageMetadata?.durationSeconds,
     previewUrl:
-      metadata?.thumbnailUrl ||
+      pageMetadata?.previewUrl ||
+      oembedMetadata?.thumbnailUrl ||
       `https://i.ytimg.com/vi/${normalized.videoId}/hqdefault.jpg`,
   };
 }

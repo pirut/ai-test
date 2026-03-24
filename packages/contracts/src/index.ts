@@ -31,8 +31,11 @@ export const releaseUpdatePayloadSchema = z
     playerVersion: z.string().trim().min(1).optional(),
     playerUrl: z.string().url().optional(),
     playerSha256: sha256Schema.optional(),
+    systemVersion: z.string().trim().min(1).optional(),
+    systemUrl: z.string().url().optional(),
+    systemSha256: sha256Schema.optional(),
   })
-  .refine((value) => Boolean(value.agentUrl || value.playerUrl), {
+  .refine((value) => Boolean(value.agentUrl || value.playerUrl || value.systemUrl), {
     message: "Provide at least one release URL",
     path: ["agentUrl"],
   });
@@ -128,6 +131,7 @@ export const claimStatusResponseSchema = z.object({
   claimed: z.boolean(),
   deviceId: z.string().optional(),
   credential: z.string().optional(),
+  expiresInSeconds: z.number().int().positive().optional(),
   pollAgainSeconds: z.number().int().positive(),
 });
 
@@ -204,6 +208,8 @@ export const releaseSummarySchema = z.object({
   playerSha256: z.string().nullable(),
   agentUrl: z.string().url().nullable(),
   agentSha256: z.string().nullable(),
+  systemUrl: z.string().url().nullable(),
+  systemSha256: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   rolloutSummary: z.object({
