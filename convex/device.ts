@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import { getScreenshotRetentionDaysForOrg } from "./billing";
 import { buildManifestForDevice } from "./showroom";
 
 const claimRegistrationTtlMs = 15 * 60_000;
@@ -367,6 +368,12 @@ export const recordScreenshot = mutation({
       throw new ConvexError("Unauthorized device");
     }
 
+    const retentionDays = await getScreenshotRetentionDaysForOrg(
+      ctx,
+      device.organizationId,
+    );
+    const capturedAt = Date.parse(args.payload.capturedAt);
+
     const publicUrl = args.payload.storageId
       ? (await ctx.storage.getUrl(args.payload.storageId)) ?? device.screenshotUrl ?? ""
       : device.screenshotUrl ?? "";
@@ -376,8 +383,9 @@ export const recordScreenshot = mutation({
       deviceId: device._id,
       storageId: args.payload.storageId,
       publicUrl,
-      capturedAt: Date.parse(args.payload.capturedAt),
+      capturedAt,
       bytes: args.payload.bytes,
+      expiresAt: capturedAt + retentionDays * 24 * 60 * 60_000,
       createdAt: Date.now(),
     });
 
@@ -435,6 +443,17 @@ export const recordCommandResult = mutation({
             ? Date.parse(args.payload.completedAt)
             : Date.now()
           : command.completedAt,
+      payload:
+        command.commandType === "update_youtube_auth" &&
+        (args.payload.status === "succeeded" || args.payload.status === "failed")
+          ? {
+              redacted: true,
+              syncNow:
+                typeof (command.payload as { syncNow?: unknown } | undefined)?.syncNow === "boolean"
+                  ? (command.payload as { syncNow?: boolean }).syncNow
+                  : undefined,
+            }
+          : command.payload,
     });
 
     const rollout = await ctx.db

@@ -88,6 +88,23 @@ function chooseSchedule(manifest: DeviceManifest) {
   return active?.playlist.length ? active.playlist : manifest.defaultPlaylist;
 }
 
+function findActiveIndex(
+  playlist: ManifestPlaylistItem[],
+  activeItem: ManifestPlaylistItem | null,
+) {
+  if (!activeItem) {
+    return 0;
+  }
+
+  const exactIndex = playlist.findIndex((item) => item.id === activeItem.id);
+  if (exactIndex >= 0) {
+    return exactIndex;
+  }
+
+  const assetIndex = playlist.findIndex((item) => item.assetId === activeItem.assetId);
+  return assetIndex >= 0 ? assetIndex : 0;
+}
+
 export function PlayerApp() {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -159,14 +176,22 @@ export function PlayerApp() {
           return;
         }
 
-        const playlist = chooseSchedule(manifest);
-        setState({
-          manifest,
-          activeItem: playlist[0] ?? null,
-          index: 0,
-          status: "ready",
-          playerStatus,
-          wifiStatus,
+        setState((current) => {
+          const playlist = chooseSchedule(manifest);
+          const shouldPreservePosition =
+            current.manifest?.manifestVersion === manifest.manifestVersion;
+          const index = shouldPreservePosition
+            ? findActiveIndex(playlist, current.activeItem)
+            : 0;
+
+          return {
+            manifest,
+            activeItem: playlist[index] ?? null,
+            index,
+            status: "ready",
+            playerStatus,
+            wifiStatus,
+          };
         });
       } catch {
         if (!cancelled) {

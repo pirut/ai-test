@@ -18,7 +18,6 @@ export async function POST(request: Request) {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     const file = formData.get("file");
-    const deviceId = String(formData.get("deviceId") ?? "");
     const capturedAt = String(formData.get("capturedAt") ?? new Date().toISOString());
 
     if (!(file instanceof File)) {

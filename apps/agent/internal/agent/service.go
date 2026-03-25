@@ -347,6 +347,8 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		"1",
 		"--extractor-retries",
 		"1",
+		"--extractor-args",
+		s.config.YouTubeExtractorArgs,
 		"--format",
 		s.config.YouTubeFormat,
 		"--merge-output-format",
@@ -357,6 +359,9 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		outputTemplate,
 		sourceURL,
 	)
+	if cookieFile := strings.TrimSpace(s.config.YouTubeCookieFile); cookieFile != "" && fileExists(cookieFile) {
+		cmd.Args = append(cmd.Args[:len(cmd.Args)-1], "--cookies", cookieFile, sourceURL)
+	}
 	defer cancel()
 
 	output, err := cmd.CombinedOutput()
@@ -424,6 +429,8 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 		err = s.runShell(ctx, s.config.UnblankScreenCommand)
 	case "update_release":
 		err = s.applyReleaseUpdate(ctx, command.ID, command.Payload)
+	case "update_youtube_auth":
+		err = s.applyYouTubeAuthUpdate(ctx, credential, command.Payload)
 	default:
 		err = fmt.Errorf("unsupported command: %s", command.CommandType)
 	}

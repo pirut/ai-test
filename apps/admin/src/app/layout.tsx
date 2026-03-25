@@ -7,6 +7,7 @@ import { extractRouterConfig } from "uploadthing/server";
 import { uploadRouter } from "@/app/api/uploadthing/core";
 import { AuthProviders } from "@/components/auth-providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { absoluteUrl, siteConfig } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -32,8 +33,36 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Showroom Control",
-  description: "Remote management for Raspberry Pi showroom displays.",
+  metadataBase: new URL(siteConfig.appUrl),
+  title: {
+    default: siteConfig.name,
+    template: `%s | ${siteConfig.name}`,
+  },
+  description: siteConfig.description,
+  applicationName: siteConfig.name,
+  category: "BusinessApplication",
+  keywords: [
+    "digital signage",
+    "raspberry pi signage",
+    "screen fleet management",
+    "playlist scheduling",
+    "signage SaaS",
+  ],
+  alternates: {
+    canonical: absoluteUrl("/"),
+  },
+  openGraph: {
+    title: siteConfig.name,
+    description: siteConfig.description,
+    url: absoluteUrl("/"),
+    siteName: siteConfig.name,
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteConfig.name,
+    description: siteConfig.description,
+  },
 };
 
 export default function RootLayout({

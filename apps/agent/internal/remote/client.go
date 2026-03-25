@@ -27,12 +27,12 @@ type ManifestPlaylistItem struct {
 }
 
 type ScheduleWindow struct {
-	ID        string                 `json:"id"`
-	Label     string                 `json:"label"`
-	StartsAt  string                 `json:"startsAt"`
-	EndsAt    string                 `json:"endsAt"`
-	Priority  int                    `json:"priority"`
-	Playlist  []ManifestPlaylistItem `json:"playlist"`
+	ID       string                 `json:"id"`
+	Label    string                 `json:"label"`
+	StartsAt string                 `json:"startsAt"`
+	EndsAt   string                 `json:"endsAt"`
+	Priority int                    `json:"priority"`
+	Playlist []ManifestPlaylistItem `json:"playlist"`
 }
 
 type DeviceManifest struct {
@@ -49,17 +49,24 @@ type DeviceManifest struct {
 }
 
 type TemporaryRegistrationResponse struct {
-	DeviceSessionID         string `json:"deviceSessionId"`
-	ClaimCode               string `json:"claimCode"`
-	ClaimToken              string `json:"claimToken"`
-	PollingIntervalSeconds  int    `json:"pollingIntervalSeconds"`
+	DeviceSessionID        string `json:"deviceSessionId"`
+	ClaimCode              string `json:"claimCode"`
+	ClaimToken             string `json:"claimToken"`
+	PollingIntervalSeconds int    `json:"pollingIntervalSeconds"`
 }
 
 type ClaimStatusResponse struct {
 	Claimed          bool   `json:"claimed"`
 	DeviceID         string `json:"deviceId"`
 	Credential       string `json:"credential"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
 	PollAgainSeconds int    `json:"pollAgainSeconds"`
+}
+
+type RefreshAuthResponse struct {
+	DeviceID         string `json:"deviceId"`
+	Credential       string `json:"credential"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
 }
 
 type DeviceCommand struct {
@@ -133,6 +140,14 @@ func (c *Client) FetchManifest(ctx context.Context, credential string) (*DeviceM
 		return nil, err
 	}
 	return &payload.Manifest, nil
+}
+
+func (c *Client) RefreshAuth(ctx context.Context, credential string) (*RefreshAuthResponse, error) {
+	var payload RefreshAuthResponse
+	if err := c.postAuthenticatedJSON(ctx, credential, "/api/device/auth/refresh", map[string]string{}, &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
 }
 
 func (c *Client) FetchCommands(ctx context.Context, credential string) ([]DeviceCommand, error) {

@@ -15,7 +15,13 @@ export const commandTypeSchema = z.enum([
   "blank_screen",
   "unblank_screen",
   "update_release",
+  "update_youtube_auth",
 ]);
+
+export const youtubeAuthUpdatePayloadSchema = z.object({
+  cookies: z.string().trim().min(1, "Paste an exported YouTube cookie file"),
+  syncNow: z.boolean().optional().default(true),
+});
 
 const sha256Schema = z
   .string()
@@ -48,6 +54,17 @@ export const releaseRolloutStatusSchema = z.enum([
   "in_progress",
   "succeeded",
   "failed",
+]);
+export const planKeySchema = z.enum(["starter", "growth", "scale"]);
+export const billingIntervalSchema = z.enum(["month", "year"]);
+export const subscriptionStatusSchema = z.enum([
+  "trialing",
+  "active",
+  "past_due",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "unpaid",
 ]);
 
 export const manifestPlaylistItemSchema = z.object({
@@ -230,6 +247,53 @@ export const dashboardStatsSchema = z.object({
   pendingCommands: z.number().int().nonnegative(),
 });
 
+export const billingAccountSchema = z.object({
+  organizationId: z.string(),
+  stripeCustomerId: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  planKey: planKeySchema,
+  subscriptionStatus: subscriptionStatusSchema,
+  billingInterval: billingIntervalSchema.nullable(),
+  trialEndsAt: z.string().datetime().nullable(),
+  currentPeriodStart: z.string().datetime().nullable(),
+  currentPeriodEnd: z.string().datetime().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  billingEmail: z.string().email().nullable(),
+  priceVersion: z.string(),
+  activeScreenCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const entitlementSnapshotSchema = z.object({
+  organizationId: z.string(),
+  planKey: planKeySchema,
+  subscriptionStatus: subscriptionStatusSchema,
+  billingInterval: billingIntervalSchema.nullable(),
+  activeScreenCount: z.number().int().nonnegative(),
+  includedScreens: z.number().int().positive(),
+  trialDeviceLimit: z.number().int().positive(),
+  extraScreenPriceCents: z.number().int().nonnegative(),
+  storageLimitBytes: z.number().int().positive(),
+  screenshotRetentionDays: z.number().int().positive(),
+  isTrialing: z.boolean(),
+  isReadOnly: z.boolean(),
+  canClaimDevices: z.boolean(),
+  trialEndsAt: z.string().datetime().nullable(),
+  currentPeriodEnd: z.string().datetime().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  billingEmail: z.string().email().nullable(),
+});
+
+export const usageDailySnapshotSchema = z.object({
+  organizationId: z.string(),
+  day: z.string(),
+  billableScreens: z.number().int().nonnegative(),
+  assetBytes: z.number().int().nonnegative(),
+  screenshotBytes: z.number().int().nonnegative(),
+  heartbeatCount: z.number().int().nonnegative(),
+});
+
 export type DeviceManifest = z.infer<typeof deviceManifestSchema>;
 export type ManifestPlaylistItem = z.infer<typeof manifestPlaylistItemSchema>;
 export type HeartbeatPayload = z.infer<typeof heartbeatPayloadSchema>;
@@ -246,6 +310,12 @@ export type DashboardStats = z.infer<typeof dashboardStatsSchema>;
 export type ReleaseUpdatePayload = z.infer<typeof releaseUpdatePayloadSchema>;
 export type ReleaseSummary = z.infer<typeof releaseSummarySchema>;
 export type ReleaseRollout = z.infer<typeof releaseRolloutSchema>;
+export type PlanKey = z.infer<typeof planKeySchema>;
+export type BillingInterval = z.infer<typeof billingIntervalSchema>;
+export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>;
+export type BillingAccount = z.infer<typeof billingAccountSchema>;
+export type EntitlementSnapshot = z.infer<typeof entitlementSnapshotSchema>;
+export type UsageDailySnapshot = z.infer<typeof usageDailySnapshotSchema>;
 
 export const mockMediaFolders: LibraryFolder[] = [
   {

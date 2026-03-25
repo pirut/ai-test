@@ -1,0 +1,14 @@
+[Unit]
+Description=Assign a unique hostname to the showroom device
+DefaultDependencies=no
+After=local-fs.target systemd-machine-id-commit.service
+Before=network-pre.target avahi-daemon.service NetworkManager.service dhcpcd.service
+ConditionPathExists=!/var/lib/showroom/hostname-initialized
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/showroom-agent/device.env
+ExecStart=/usr/local/bin/showroom-set-hostname
+
+[Install]
+WantedBy=multi-user.target

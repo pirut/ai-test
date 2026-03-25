@@ -9,8 +9,11 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as billing from "../billing.js";
+import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as device from "../device.js";
+import type * as http from "../http.js";
 import type * as lib from "../lib.js";
 import type * as showroom from "../showroom.js";
 import type * as sync from "../sync.js";
@@ -23,8 +26,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  billing: typeof billing;
+  crons: typeof crons;
   dashboard: typeof dashboard;
   device: typeof device;
+  http: typeof http;
   lib: typeof lib;
   showroom: typeof showroom;
   sync: typeof sync;

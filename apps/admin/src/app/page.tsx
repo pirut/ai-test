@@ -1,362 +1,447 @@
+import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import {
-  Boxes,
-  Globe,
-  ShieldCheck,
-  SlidersHorizontal,
-  Upload,
-  Waypoints,
-} from "lucide-react";
-import Image from "next/image";
 import { redirect } from "next/navigation";
+import Script from "next/script";
 
-import {
-  HeroShowcase,
-  InlineArrowLink,
-  LogoCloud,
-  PublicCtaRow,
-  PublicFooter,
-  PublicNav,
-} from "@/components/public-site";
+import { CheckoutButton } from "@/components/marketing/checkout-button";
+import { MarketingShell } from "@/components/marketing/marketing-shell";
+import { PricingShowcase } from "@/components/marketing/pricing-showcase";
+import { absoluteUrl, buildMarketingMetadata, siteConfig } from "@/lib/site";
 
-const featureCards = [
+const operatingLayers = [
   {
-    icon: Upload,
-    title: "Advanced media library",
-    description:
-      "Keep stills, videos, and imported sources in one controlled catalog built for repeatable releases.",
+    title: "Claim and configure",
+    copy:
+      "Turn a Pi on, claim it with a six-digit code, and assign its default playlist and site identity.",
   },
   {
-    icon: Waypoints,
-    title: "Seamless collaboration",
-    description:
-      "Organizations, release windows, and staged approvals keep teams aligned before content reaches a screen.",
+    title: "Publish and schedule",
+    copy:
+      "Ship playlists, stage timed schedule windows, and push releases across the fleet without SSH sessions.",
   },
   {
-    icon: Globe,
-    title: "Global content delivery",
-    description:
-      "Push playlists and manifests to distributed players while preserving a simple operator view back at HQ.",
+    title: "Verify and recover",
+    copy:
+      "Use screenshots, heartbeats, billing state, and release visibility to keep every screen honest.",
   },
 ];
 
-const workflowSteps = [
+const setupSteps = [
+  "Start a 14-day trial and create a workspace with no card upfront.",
+  "Flash the Raspberry Pi image, boot the device, and wait for the claim code.",
+  "Claim the screen, upload media, and publish the first playlist from the web console.",
+  "Verify screenshots, heartbeats, and current playback state before scaling the fleet.",
+];
+
+const buyerQuestions = [
   {
-    label: "01",
-    title: "Import and organize",
-    description:
-      "Build a reusable catalog of campaign assets, evergreen content, and YouTube imports without losing track of source material.",
+    question: "Do I need to talk to sales first?",
+    answer:
+      "No. The product is built around self-serve onboarding, a 14-day trial, and public pricing.",
   },
   {
-    label: "02",
-    title: "Curate with precision",
-    description:
-      "Assemble playlists, dayparts, and releases in a workflow that keeps operational detail visible and clutter low.",
+    question: "What counts as a billable screen?",
+    answer:
+      "A claimed, non-archived device attached to a workspace. Archive a device to stop counting it without deleting history.",
   },
   {
-    label: "03",
-    title: "Ship and verify",
-    description:
-      "Confirm screenshots, heartbeats, and device status after deployment so the team has actual proof of playback.",
+    question: "What happens if billing lapses?",
+    answer:
+      "The workspace becomes read-only for uploads, claims, schedule changes, and releases. Existing manifests keep serving for 30 days.",
+  },
+  {
+    question: "Do you sell hardware?",
+    answer:
+      "No. Screen is software-only. Teams manage their own Raspberry Pi hardware while the SaaS handles orchestration and visibility.",
   },
 ];
 
-const pricingBullets = [
-  "Self-hosted control plane with a small-fleet cost profile",
-  "Playlist delivery tuned for Raspberry Pi signage hardware",
-  "Device claim and refresh endpoints built into the same stack",
-];
+export const metadata = buildMarketingMetadata({
+  title: "Self-Serve Digital Signage SaaS",
+  description:
+    "Claim Raspberry Pi screens, publish playlists, schedule content, verify playback, and scale with transparent SaaS pricing.",
+  path: "/",
+});
 
 export default async function LandingPage() {
   if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     const session = await auth();
-
     if (session.userId) {
       redirect(session.orgId ? "/dashboard" : "/team");
     }
   }
 
   return (
-    <main className="bg-[#131313] text-[#e5e2e1] selection:bg-[#adc6ff]/30">
-      <PublicNav />
+    <MarketingShell>
+      <Script
+        id="screen-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            name: siteConfig.name,
+            applicationCategory: "BusinessApplication",
+            operatingSystem: "Web",
+            offers: {
+              "@type": "AggregateOffer",
+              priceCurrency: "USD",
+              lowPrice: "99",
+              highPrice: "799",
+            },
+            url: absoluteUrl("/"),
+            description: siteConfig.description,
+          }),
+        }}
+      />
+      <Script
+        id="screen-faq-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: buyerQuestions.map((entry) => ({
+              "@type": "Question",
+              name: entry.question,
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: entry.answer,
+              },
+            })),
+          }),
+        }}
+      />
 
-      <section className="relative overflow-hidden px-6 pb-24 pt-36">
-        <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_center,rgba(77,142,255,0.12),transparent_70%)]" />
-        <div className="relative mx-auto flex max-w-7xl flex-col items-center text-center">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-            Digital curation reinvented
-          </div>
-          <h1 className="mt-6 max-w-5xl text-5xl font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl lg:text-[5.5rem]">
-            Curate your digital assets with precision.
-          </h1>
-          <p className="mt-8 max-w-3xl text-lg leading-8 text-[#c2c6d6] sm:text-xl">
-            Screen is a cinematic control surface for showroom fleets: media
-            library, playlist sequencing, release timing, screenshots, and
-            remote commands in one editorial dark-mode workspace.
-          </p>
-          <div className="mt-10">
-            <PublicCtaRow />
-          </div>
-          <HeroShowcase />
-        </div>
-      </section>
-
-      <LogoCloud />
-
-      <section id="features" className="bg-[#0e0e0e] px-6 py-28">
-        <div className="mx-auto max-w-7xl">
-          <div className="max-w-2xl">
-            <h2 className="text-4xl font-black tracking-[-0.04em] text-white">
-              Precision engineering
-            </h2>
-            <div className="mt-5 h-1 w-20 bg-[#adc6ff]" />
-          </div>
-
-          <div className="mt-16 grid gap-6 lg:grid-cols-3">
-            {featureCards.map((card) => {
-              const Icon = card.icon;
-
-              return (
-                <article
-                  key={card.title}
-                  className="group rounded-[24px] bg-[#131313] p-8 transition-colors duration-300 hover:bg-[#2a2a2a]"
-                >
-                  <div className="flex size-12 items-center justify-center rounded-2xl bg-[#adc6ff]/10 transition-colors group-hover:bg-[#adc6ff]/18">
-                    <Icon className="size-5 text-[#adc6ff]" />
-                  </div>
-                  <h3 className="mt-8 text-xl font-bold tracking-tight text-white">
-                    {card.title}
-                  </h3>
-                  <p className="mt-4 text-sm leading-7 text-[#c2c6d6]">
-                    {card.description}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section id="workflow" className="bg-[#131313] px-6 py-28">
-        <div className="mx-auto max-w-7xl">
-          <div className="max-w-2xl">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-              The process
+      <section className="relative overflow-hidden px-6 pb-24 pt-20">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(122,161,255,0.18),transparent_32%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.08),transparent_20%)]" />
+        <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[minmax(0,1.05fr)_460px] lg:items-center">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.32em] text-[#9bb6ff]">
+              Screen control, without internal-tool edges
             </div>
-            <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              How Screen works
-            </h2>
-            <div className="mt-5 h-1 w-20 bg-[#adc6ff]" />
+            <h1 className="mt-6 max-w-4xl text-5xl font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl">
+              Run a Raspberry Pi signage fleet like a product, not a side project.
+            </h1>
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-[#c5cad8]">
+              {siteConfig.name} is the hosted control plane for signage operators who want
+              public pricing, trial-based onboarding, legal pages, billing, and operational
+              visibility from day one. Claim screens, publish playlists, stage schedules,
+              push releases, and confirm playback from one workspace.
+            </p>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <CheckoutButton
+                planKey="growth"
+                billingInterval="month"
+                label="Start 14-day trial"
+                className="h-12 px-5"
+              />
+              <Link
+                href="/getting-started"
+                className="inline-flex h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm font-medium text-white transition-colors hover:bg-white/5"
+              >
+                See setup workflow
+              </Link>
+              <Link
+                href="/contact"
+                className="inline-flex h-12 items-center justify-center rounded-xl border border-transparent px-5 text-sm font-medium text-[#9bb6ff] transition-colors hover:text-white"
+              >
+                Talk to support
+              </Link>
+            </div>
+            <div className="mt-10 grid gap-3 sm:grid-cols-3">
+              {[
+                ["Trial-first", "14 days and 3 claimed screens before checkout"],
+                ["Transparent pricing", "Monthly and annual plans from $99"],
+                ["Trust surface", "Security, privacy, DPA, terms, status"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-[22px] border border-white/8 bg-[#11151b]/85 p-4"
+                >
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#9bb6ff]">
+                    {label}
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-white">{value}</div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="mt-16 grid gap-10 lg:grid-cols-3">
-            {workflowSteps.map((step) => (
-              <article key={step.label}>
-                <div className="flex items-baseline gap-4">
-                  <span className="text-5xl font-black leading-none text-[#adc6ff]/22">
-                    {step.label}
-                  </span>
-                  <h3 className="text-2xl font-bold tracking-tight text-white">
-                    {step.title}
-                  </h3>
+          <div className="relative rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#121722_0%,#0c0f15_100%)] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+            <div className="absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(185,204,255,0.65),transparent)]" />
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+                  Live SaaS surface
                 </div>
-                <div className="mt-6 rounded-[24px] bg-[#1c1b1b] p-8">
-                  <p className="text-sm leading-7 text-[#c2c6d6]">
-                    {step.description}
-                  </p>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  One console for fleet control, billing, and proof of playback
                 </div>
-              </article>
+              </div>
+              <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-200">
+                Trial active
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4">
+              <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-[24px] border border-white/8 bg-[#0e1219] p-5">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-[#9bb6ff]">
+                    <span>Workspace overview</span>
+                    <span>Growth</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[
+                      ["Claimed screens", "18"],
+                      ["Pending releases", "2"],
+                      ["Trial / period end", "Apr 7"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-white/6 bg-white/4 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-[#7f8aa6]">
+                          {label}
+                        </div>
+                        <div className="mt-3 text-2xl font-black text-white">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-white/8 bg-[#0e1219] p-5">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-[#9bb6ff]">
+                    Billing state
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {[
+                      "No card required for the 14-day trial",
+                      "Archive screens to stop billing without losing history",
+                      "Read-only mode protects existing playback during billing issues",
+                    ].map((item) => (
+                      <div key={item} className="rounded-2xl bg-white/4 px-4 py-3 text-sm leading-6 text-[#d7def4]">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
+                <div className="rounded-[24px] border border-white/8 bg-[#0e1219] p-5">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-[#9bb6ff]">
+                    Fleet heartbeat
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {[
+                      ["Lobby South", "online", "04s ago"],
+                      ["Cafe Menu", "online", "11s ago"],
+                      ["Studio Window", "stale", "79s ago"],
+                    ].map(([name, status, seen]) => (
+                      <div
+                        key={name}
+                        className="flex items-center justify-between rounded-2xl bg-white/4 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-white">{name}</div>
+                          <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#7f8aa6]">
+                            {seen}
+                          </div>
+                        </div>
+                        <div
+                          className={[
+                            "rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.16em]",
+                            status === "online"
+                              ? "bg-emerald-400/10 text-emerald-200"
+                              : "bg-amber-400/10 text-amber-200",
+                          ].join(" ")}
+                        >
+                          {status}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-white/8 bg-[#0e1219] p-5">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-[#9bb6ff]">
+                    What ships now
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {operatingLayers.map((feature) => (
+                      <article key={feature.title} className="rounded-[20px] bg-white/4 p-4">
+                        <h2 className="text-base font-semibold text-white">{feature.title}</h2>
+                        <p className="mt-2 text-sm leading-7 text-[#c5cad8]">{feature.copy}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/6 bg-[#090b0d] px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div className="max-w-2xl">
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+                Operator workflow
+              </div>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
+                Go from first boot to managed playback in an afternoon.
+              </h2>
+              <p className="mt-6 text-base leading-8 text-[#c5cad8]">
+                The product is designed for teams that already know how to source Raspberry
+                Pis, but do not want to spend the next year building the control plane around
+                them.
+              </p>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                {[
+                  "Software-only positioning with public pricing",
+                  "Hosted admin, billing, legal, and support surface",
+                  "Device protocol compatible with the current agent",
+                  "Read-only protection when billing changes state",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-[20px] border border-white/8 bg-[#11151b] px-4 py-3 text-sm text-[#d7def4]"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {setupSteps.map((step, index) => (
+                <div
+                  key={step}
+                  className="rounded-[24px] border border-white/8 bg-[#11151b] p-5"
+                >
+                  <div className="text-4xl font-black text-[#9bb6ff]/20">0{index + 1}</div>
+                  <p className="mt-4 text-sm leading-7 text-[#d6daea]">{step}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="max-w-2xl">
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+                Built for SaaS buyers
+              </div>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
+                Transparent pricing and a trust surface you can actually send to customers.
+              </h2>
+              <p className="mt-5 text-base leading-8 text-[#c5cad8]">
+                The product now has the public pages, pricing model, support route, billing
+                behaviors, and deployment-ready onboarding flow expected from a real B2B SaaS.
+              </p>
+              <div className="mt-8 space-y-3">
+                {[
+                  "Monthly or annual contracts with 15% annual savings",
+                  "Billing tied to claimed, non-archived screens",
+                  "Screenshot retention and storage mapped to plan tiers",
+                  "Security, privacy, DPA, acceptable use, and cookie policy already published",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-[22px] border border-white/8 bg-[#11151b] px-5 py-4 text-sm leading-7 text-[#d6daea]"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <PricingShowcase />
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/6 bg-[#090b0d] px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">FAQ</div>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
+                Clear answers before a buyer ever reaches checkout.
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-[#c5cad8]">
+                The onboarding, pricing, and billing policy are public by design. That is the
+                difference between a useful internal control panel and a product a customer can
+                trust.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {buyerQuestions.map((entry) => (
+                <article
+                  key={entry.question}
+                  className="rounded-[24px] border border-white/8 bg-[#11151b] p-5"
+                >
+                  <h3 className="text-lg font-semibold text-white">{entry.question}</h3>
+                  <p className="mt-3 text-sm leading-7 text-[#c5cad8]">{entry.answer}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-24">
+        <div className="mx-auto grid max-w-7xl gap-10 rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#10141d_0%,#0a0d12_100%)] px-8 py-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-10">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+              Ready to launch
+            </div>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
+              Start the trial, or audit the public surface first.
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-[#c5cad8]">
+              Pricing, security, legal, contact, billing, device control, and onboarding now
+              live inside the same product surface. This is the point where the stack stops
+              being a private dashboard and starts behaving like a SaaS company.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <CheckoutButton
+                planKey="growth"
+                billingInterval="month"
+                label="Start free trial"
+                className="h-12 px-5"
+              />
+              <Link
+                href="/pricing"
+                className="inline-flex h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm font-medium text-white transition-colors hover:bg-white/5"
+              >
+                Review pricing
+              </Link>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {[
+              "/security",
+              "/privacy",
+              "/terms",
+              "/acceptable-use",
+              "/dpa",
+              "/cookie-policy",
+            ].map((href) => (
+              <Link
+                key={href}
+                href={href}
+                className="block rounded-[20px] border border-white/8 bg-[#11151b] px-5 py-4 text-sm text-white transition-colors hover:bg-white/5"
+              >
+                {href}
+              </Link>
             ))}
           </div>
         </div>
       </section>
-
-      <section id="library" className="bg-[#0e0e0e] px-6 py-28">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[minmax(0,1.08fr)_420px] lg:items-center">
-          <div className="relative overflow-hidden rounded-[30px] bg-[#1c1b1b] p-3">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <div className="relative min-h-[420px] overflow-hidden rounded-[24px]">
-                <Image
-                  src="/marketing/hero-curation.png"
-                  alt="Abstract media art used to represent the curated library."
-                  fill
-                  className="object-cover grayscale"
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(19,19,19,0.02),rgba(19,19,19,0.72))]" />
-                <div className="absolute bottom-0 left-0 right-0 p-6">
-                  <div className="max-w-sm rounded-[20px] bg-[#131313]/82 p-4 backdrop-blur">
-                    <div className="text-[11px] uppercase tracking-[0.22em] text-[#adc6ff]">
-                      Library preview
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-white">
-                      The new home page uses downloaded Stitch imagery for the hero and library treatment instead of leaving mock frames empty.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-3">
-                <div className="rounded-[24px] bg-[#131313] p-5">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]/72">
-                    Media coverage
-                  </div>
-                  <div className="mt-3 text-3xl font-black tracking-tight text-white">
-                    1,280
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[#c2c6d6]">
-                    Assets staged across campaigns, evergreen loops, and fallback schedules.
-                  </p>
-                </div>
-                <div className="rounded-[24px] bg-[#131313] p-5">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]/72">
-                    Release discipline
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[#c2c6d6]">
-                    Preview the exact sequence, window, and fleet assignment before anything ships.
-                  </p>
-                </div>
-                <div className="rounded-[24px] bg-[#131313] p-5">
-                  <div className="flex items-start gap-3">
-                    <SlidersHorizontal className="mt-0.5 size-4 text-[#adc6ff]" />
-                    <p className="text-sm leading-6 text-[#c2c6d6]">
-                      A quieter interface still exposes the operator details that matter when a screen is on the wall and time is short.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-              Media library
-            </div>
-            <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              Treat assets like a curated collection, not a file dump.
-            </h2>
-            <p className="mt-6 max-w-lg text-base leading-8 text-[#c2c6d6]">
-              The library section gives the marketing page a real visual anchor while still describing the actual product: catalog media, compose playlists, stage schedules, and keep provenance clear.
-            </p>
-            <div className="mt-8 space-y-3">
-              {[
-                "Reusable playlists with fallback playback",
-                "YouTube imports alongside uploaded media",
-                "Release windows tied to actual device fleets",
-              ].map((item) => (
-                <div key={item} className="rounded-[20px] bg-[#1c1b1b] px-5 py-4 text-sm text-white">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="pricing" className="bg-[#1c1b1b] px-6 py-28">
-        <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-              Vertical integration
-            </div>
-            <h2 className="mt-5 max-w-3xl text-4xl font-black leading-tight tracking-[-0.05em] text-white sm:text-6xl">
-              Uncompromising control, a smaller-fleet cost profile.
-            </h2>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-[#c2c6d6]">
-              The Stitch concept had a cost-efficiency section; this implementation grounds it in the actual app: one stack for media, releases, devices, and claim flows rather than separate control tooling.
-            </p>
-
-            <div className="mt-10 border-t border-white/8 pt-8">
-              <div className="flex items-start gap-4">
-                <div className="rounded-2xl bg-[#adc6ff]/10 p-3">
-                  <Boxes className="size-5 text-[#adc6ff]" />
-                </div>
-                <div>
-                  <p className="text-base font-semibold text-white">
-                    Custom build architecture
-                  </p>
-                  <p className="mt-2 text-sm leading-7 text-[#c2c6d6]">
-                    Purpose-built for signage operators who need steady release handling, proof of playback, and minimal overhead.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] bg-[#131313] p-8 shadow-[0_24px_48px_rgba(0,0,0,0.4)]">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm font-medium text-[#c2c6d6]">
-                Monthly infrastructure cost
-              </span>
-              <span className="text-sm font-bold text-[#adc6ff]">80% lower</span>
-            </div>
-            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-[#2a2a2a]">
-              <div className="h-full w-[20%] bg-[#adc6ff]" />
-            </div>
-            <div className="mt-8 space-y-5">
-              {pricingBullets.map((item) => (
-                <div key={item} className="flex items-start gap-4">
-                  <ShieldCheck className="mt-1 size-4 shrink-0 text-[#adc6ff]" />
-                  <p className="text-sm leading-7 text-[#e5e2e1]">{item}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-10 rounded-[22px] bg-[#1c1b1b] p-5">
-              <InlineArrowLink href="/sign-up">
-                Open a workspace for your team
-              </InlineArrowLink>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#0e0e0e] px-6 py-28">
-        <div className="mx-auto max-w-5xl">
-          <div className="relative">
-            <span className="absolute -left-3 -top-10 text-8xl text-[#adc6ff]/10 sm:-left-10 sm:text-9xl">
-              “
-            </span>
-            <blockquote className="relative">
-              <p className="text-3xl font-light italic leading-tight text-white sm:text-4xl">
-                Screen has completely transformed how we present our digital vision. It does not feel like another dashboard. It feels like the workspace finally respects the work.
-              </p>
-              <footer className="mt-10 flex items-center gap-4">
-                <div className="size-12 overflow-hidden rounded-full bg-[#353534]">
-                  <Image
-                    src="/marketing/testimonial-portrait.png"
-                    alt="Portrait used for the testimonial area."
-                    width={512}
-                    height={512}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <div>
-                  <cite className="not-italic font-bold text-white">Julian Thorne</cite>
-                  <div className="mt-1 text-[11px] uppercase tracking-[0.24em] text-[#c2c6d6]">
-                    Creative director, Nexa Design
-                  </div>
-                </div>
-              </footer>
-            </blockquote>
-          </div>
-        </div>
-      </section>
-
-      <section className="relative overflow-hidden bg-[#1c1b1b] px-6 py-28">
-        <div className="absolute bottom-0 right-0 size-[420px] translate-x-1/3 translate-y-1/3 rounded-full bg-[#adc6ff]/8 blur-[110px]" />
-        <div className="relative mx-auto max-w-4xl text-center">
-          <h2 className="text-4xl font-black tracking-[-0.05em] text-white sm:text-6xl">
-            Join the future of digital curation.
-          </h2>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-[#c2c6d6]">
-            The public home page now follows the Stitch design direction, and the auth pages use the same system so the whole entry flow feels deliberate.
-          </p>
-          <div className="mt-10">
-            <PublicCtaRow />
-          </div>
-        </div>
-      </section>
-
-      <PublicFooter />
-    </main>
+    </MarketingShell>
   );
 }

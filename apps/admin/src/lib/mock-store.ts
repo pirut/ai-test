@@ -47,6 +47,7 @@ type DeviceRecord = DeviceSummary & {
   claimCode?: string;
   credential?: string;
   defaultPlaylistId?: string | null;
+  archivedAt?: string | null;
   timezone: string;
   orientation: 0 | 90 | 180 | 270;
   volume: number;
@@ -65,6 +66,10 @@ type MockState = {
 };
 
 type FolderKind = LibraryFolder["kind"];
+export type SeededHeartbeatLoadDevice = {
+  deviceId: string;
+  credential: string;
+};
 
 declare global {
   var __showroomMockState: MockState | undefined;
@@ -192,6 +197,7 @@ function buildState(): MockState {
       ...device,
       orgId: "org_demo",
       defaultPlaylistId: basePlaylist.id,
+      archivedAt: null,
       timezone: "America/New_York",
       orientation: 0,
       volume: 0,
@@ -237,6 +243,11 @@ function state() {
   return globalThis.__showroomMockState;
 }
 
+export function resetMockState() {
+  globalThis.__showroomMockState = buildState();
+  return globalThis.__showroomMockState;
+}
+
 function syncPlaylistAssets() {
   for (const playlist of state().playlists) {
     ensurePlaylistItemsReferenceCurrentAssets(playlist, state().mediaAssets);
@@ -263,6 +274,58 @@ export function getDashboardStats(orgId: string): DashboardStats {
 
 export function listDevices(orgId: string) {
   return state().devices.filter((device) => device.orgId === orgId);
+}
+
+export function seedHeartbeatLoadDevices(input: {
+  count: number;
+  orgId?: string;
+  siteName?: string;
+}) {
+  const orgId = input.orgId ?? "org_load_test";
+  const siteName = input.siteName ?? "Load test site";
+  const createdAt = new Date().toISOString();
+  const defaultPlaylistId =
+    state().playlists.find((playlist) => playlist.isDefault)?.id ??
+    state().playlists[0]?.id ??
+    null;
+  const currentPlaylistName =
+    state().playlists.find((playlist) => playlist.id === defaultPlaylistId)?.name ?? null;
+  const devices: SeededHeartbeatLoadDevice[] = [];
+
+  for (let index = 0; index < input.count; index += 1) {
+    const suffix = `${index + 1}`.padStart(4, "0");
+    const deviceId = `device-load-${suffix}`;
+    const credential = `device_${crypto.randomBytes(12).toString("hex")}`;
+
+    state().devices.push({
+      id: deviceId,
+      name: `Load device ${suffix}`,
+      siteName,
+      status: "offline",
+      lastHeartbeatAt: createdAt,
+      screenshotUrl: null,
+      currentPlaylistName,
+      manifestVersion: null,
+      orgId,
+      claimCode: undefined,
+      credential,
+      defaultPlaylistId,
+      archivedAt: null,
+      timezone: "America/New_York",
+      orientation: 0,
+      volume: 0,
+    });
+
+    devices.push({
+      deviceId,
+      credential,
+    });
+  }
+
+  return {
+    orgId,
+    devices,
+  };
 }
 
 export function getDevice(orgId: string, deviceId: string) {

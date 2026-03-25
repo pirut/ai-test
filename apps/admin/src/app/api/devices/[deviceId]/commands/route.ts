@@ -26,7 +26,8 @@ export async function POST(
     (
       payload.commandType === "reboot_device" ||
       payload.commandType === "restart_player" ||
-      payload.commandType === "update_release"
+      payload.commandType === "update_release" ||
+      payload.commandType === "update_youtube_auth"
     ) &&
     !session.has({ role: "org:admin" })
   ) {

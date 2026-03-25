@@ -16,6 +16,7 @@ const commandTypeValidator = v.union(
   v.literal("blank_screen"),
   v.literal("unblank_screen"),
   v.literal("update_release"),
+  v.literal("update_youtube_auth"),
 );
 
 const commandStatusValidator = v.union(
@@ -29,6 +30,33 @@ const releaseRolloutStatusValidator = v.union(
   v.literal("queued"),
   v.literal("in_progress"),
   v.literal("succeeded"),
+  v.literal("failed"),
+);
+
+const planKeyValidator = v.union(
+  v.literal("starter"),
+  v.literal("growth"),
+  v.literal("scale"),
+);
+
+const billingIntervalValidator = v.union(
+  v.literal("month"),
+  v.literal("year"),
+);
+
+const subscriptionStatusValidator = v.union(
+  v.literal("trialing"),
+  v.literal("active"),
+  v.literal("past_due"),
+  v.literal("canceled"),
+  v.literal("incomplete"),
+  v.literal("incomplete_expired"),
+  v.literal("unpaid"),
+);
+
+const webhookEventStatusValidator = v.union(
+  v.literal("processing"),
+  v.literal("processed"),
   v.literal("failed"),
 );
 
@@ -53,7 +81,9 @@ export default defineSchema({
     role: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_org_and_clerk_user", ["organizationId", "clerkUserId"]),
+  })
+    .index("by_org_and_clerk_user", ["organizationId", "clerkUserId"])
+    .index("by_clerk_user_id", ["clerkUserId"]),
 
   sites: defineTable({
     organizationId: v.string(),
@@ -94,6 +124,9 @@ export default defineSchema({
     agentVersion: v.optional(v.string()),
     screenshotUrl: v.optional(v.string()),
     currentPlaylistName: v.optional(v.string()),
+    claimedAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    billingExcluded: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -136,7 +169,9 @@ export default defineSchema({
     currentPlaylistId: v.optional(v.string()),
     payload: v.any(),
     receivedAt: v.number(),
-  }).index("by_device_and_received_at", ["deviceId", "receivedAt"]),
+  })
+    .index("by_device_and_received_at", ["deviceId", "receivedAt"])
+    .index("by_org_and_received_at", ["organizationId", "receivedAt"]),
 
   deviceScreenshots: defineTable({
     organizationId: v.optional(v.string()),
@@ -145,8 +180,11 @@ export default defineSchema({
     publicUrl: v.string(),
     capturedAt: v.number(),
     bytes: v.number(),
+    expiresAt: v.optional(v.number()),
     createdAt: v.number(),
-  }).index("by_device_and_captured_at", ["deviceId", "capturedAt"]),
+  })
+    .index("by_device_and_captured_at", ["deviceId", "capturedAt"])
+    .index("by_org_and_captured_at", ["organizationId", "capturedAt"]),
 
   libraryFolders: defineTable({
     organizationId: v.string(),
@@ -182,7 +220,9 @@ export default defineSchema({
     metadata: v.optional(v.any()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_org", ["organizationId"]),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_org_and_folder", ["organizationId", "folderId"]),
 
   releases: defineTable({
     organizationId: v.string(),
@@ -226,7 +266,9 @@ export default defineSchema({
     isDefault: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_org", ["organizationId"]),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_org_and_folder", ["organizationId", "folderId"]),
 
   playlistItems: defineTable({
     organizationId: v.string(),
@@ -263,7 +305,10 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_schedule", ["scheduleId"])
-    .index("by_org", ["organizationId"]),
+    .index("by_org", ["organizationId"])
+    .index("by_device", ["deviceId"])
+    .index("by_group", ["groupId"])
+    .index("by_site", ["siteId"]),
 
   compiledManifests: defineTable({
     organizationId: v.optional(v.string()),
@@ -288,7 +333,54 @@ export default defineSchema({
     resultMessage: v.optional(v.string()),
   })
     .index("by_device_and_queued_at", ["deviceId", "queuedAt"])
-    .index("by_device_and_status", ["deviceId", "status"]),
+    .index("by_device_and_status", ["deviceId", "status"])
+    .index("by_org_and_status", ["organizationId", "status"]),
+
+  billingAccounts: defineTable({
+    organizationId: v.string(),
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    planKey: planKeyValidator,
+    subscriptionStatus: subscriptionStatusValidator,
+    billingInterval: billingIntervalValidator,
+    trialEndsAt: v.optional(v.number()),
+    currentPeriodStart: v.optional(v.number()),
+    currentPeriodEnd: v.optional(v.number()),
+    cancelAtPeriodEnd: v.boolean(),
+    billingEmail: v.optional(v.string()),
+    priceVersion: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_customer", ["stripeCustomerId"])
+    .index("by_subscription", ["stripeSubscriptionId"]),
+
+  billingEvents: defineTable({
+    provider: v.string(),
+    eventId: v.string(),
+    eventType: v.string(),
+    organizationId: v.optional(v.string()),
+    status: webhookEventStatusValidator,
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_provider_and_event_id", ["provider", "eventId"])
+    .index("by_org", ["organizationId"]),
+
+  usageDailySnapshots: defineTable({
+    organizationId: v.string(),
+    day: v.string(),
+    billableScreens: v.number(),
+    assetBytes: v.number(),
+    screenshotBytes: v.number(),
+    heartbeatCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_org_and_day", ["organizationId", "day"]),
 
   activityLogs: defineTable({
     organizationId: v.string(),

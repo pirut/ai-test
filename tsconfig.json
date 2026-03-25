@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "apps/admin/src/*"
+      ],
+      "@convex-api": [
+        "convex/_generated/api"
+      ],
+      "@showroom/contracts": [
+        "packages/contracts/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "tests/**/*.ts",
+    "apps/admin/src/**/*.ts",
+    "apps/admin/src/**/*.tsx",
+    "packages/contracts/src/**/*.ts",
+    "convex/**/*.ts"
+  ]
+}

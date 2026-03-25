@@ -21,10 +21,13 @@ yaml_escape() {
 }
 
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-agent.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-agent.service"
+install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-hostname.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-hostname.service"
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-kiosk.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-kiosk.service"
 install -D -m 0644 "${SHOWROOM_DIR}/config/config.env" "${ROOTFS_DIR}/etc/showroom-agent/config.env"
+install -D -m 0644 "${SHOWROOM_DIR}/config/device.env" "${ROOTFS_DIR}/etc/showroom-agent/device.env"
 install -D -m 0644 "${SHOWROOM_DIR}/config/Xwrapper.config" "${ROOTFS_DIR}/etc/X11/Xwrapper.config"
 install -D -m 0644 "${SHOWROOM_DIR}/config/99-modesetting.conf" "${ROOTFS_DIR}/etc/X11/xorg.conf.d/99-modesetting.conf"
+install -D -m 0755 "${SHOWROOM_DIR}/systemd/set-unique-hostname.sh" "${ROOTFS_DIR}/usr/local/bin/showroom-set-hostname"
 install -D -m 0755 "${SHOWROOM_DIR}/systemd/start-kiosk.sh" "${ROOTFS_DIR}/usr/local/bin/showroom-start-kiosk"
 install -D -m 0755 "${ARTIFACTS_DIR}/showroom-agent" "${ROOTFS_DIR}/usr/local/bin/showroom-agent"
 install -D -m 0644 "${SHOWROOM_DIR}/boot/network.env.example" "${ROOTFS_DIR}/boot/network.env.example"
@@ -62,7 +65,9 @@ elif [[ -f "${NETWORK_CONFIG}" ]]; then
 fi
 
 on_chroot <<'EOF'
+mkdir -p /etc/showroom-agent
 systemctl enable showroom-agent.service
+systemctl enable showroom-hostname.service
 systemctl enable showroom-kiosk.service
 mkdir -p /var/lib/showroom/cache /var/lib/showroom/state /opt/showroom/player
 EOF

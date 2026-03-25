@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 type ScreenSettings = {
@@ -25,6 +26,7 @@ type ScreenSettings = {
   orientation: 0 | 90 | 180 | 270;
   volume: number;
   defaultPlaylistId: string | null;
+  archivedAt?: string | null;
 };
 
 type PlaylistOption = {
@@ -49,6 +51,7 @@ export function ScreenSettingsPanel({
     orientation: String(device.orientation),
     volume: device.volume,
     defaultPlaylistId: device.defaultPlaylistId ?? "",
+    archived: Boolean(device.archivedAt),
   });
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -75,6 +78,7 @@ export function ScreenSettingsPanel({
           orientation: Number(form.orientation),
           volume: form.volume,
           defaultPlaylistId: form.defaultPlaylistId || null,
+          archived: form.archived,
         }),
       });
 
@@ -208,6 +212,25 @@ export function ScreenSettingsPanel({
               }
               step={1}
               value={form.volume}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/6 bg-[var(--surface-low)] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Archive device
+              </Label>
+              <p className="text-[0.8rem] text-muted-foreground">
+                Archived devices stay visible but stop counting toward screen billing.
+              </p>
+            </div>
+            <Switch
+              checked={form.archived}
+              onCheckedChange={(checked) =>
+                setForm((current) => ({ ...current, archived: checked }))
+              }
             />
           </div>
         </div>

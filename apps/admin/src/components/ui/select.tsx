@@ -15,7 +15,8 @@ type SelectProps = Omit<
   defaultValue?: string | null;
 };
 
-function Select({ items: _items, value, defaultValue, ...props }: SelectProps) {
+function Select({ items, value, defaultValue, ...props }: SelectProps) {
+  void items;
   return (
     <SelectPrimitive.Root
       data-slot="select"
