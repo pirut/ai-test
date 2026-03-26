@@ -6,13 +6,21 @@ import type { BillingInterval } from "@showroom/contracts";
 import { PricingGrid } from "@/components/marketing/pricing-grid";
 import { cn } from "@/lib/utils";
 
-const intervals: Array<{
+const billingIntervals: Array<{
   value: BillingInterval;
   label: string;
-  badge?: string;
+  caption: string;
 }> = [
-  { value: "month", label: "Monthly" },
-  { value: "year", label: "Annual", badge: "Save 15%" },
+  {
+    value: "month",
+    label: "Monthly",
+    caption: "Start with the standard monthly contract.",
+  },
+  {
+    value: "year",
+    label: "Annual",
+    caption: "Save 15% with annual billing.",
+  },
 ];
 
 export function PricingShowcase({
@@ -24,14 +32,22 @@ export function PricingShowcase({
   className?: string;
   showCheckout?: boolean;
 }) {
-  const [billingInterval, setBillingInterval] =
-    useState<BillingInterval>(defaultInterval);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>(defaultInterval);
+  const activeInterval =
+    billingIntervals.find((interval) => interval.value === billingInterval) ??
+    billingIntervals[0]!;
 
   return (
     <div className={cn("space-y-8", className)}>
-      <div className="flex justify-center">
-        <div className="inline-flex rounded-lg border border-white/8 bg-[#0c0e11] p-1">
-          {intervals.map((interval) => {
+      <div className="flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[#11151b]/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+            Billing cadence
+          </div>
+          <p className="mt-2 text-sm leading-7 text-[#c5cad8]">{activeInterval.caption}</p>
+        </div>
+        <div className="inline-flex rounded-full border border-white/8 bg-[#0d1016] p-1">
+          {billingIntervals.map((interval) => {
             const isActive = interval.value === billingInterval;
             return (
               <button
@@ -39,25 +55,13 @@ export function PricingShowcase({
                 type="button"
                 onClick={() => setBillingInterval(interval.value)}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-md px-4 py-2 text-[0.8rem] font-medium transition-colors",
+                  "inline-flex items-center rounded-full px-4 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-white text-[#0c0e11]"
-                    : "text-[#8d93a6] hover:text-white",
+                    ? "bg-[linear-gradient(135deg,#b9ccff_0%,#7aa1ff_100%)] text-[#082354]"
+                    : "text-[#c5cad8] hover:text-white",
                 )}
               >
                 {interval.label}
-                {interval.badge && (
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[0.65rem] font-semibold",
-                      isActive
-                        ? "bg-[#0c0e11]/10 text-[#0c0e11]"
-                        : "bg-[#9bb6ff]/10 text-[#9bb6ff]",
-                    )}
-                  >
-                    {interval.badge}
-                  </span>
-                )}
               </button>
             );
           })}

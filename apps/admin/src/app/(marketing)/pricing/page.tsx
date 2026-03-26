@@ -5,32 +5,29 @@ import { buildMarketingMetadata } from "@/lib/site";
 
 const pricingFaqs = [
   {
-    question: "Can I try it without a credit card?",
-    answer:
-      "Yes. Every workspace starts with a 14-day trial and up to three claimed screens. No card required.",
+    question: "Can I start without a credit card?",
+    answer: "Yes. Every workspace starts with a 14-day trial and up to three claimed screens.",
   },
   {
-    question: "How does screen-based billing work?",
+    question: "How do extra screens get billed?",
     answer:
-      "Each plan includes a base number of screens. Additional claimed screens bill at the plan's per-screen rate. Archive a device to stop billing it.",
+      "Each plan includes a base number of screens, and any additional claimed screens bill at that plan's overage rate.",
   },
   {
-    question: "What happens when I archive a device?",
-    answer:
-      "It stops counting toward your bill immediately. History and screenshots are preserved.",
+    question: "Do archived devices still count?",
+    answer: "No. Archive a device to remove it from billable screen counts while keeping its history.",
   },
 ];
 
 export const metadata = buildMarketingMetadata({
   title: "Pricing",
-  description:
-    "Simple, transparent pricing for Screen. Monthly and annual plans starting at $99.",
+  description: "Transparent monthly and annual pricing for Screen digital signage SaaS.",
   path: "/pricing",
 });
 
 export default function PricingPage() {
   return (
-    <section className="px-6 py-16 sm:py-24">
+    <section className="px-6 py-20">
       <Script
         id="pricing-faq-jsonld"
         type="application/ld+json"
@@ -51,58 +48,43 @@ export default function PricingPage() {
       />
 
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-            Simple, predictable pricing
+        <div className="max-w-3xl">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">Pricing</div>
+          <h1 className="mt-4 text-5xl font-black tracking-[-0.05em] text-white">
+            Base platform fee plus predictable per-screen growth.
           </h1>
-          <p className="mt-4 text-[0.95rem] leading-7 text-[#8d93a6]">
-            Start with a free trial. Pick a plan when you&apos;re ready. Scale
-            by adding screens.
+          <p className="mt-6 text-base leading-8 text-[#c5cad8]">
+            Start with a 14-day trial, claim up to three screens before checkout, then
+            pick the plan that matches your fleet size and retention needs.
           </p>
         </div>
 
-        {/* Pricing toggle + grid */}
         <div className="mt-12">
           <PricingShowcase />
         </div>
 
-        {/* Billing notes */}
-        <div className="mx-auto mt-14 grid max-w-4xl gap-3 sm:grid-cols-3">
+        <div className="mt-12 grid gap-4 lg:grid-cols-3">
           {[
-            "Annual billing saves 15% compared to monthly.",
-            "You only pay for claimed, non-archived screens.",
-            "If billing lapses, existing content keeps playing for 30 days.",
+            "Annual billing is 15% lower than month-to-month pricing.",
+            "Billable screens are claimed, non-archived devices attached to a workspace.",
+            "Expired or unpaid workspaces become read-only, but existing manifests continue for 30 days.",
           ].map((item) => (
             <div
               key={item}
-              className="rounded-xl border border-white/6 bg-[#0c0e11] px-4 py-3 text-[0.8rem] leading-6 text-[#8d93a6]"
+              className="rounded-[22px] border border-white/8 bg-[#11151b] p-5 text-sm leading-7 text-[#d6daea]"
             >
               {item}
             </div>
           ))}
         </div>
 
-        {/* FAQ */}
-        <div className="mx-auto mt-16 max-w-2xl">
-          <h2 className="text-center text-2xl font-black tracking-[-0.03em] text-white">
-            Pricing FAQ
-          </h2>
-          <div className="mt-8 space-y-3">
-            {pricingFaqs.map((entry) => (
-              <article
-                key={entry.question}
-                className="rounded-xl border border-white/6 bg-[#0c0e11]/80 px-5 py-4"
-              >
-                <h3 className="text-[0.9rem] font-semibold text-white">
-                  {entry.question}
-                </h3>
-                <p className="mt-1.5 text-[0.8rem] leading-6 text-[#8d93a6]">
-                  {entry.answer}
-                </p>
-              </article>
-            ))}
-          </div>
+        <div className="mt-12 grid gap-4">
+          {pricingFaqs.map((entry) => (
+            <article key={entry.question} className="rounded-[22px] border border-white/8 bg-[#11151b] p-5">
+              <h2 className="text-lg font-semibold text-white">{entry.question}</h2>
+              <p className="mt-3 text-sm leading-7 text-[#d6daea]">{entry.answer}</p>
+            </article>
+          ))}
         </div>
       </div>
     </section>

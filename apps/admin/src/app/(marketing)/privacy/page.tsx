@@ -12,10 +12,10 @@ export default function PrivacyPage() {
     <LegalArticle
       eyebrow="Privacy"
       title="Privacy Policy"
-      description="What we collect, why we collect it, and how you can contact us about your data."
+      description="This policy explains what Screen collects, why it is collected, and how customers can contact us."
     >
       <section>
-        <h2>Information we collect</h2>
+        <h2 className="text-lg font-semibold text-white">Information collected</h2>
         <p>
           We process account identity, organization membership, billing records, uploaded media
           metadata, device heartbeats, screenshots, and support messages needed to operate the
@@ -23,27 +23,17 @@ export default function PrivacyPage() {
         </p>
       </section>
       <section>
-        <h2>Why we process it</h2>
+        <h2 className="text-lg font-semibold text-white">Purpose of processing</h2>
         <p>
           Data is used to authenticate users, scope organizations, manage billing, deliver media,
           operate device sync flows, retain operational evidence, and respond to support requests.
         </p>
       </section>
       <section>
-        <h2>Your rights</h2>
+        <h2 className="text-lg font-semibold text-white">Contact</h2>
         <p>
-          You can request access to, correction of, or deletion of your personal data at any time
-          by contacting {siteConfig.legalEmail}. We will respond within 30 days.
-        </p>
-      </section>
-      <section>
-        <h2>Contact</h2>
-        <p>
-          Privacy requests can be sent to{" "}
-          <a href={`mailto:${siteConfig.legalEmail}`} className="text-[#9bb6ff] hover:text-white">
-            {siteConfig.legalEmail}
-          </a>
-          .
+          Privacy requests can be sent to {siteConfig.legalEmail}. Customers should review this
+          document with counsel before production use.
         </p>
       </section>
     </LegalArticle>

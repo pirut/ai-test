@@ -12,27 +12,21 @@ export default function CookiePolicyPage() {
     <LegalArticle
       eyebrow="Legal"
       title="Cookie Policy"
-      description="How Screen uses cookies and similar technologies."
+      description="This policy explains the current cookie posture for the Screen website and app."
     >
       <section>
-        <h2>Essential cookies only</h2>
+        <h2 className="text-lg font-semibold text-white">Current use</h2>
         <p>
-          Screen uses essential cookies for authentication and billing session management. We do
-          not use marketing, analytics, or advertising cookies.
+          At launch, Screen uses essential cookies for authentication and billing flows. The
+          product intentionally avoids a marketing-cookie banner in v1 by not shipping non-essential
+          tracking cookies.
         </p>
       </section>
       <section>
-        <h2>What this means</h2>
+        <h2 className="text-lg font-semibold text-white">Future changes</h2>
         <p>
-          No cookie consent banner is needed because we only set cookies required for the service
-          to function. Your browsing is not tracked for advertising purposes.
-        </p>
-      </section>
-      <section>
-        <h2>Future changes</h2>
-        <p>
-          If we add analytics or non-essential cookies in the future, this policy will be updated
-          and a consent mechanism will be implemented at the same time.
+          If analytics or advertising cookies are added later, this policy and the consent
+          behavior will be updated at the same time.
         </p>
       </section>
     </LegalArticle>

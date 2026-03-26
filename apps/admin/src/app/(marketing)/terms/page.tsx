@@ -12,39 +12,29 @@ export default function TermsPage() {
     <LegalArticle
       eyebrow="Legal"
       title="Terms of Service"
-      description="These terms govern your use of the Screen platform and related services."
+      description="These terms govern access to the hosted Screen control plane and related support services."
     >
       <section>
-        <h2>Service scope</h2>
+        <h2 className="text-lg font-semibold text-white">Service scope</h2>
         <p>
           {siteConfig.companyName} provides hosted software for managing digital signage
           devices, media, playlists, schedules, releases, screenshots, and billing. Hardware,
-          networking, and on-premise Raspberry Pi operation remain your responsibility.
+          networking, and on-premise Raspberry Pi operation remain the customer’s responsibility.
         </p>
       </section>
       <section>
-        <h2>Accounts and billing</h2>
+        <h2 className="text-lg font-semibold text-white">Accounts and billing</h2>
         <p>
-          Access is scoped by organization. Trials last 14 days and include up to three claimed
-          screens. Paid plans renew automatically until canceled through the billing portal.
+          Access is scoped by organization. Trials last 14 days and are limited to three claimed
+          screens before checkout. Paid plans renew automatically until canceled through the
+          billing portal.
         </p>
       </section>
       <section>
-        <h2>Acceptable use</h2>
+        <h2 className="text-lg font-semibold text-white">Acceptable operation</h2>
         <p>
-          You may not use the service to distribute unlawful material, abuse rate limits,
-          interfere with infrastructure, or bypass plan restrictions. See the full{" "}
-          <a href="/acceptable-use" className="text-[#9bb6ff] hover:text-white">
-            Acceptable Use Policy
-          </a>{" "}
-          for details.
-        </p>
-      </section>
-      <section>
-        <h2>Termination</h2>
-        <p>
-          Either party may terminate at any time. On cancellation, your workspace enters
-          read-only mode and existing content continues playing for 30 days.
+          Customers may not use the service to distribute unlawful material, abuse rate limits,
+          interfere with infrastructure, or bypass plan restrictions.
         </p>
       </section>
     </LegalArticle>

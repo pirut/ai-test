@@ -1,5 +1,4 @@
 import type { BillingInterval } from "@showroom/contracts";
-import { Check } from "lucide-react";
 
 import { CheckoutButton } from "@/components/marketing/checkout-button";
 import {
@@ -18,7 +17,7 @@ export function PricingGrid({
   showCheckout?: boolean;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
+    <div className="grid gap-6 xl:grid-cols-3">
       {orderedPlanKeys.map((planKey) => {
         const plan = billingPlans[planKey];
         const isFeatured = planKey === "growth";
@@ -27,78 +26,65 @@ export function PricingGrid({
           <article
             key={plan.key}
             className={[
-              "relative rounded-2xl border p-6",
+              "rounded-[28px] border p-6",
               isFeatured
-                ? "border-[#9bb6ff]/30 bg-[#0e1219] shadow-[0_0_40px_rgba(122,161,255,0.06)]"
-                : "border-white/6 bg-[#0c0e11]",
+                ? "border-[#9bb6ff]/40 bg-[linear-gradient(180deg,#131925_0%,#0e1118_100%)] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
+                : "border-white/8 bg-[#11151b]",
             ].join(" ")}
           >
-            {isFeatured && (
-              <div className="absolute -top-3 right-6 rounded-full bg-[linear-gradient(135deg,#b9ccff_0%,#7aa1ff_100%)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#082354]">
-                Most popular
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.3em] text-[#9bb6ff]">
+                  {plan.name}
+                </div>
+                <p className="mt-3 text-sm leading-7 text-[#c5cad8]">{plan.description}</p>
               </div>
-            )}
-
-            <div className="text-[0.7rem] uppercase tracking-[0.2em] text-[#7f8aa6]">
-              {plan.name}
+              {isFeatured ? (
+                <div className="rounded-full border border-[#9bb6ff]/30 bg-[#9bb6ff]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d8e3ff]">
+                  Best fit
+                </div>
+              ) : null}
             </div>
-            <p className="mt-2 text-[0.8rem] leading-6 text-[#8d93a6]">
-              {plan.description}
-            </p>
 
-            <div className="mt-6">
-              <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight text-white">
-                  {formatPlanPrice(plan.key, billingInterval)}
-                </span>
-                <span className="text-[0.8rem] text-[#7f8aa6]">
-                  /{billingInterval === "year" ? "yr" : "mo"}
-                </span>
+            <div className="mt-8">
+              <div className="text-4xl font-black tracking-tight text-white">
+                {formatPlanPrice(plan.key, billingInterval)}
               </div>
-              {billingInterval === "year" && (
-                <div className="mt-1 text-[0.75rem] text-[#9bb6ff]">
+              <div className="mt-2 text-sm text-[#9ca3b7]">
+                per {billingInterval === "year" ? "year" : "month"}
+              </div>
+              {billingInterval === "year" ? (
+                <div className="mt-2 text-xs uppercase tracking-[0.18em] text-[#9bb6ff]">
                   {formatMonthlyEquivalentPrice(plan.key)}/mo billed annually
                 </div>
-              )}
+              ) : null}
             </div>
 
-            <div className="mt-6 space-y-2.5">
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-white/4 p-4 text-sm text-[#dbe4ff]">
+                {plan.includedScreens} screens included, ${plan.extraScreenPriceCents / 100} per extra
+                screen/month.
+              </div>
+              <div className="rounded-2xl bg-white/4 p-4 text-sm text-[#dbe4ff]">
+                {formatStorageLimit(plan.storageLimitBytes)} storage and {plan.screenshotRetentionDays}-day screenshot retention.
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3">
               {plan.featureBullets.map((feature) => (
-                <div
-                  key={feature}
-                  className="flex items-start gap-2.5 text-[0.8rem] text-[#b3b9cd]"
-                >
-                  <Check className="mt-0.5 size-3.5 shrink-0 text-[#7cd39d]" />
+                <div key={feature} className="rounded-2xl bg-[#0d1016] px-4 py-3 text-sm text-white">
                   {feature}
                 </div>
               ))}
-              <div className="flex items-start gap-2.5 text-[0.8rem] text-[#b3b9cd]">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-[#7cd39d]" />
-                {formatStorageLimit(plan.storageLimitBytes)} storage
-              </div>
-              <div className="flex items-start gap-2.5 text-[0.8rem] text-[#b3b9cd]">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-[#7cd39d]" />
-                {plan.screenshotRetentionDays}-day screenshot retention
-              </div>
-              <div className="flex items-start gap-2.5 text-[0.8rem] text-[#b3b9cd]">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-[#7cd39d]" />
-                ${plan.extraScreenPriceCents / 100}/mo per extra screen
-              </div>
             </div>
 
-            {showCheckout && (
+            {showCheckout ? (
               <CheckoutButton
                 planKey={plan.key}
                 billingInterval={billingInterval}
-                className={[
-                  "mt-8 w-full",
-                  isFeatured
-                    ? ""
-                    : "!bg-white/5 !text-white !shadow-none hover:!bg-white/10",
-                ].join(" ")}
-                label={isFeatured ? "Start free trial" : "Get started"}
+                className="mt-8 w-full"
               />
-            )}
+            ) : null}
           </article>
         );
       })}

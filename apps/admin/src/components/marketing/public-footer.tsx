@@ -2,88 +2,51 @@ import Link from "next/link";
 
 import { siteConfig } from "@/lib/site";
 
-const productLinks = [
+const footerLinks = [
   { href: "/pricing", label: "Pricing" },
   { href: "/security", label: "Security" },
-  { href: "/getting-started", label: "Getting started" },
-  { href: "/contact", label: "Contact" },
-];
-
-const legalLinks = [
+  { href: "/getting-started", label: "Getting Started" },
+  { href: "/legal", label: "Legal" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
+  { href: "/acceptable-use", label: "Acceptable Use" },
   { href: "/dpa", label: "DPA" },
-  { href: "/acceptable-use", label: "Acceptable use" },
-  { href: "/cookie-policy", label: "Cookies" },
+  { href: "/cookie-policy", label: "Cookie Policy" },
 ];
 
 export function PublicFooter() {
   return (
-    <footer className="border-t border-white/6 bg-[#090b0d]">
-      <div className="mx-auto max-w-7xl px-6 py-12">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Brand */}
-          <div className="lg:col-span-2">
-            <div className="text-sm font-bold text-white">{siteConfig.name}</div>
-            <p className="mt-2 max-w-sm text-[0.8rem] leading-6 text-[#6b7280]">
-              {siteConfig.tagline}
-            </p>
+    <footer className="border-t border-white/6 bg-[#090b0d] py-10">
+      <div className="mx-auto grid max-w-7xl gap-8 px-6 lg:grid-cols-[minmax(0,1fr)_1.2fr]">
+        <div className="space-y-3">
+          <div className="text-lg font-bold text-white">{siteConfig.name}</div>
+          <p className="max-w-md text-sm leading-7 text-[#b3b7c5]">
+            {siteConfig.description}
+          </p>
+          <div className="text-sm text-[#8d93a6]">
+            {siteConfig.companyName}
+            <br />
+            {siteConfig.companyAddress}
           </div>
-
-          {/* Product */}
-          <div>
-            <div className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7280]">
-              Product
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              {productLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-[0.8rem] text-[#9ca3af] transition-colors hover:text-white"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Legal */}
-          <div>
-            <div className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7280]">
-              Legal
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              {legalLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-[0.8rem] text-[#9ca3af] transition-colors hover:text-white"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-4 text-sm text-[#c5cad8]">
+            <a href={`mailto:${siteConfig.supportEmail}`}>{siteConfig.supportEmail}</a>
+            <a href={`mailto:${siteConfig.legalEmail}`}>{siteConfig.legalEmail}</a>
+            <a href={siteConfig.statusPageUrl} target="_blank" rel="noreferrer">
+              System status
+            </a>
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col justify-between gap-4 border-t border-white/6 pt-6 sm:flex-row sm:items-center">
-          <div className="text-[0.75rem] text-[#6b7280]">
-            {siteConfig.companyName}
-          </div>
-          <div className="flex gap-4 text-[0.75rem] text-[#6b7280]">
-            <a href={`mailto:${siteConfig.supportEmail}`} className="hover:text-white">
-              {siteConfig.supportEmail}
-            </a>
-            <a
-              href={siteConfig.statusPageUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white"
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {footerLinks.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="text-sm text-[#c5cad8] transition-colors hover:text-white"
             >
-              Status
-            </a>
-          </div>
+              {item.label}
+            </Link>
+          ))}
         </div>
       </div>
     </footer>

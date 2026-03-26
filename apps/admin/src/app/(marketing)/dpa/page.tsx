@@ -12,36 +12,27 @@ export default function DpaPage() {
     <LegalArticle
       eyebrow="Legal"
       title="Data Processing Addendum"
-      description="How we handle your data when acting as a processor for your workspace."
+      description="This DPA describes how customer data is handled when Screen acts as a processor for hosted workspace data."
     >
       <section>
-        <h2>Processing scope</h2>
+        <h2 className="text-lg font-semibold text-white">Customer instructions</h2>
         <p>
           Screen processes customer data to provide the hosted control plane, device management,
-          media library, screenshots, schedules, and billing support described in the Terms of
-          Service.
+          media library, screenshots, schedules, and billing support described in the service terms.
         </p>
       </section>
       <section>
-        <h2>Security measures</h2>
+        <h2 className="text-lg font-semibold text-white">Security measures</h2>
         <p>
           The service uses organization scoping, signed uploads, authenticated device credentials,
-          webhook signature verification, and configurable retention controls to protect customer
-          data.
+          billing webhook verification, and retention controls to reduce exposure of customer data.
         </p>
       </section>
       <section>
-        <h2>Subprocessors</h2>
+        <h2 className="text-lg font-semibold text-white">Subprocessors</h2>
         <p>
-          Current subprocessors: Vercel (hosting), Convex (database), Clerk (auth), Stripe
-          (billing), Resend (email), UploadThing (file storage), and Sentry (error monitoring).
-        </p>
-      </section>
-      <section>
-        <h2>Data deletion</h2>
-        <p>
-          Upon termination, customer data is retained in read-only mode for 30 days, then
-          permanently deleted from all systems including backups within 90 days.
+          Current operational subprocessors align to the deployed stack: Vercel, Convex, Clerk,
+          Stripe, Resend, UploadThing, and Sentry.
         </p>
       </section>
     </LegalArticle>

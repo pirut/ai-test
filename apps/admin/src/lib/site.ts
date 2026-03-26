@@ -5,9 +5,9 @@ import { getAppUrl, env } from "@/lib/env";
 export const siteConfig = {
   name: "Screen",
   appName: "Screen Console",
-  tagline: "Digital signage infrastructure for Raspberry Pi.",
+  tagline: "Self-serve digital signage for Raspberry Pi fleets.",
   description:
-    "Manage Raspberry Pi signage fleets with a hosted control plane. Playlists, schedules, releases, and proof of playback.",
+    "Self-serve digital signage software for Raspberry Pi screen fleets.",
   companyName: env.legalCompanyName ?? "Screen Labs LLC",
   companyAddress:
     env.legalCompanyAddress ?? "123 Market Street, New York, NY 10001",
