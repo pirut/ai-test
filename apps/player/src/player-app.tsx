@@ -32,7 +32,7 @@ type PlaybackState = {
 };
 
 async function loadPlayerStatus() {
-  const response = await fetch("/local/status");
+  const response = await fetch("/local/status", { cache: "no-store" });
   if (!response.ok) {
     throw new Error("Unable to load local status");
   }
@@ -41,7 +41,7 @@ async function loadPlayerStatus() {
 }
 
 async function loadManifest() {
-  const response = await fetch("/local/manifest");
+  const response = await fetch("/local/manifest", { cache: "no-store" });
   if (!response.ok) {
     return null;
   }
@@ -51,7 +51,7 @@ async function loadManifest() {
 }
 
 async function loadWiFiStatus() {
-  const response = await fetch("/local/wifi/status");
+  const response = await fetch("/local/wifi/status", { cache: "no-store" });
   if (!response.ok) {
     throw new Error("Unable to load Wi-Fi status");
   }

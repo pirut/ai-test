@@ -34,6 +34,8 @@ func (s *Server) Routes() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
@@ -48,11 +50,15 @@ func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
 	}
 	defer file.Close()
 
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = file.WriteTo(w)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.store.PlayerStatus())
 }
