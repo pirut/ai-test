@@ -1,17 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import {
-  type BillingAccount,
-  type BillingInterval,
   type DeviceCommandResult,
   type HeartbeatPayload,
   type LibraryFolder,
-  type PlanKey,
   type ScreenshotUploadPayload,
-  billingAccountSchema,
   dashboardStatsSchema,
   deviceManifestSchema,
   deviceSummarySchema,
-  entitlementSnapshotSchema,
   libraryFolderSchema,
   mediaAssetSchema,
   playlistSchema,
@@ -25,10 +20,6 @@ import type { FunctionReference } from "convex/server";
 import { z } from "zod";
 
 import { api } from "@convex-api";
-import {
-  createDefaultBillingAccount,
-  resolveEntitlements,
-} from "@/lib/billing/entitlements";
 import { env, hasConvexBackend } from "@/lib/env";
 import * as mock from "@/lib/mock-store";
 
@@ -56,7 +47,6 @@ const deviceDetailSchema = deviceSummarySchema.extend({
   orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
   volume: z.number(),
   defaultPlaylistId: z.string().nullable(),
-  archivedAt: z.string().nullable().optional(),
 });
 
 const adminCommandSchema = deviceCommandSchema.extend({
@@ -76,12 +66,6 @@ const scheduleSummarySchema = z.object({
   targetDeviceId: z.string().nullable(),
   targetLabel: z.string(),
 });
-
-type DeviceDetail = z.infer<typeof deviceDetailSchema>;
-
-function createMockBillingAccount(orgId: string): BillingAccount {
-  return createDefaultBillingAccount(orgId);
-}
 
 function publicConvexClient() {
   if (!env.convexUrl) {
@@ -160,98 +144,6 @@ export async function getDashboardStats(orgId: string) {
   return dashboardStatsSchema.parse((result as { stats: unknown }).stats);
 }
 
-export async function getBillingAccount(orgId: string) {
-  if (!hasConvexBackend()) {
-    return createMockBillingAccount(orgId);
-  }
-
-  return billingAccountSchema.parse(
-    await convexQuery(api.billing.getCurrentBillingAccount, {}),
-  );
-}
-
-export async function getEntitlementSnapshot(orgId: string) {
-  if (!hasConvexBackend()) {
-    return resolveEntitlements(createMockBillingAccount(orgId), 0);
-  }
-
-  return entitlementSnapshotSchema.parse(
-    await convexQuery(api.billing.getCurrentEntitlements, {}),
-  );
-}
-
-export async function attachStripeCustomerWebhook(input: {
-  organizationId: string;
-  stripeCustomerId: string;
-  billingEmail?: string;
-}) {
-  if (!hasConvexBackend()) {
-    return createMockBillingAccount(input.organizationId);
-  }
-
-  return billingAccountSchema.parse(
-    await publicConvexMutation(api.billing.attachStripeCustomer, input),
-  );
-}
-
-export async function recordExternalWebhookEvent(input: {
-  provider: string;
-  eventId: string;
-  eventType: string;
-  organizationId?: string;
-}) {
-  if (!hasConvexBackend()) {
-    return true;
-  }
-
-  return z.boolean().parse(
-    await publicConvexMutation(api.billing.recordExternalWebhookEvent, input),
-  );
-}
-
-export async function finalizeExternalWebhookEvent(input: {
-  provider: string;
-  eventId: string;
-  error?: string;
-}) {
-  if (!hasConvexBackend()) {
-    return null;
-  }
-
-  return publicConvexMutation(api.billing.finalizeExternalWebhookEvent, input);
-}
-
-export async function applyStripeSubscriptionWebhook(input: {
-  providerEventId: string;
-  eventType: string;
-  organizationId: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  planKey: PlanKey;
-  subscriptionStatus:
-    | "trialing"
-    | "active"
-    | "past_due"
-    | "canceled"
-    | "incomplete"
-    | "incomplete_expired"
-    | "unpaid";
-  billingInterval?: BillingInterval;
-  billingEmail?: string;
-  trialEndsAt?: number;
-  currentPeriodStart?: number;
-  currentPeriodEnd?: number;
-  cancelAtPeriodEnd: boolean;
-}) {
-  if (!hasConvexBackend()) {
-    return createMockBillingAccount(input.organizationId);
-  }
-
-  return billingAccountSchema.parse(
-    await publicConvexMutation(api.billing.applyStripeSubscriptionWebhook, input),
-  );
-}
-
 export async function listDevices(orgId: string) {
   if (!hasConvexBackend()) {
     return mock.listDevices(orgId);
@@ -261,13 +153,9 @@ export async function listDevices(orgId: string) {
   return z.array(deviceSummarySchema).parse(result);
 }
 
-export async function getDevice(
-  orgId: string,
-  deviceId: string,
-): Promise<DeviceDetail | null> {
+export async function getDevice(orgId: string, deviceId: string) {
   if (!hasConvexBackend()) {
-    const device = mock.getDevice(orgId, deviceId);
-    return device ? deviceDetailSchema.parse(device) : null;
+    return mock.getDevice(orgId, deviceId);
   }
 
   const result = await convexQuery(api.admin.getScreenDetail, { deviceId });
@@ -667,7 +555,6 @@ export async function updateScreen(input: {
   orientation: 0 | 90 | 180 | 270;
   volume: number;
   defaultPlaylistId?: string | null;
-  archived?: boolean;
 }) {
   if (!hasConvexBackend()) {
     return mock.getDevice("org-demo", input.deviceId);

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
-  CreditCard,
   ChevronRight,
   CalendarRange,
   ImageIcon,
@@ -39,7 +38,6 @@ const navItems = [
   { href: "/playlists", label: "Playlists", icon: PlaySquare },
   { href: "/schedules", label: "Schedules", icon: CalendarRange },
   { href: "/releases", label: "Releases", icon: Package2 },
-  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/team", label: "Team", icon: Users },
 ];
 

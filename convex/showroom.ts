@@ -172,21 +172,18 @@ export async function buildManifestForDevice(
     .query("schedules")
     .withIndex("by_org", (q) => q.eq("organizationId", orgId))
     .collect();
-  const [deviceTargets, orgTargets] = await Promise.all([
-    ctx.db
-      .query("scheduleTargets")
-      .withIndex("by_device", (q) => q.eq("deviceId", device._id))
-      .collect(),
-    ctx.db
-      .query("scheduleTargets")
-      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-      .collect(),
-  ]);
+  const targetRows = await ctx.db
+    .query("scheduleTargets")
+    .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+    .collect();
 
-  const relevantTargets = [
-    ...deviceTargets,
-    ...orgTargets.filter((target) => !target.deviceId && !target.groupId && !target.siteId),
-  ];
+  const relevantTargets = targetRows.filter((target) => {
+    if (target.deviceId) {
+      return target.deviceId === device._id;
+    }
+
+    return !target.groupId && !target.siteId;
+  });
 
   const scheduleWindows = await Promise.all(
     relevantTargets.map(async (target) => {
@@ -270,25 +267,16 @@ export async function activateManifestForDevice(
   return payload;
 }
 
-export async function activateManifestForDevices(
-  ctx: MutationCtx,
-  devices: Array<Doc<"devices">>,
-  manifestVersion = `manifest-${Date.now()}`,
-) {
-  for (const device of devices) {
-    await activateManifestForDevice(ctx, device, manifestVersion);
-  }
-
-  return manifestVersion;
-}
-
 export async function compileOrgManifests(ctx: MutationCtx, orgId: string) {
   const devices = await ctx.db
     .query("devices")
     .withIndex("by_org", (q) => q.eq("organizationId", orgId))
     .collect();
 
-  const manifestVersion = await activateManifestForDevices(ctx, devices);
+  const manifestVersion = `manifest-${Date.now()}`;
+  for (const device of devices) {
+    await activateManifestForDevice(ctx, device, manifestVersion);
+  }
 
   return {
     devices,

@@ -17,8 +17,6 @@ type Config struct {
 	ScreenshotCommand    string
 	YouTubeDLBinary      string
 	YouTubeFormat        string
-	YouTubeExtractorArgs string
-	YouTubeCookieFile    string
 	RestartPlayerCommand string
 	RestartAgentCommand  string
 	RebootCommand        string
@@ -56,9 +54,7 @@ func Load() Config {
 		ScreenshotInterval:   getduration("SHOWROOM_SCREENSHOT_INTERVAL", "15m"),
 		ScreenshotCommand:    getenv("SHOWROOM_SCREENSHOT_COMMAND", "scrot -q 85 -o /tmp/showroom-screenshot.jpg"),
 		YouTubeDLBinary:      getenv("SHOWROOM_YTDLP_BINARY", "yt-dlp"),
-		YouTubeFormat:        getenv("SHOWROOM_YTDLP_FORMAT", "best[protocol=https][vcodec!=none][acodec!=none][height<=2160]/best[ext=mp4][vcodec!=none][acodec!=none][height<=2160]/bestvideo*[protocol=https][height<=2160]+bestaudio[protocol=https]/bestvideo*[height<=2160]+bestaudio/best[height<=2160]/best"),
-		YouTubeExtractorArgs: getenv("SHOWROOM_YTDLP_EXTRACTOR_ARGS", "youtube:player_client=tv,mweb,ios,android;formats=incomplete"),
-		YouTubeCookieFile:    getenv("SHOWROOM_YTDLP_COOKIE_FILE", "/etc/showroom-agent/youtube.cookies.txt"),
+		YouTubeFormat:        getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo*[height<=2160]+bestaudio/best[height<=2160]/best"),
 		RestartPlayerCommand: getenv("SHOWROOM_RESTART_PLAYER_COMMAND", "systemctl restart showroom-kiosk.service"),
 		RestartAgentCommand:  getenv("SHOWROOM_RESTART_AGENT_COMMAND", "systemctl restart showroom-agent.service"),
 		RebootCommand:        getenv("SHOWROOM_REBOOT_COMMAND", "shutdown -r now"),

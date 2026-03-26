@@ -1,9 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
-import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
-import { assertOrgCanClaimDevice, assertOrgWriteAllowed } from "./billing";
 import * as showroom from "./showroom";
 import {
   hashValue,
@@ -11,10 +9,8 @@ import {
   requireAdmin,
   requireOrgIdentity,
 } from "./lib";
-import { logConvexEvent } from "./observability";
 
 const deviceCredentialTtlMs = 24 * 60 * 60_000;
-const MANIFEST_COMPILE_BATCH_SIZE = 25;
 
 function expiresAtFromNow(now: number, ttlMs: number) {
   return now + ttlMs;
@@ -28,26 +24,6 @@ async function activateManifestsForDevices(
   for (const device of devices) {
     await showroom.activateManifestForDevice(ctx, device, manifestVersion);
   }
-
-  return manifestVersion;
-}
-
-async function queueManifestCompile(
-  ctx: any,
-  orgId: string,
-  deviceIds: Array<Id<"devices">>,
-  manifestVersion = `manifest-${Date.now()}`,
-) {
-  const uniqueDeviceIds = [...new Set(deviceIds)];
-  if (!uniqueDeviceIds.length) {
-    return null;
-  }
-
-  await ctx.scheduler.runAfter(0, internal.admin.compileManifestBatch, {
-    orgId,
-    deviceIds: uniqueDeviceIds,
-    manifestVersion,
-  });
 
   return manifestVersion;
 }
@@ -234,11 +210,7 @@ async function recompileAllOrgDevices(ctx: any, orgId: string) {
     return 0;
   }
 
-  await queueManifestCompile(
-    ctx,
-    orgId,
-    devices.map((device) => device._id),
-  );
+  await activateManifestsForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -257,11 +229,7 @@ async function recompileDevicesById(
     return 0;
   }
 
-  await queueManifestCompile(
-    ctx,
-    orgId,
-    devices.map((device) => device._id),
-  );
+  await activateManifestsForDevices(ctx, devices);
   return devices.length;
 }
 
@@ -519,48 +487,10 @@ async function savePlaylistRecord(
   }
 
   return {
-      ...(await showroom.serializePlaylist(ctx, playlist)),
-      isDefault: playlist.isDefault,
+    ...(await showroom.serializePlaylist(ctx, playlist)),
+    isDefault: playlist.isDefault,
   };
 }
-
-export const compileManifestBatch = internalMutation({
-  args: {
-    orgId: v.string(),
-    deviceIds: v.array(v.id("devices")),
-    manifestVersion: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const batchIds = args.deviceIds.slice(0, MANIFEST_COMPILE_BATCH_SIZE);
-    const remainingIds = args.deviceIds.slice(MANIFEST_COMPILE_BATCH_SIZE);
-    const batchSet = new Set(batchIds);
-    const devices = (await listOrgDevices(ctx, args.orgId)).filter((device) =>
-      batchSet.has(device._id),
-    );
-
-    if (devices.length) {
-      await activateManifestsForDevices(ctx, devices, args.manifestVersion);
-    }
-
-    if (remainingIds.length) {
-      await ctx.scheduler.runAfter(0, internal.admin.compileManifestBatch, {
-        orgId: args.orgId,
-        deviceIds: remainingIds,
-        manifestVersion: args.manifestVersion,
-      });
-    }
-
-    logConvexEvent("info", "manifest.compile.batch", {
-      orgId: args.orgId,
-      manifestVersion: args.manifestVersion,
-      batchSize: batchIds.length,
-      remainingCount: remainingIds.length,
-    });
-
-    return null;
-  },
-});
 
 export const listScreens = query({
   args: {},
@@ -625,7 +555,6 @@ export const getScreenDetail = query({
       orientation: device.orientation,
       volume: device.volume,
       defaultPlaylistId: device.defaultPlaylistId ?? defaultPlaylist?._id ?? null,
-      archivedAt: device.archivedAt ?? null,
     };
   },
 });
@@ -691,22 +620,7 @@ export const listDeviceCommands = query({
         .order("desc")
         .take(20);
     } else {
-      commands = (
-        await Promise.all(
-          ["queued", "in_progress", "succeeded", "failed"].map((status) =>
-            ctx.db
-              .query("deviceCommands")
-              .withIndex("by_org_and_status", (q) =>
-                q.eq("organizationId", orgId).eq("status", status as any),
-              )
-              .order("desc")
-              .take(20),
-          ),
-        )
-      )
-        .flat()
-        .sort((a, b) => b.queuedAt - a.queuedAt)
-        .slice(0, 50);
+      commands = await ctx.db.query("deviceCommands").order("desc").take(50);
     }
 
     return commands
@@ -882,7 +796,6 @@ export const generateMediaUploadUrl = mutation({
   }),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const uploadUrl = await ctx.storage.generateUploadUrl();
     const assetId = randomToken(16);
 
@@ -904,7 +817,6 @@ export const createLibraryFolder = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const parentId = args.parentId ?? undefined;
     if (parentId) {
       await assertFolderForKind(ctx, orgId, parentId, args.kind);
@@ -939,7 +851,6 @@ export const updateLibraryFolder = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const folder = await ctx.db.get(args.folderId);
     if (!folder || folder.organizationId !== orgId) {
       throw new ConvexError("Folder not found");
@@ -1005,7 +916,6 @@ export const finalizeMediaUpload = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     await assertFolderForKind(ctx, orgId, args.folderId, "media");
 
     const assetId = await ctx.db.insert("mediaAssets", {
@@ -1051,7 +961,6 @@ export const createYouTubeMediaAsset = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const asset = await upsertYouTubeAsset(ctx, orgId, args);
     return showroom.serializeAsset(ctx, asset);
   },
@@ -1080,7 +989,6 @@ export const importYouTubePlaylist = mutation({
   }),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     if (!args.videos.length) {
       throw new ConvexError("Playlist import requires at least one video");
     }
@@ -1136,7 +1044,6 @@ export const createRelease = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const identity = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, identity.orgId);
     if (!args.playerUrl && !args.agentUrl && !args.systemUrl) {
       throw new ConvexError("Provide a player URL, agent URL, and/or system bundle URL");
     }
@@ -1192,9 +1099,8 @@ export const generateReleaseArtifactUploadUrl = mutation({
     uploadUrl: v.string(),
     expiresInSeconds: v.number(),
   }),
-  handler: async (ctx) => {
-    const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
+  handler: async (ctx, _args) => {
+    await requireAdmin(ctx);
 
     return {
       uploadUrl: await ctx.storage.generateUploadUrl(),
@@ -1243,7 +1149,6 @@ export const publishReleaseArtifacts = mutation({
   }),
   handler: async (ctx, args) => {
     const identity = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, identity.orgId);
     if (!args.player && !args.agent && !args.system) {
       throw new ConvexError("Provide a player artifact, agent artifact, and/or system bundle");
     }
@@ -1351,14 +1256,6 @@ export const publishReleaseArtifacts = mutation({
       };
     }
 
-    logConvexEvent("info", "release.publish", {
-      orgId: identity.orgId,
-      releaseId: release._id,
-      version: release.version,
-      deployToAll: Boolean(args.deployToAll),
-      queuedDeviceCount: rollout?.queuedDeviceCount ?? 0,
-    });
-
     return {
       release: {
         id: release._id,
@@ -1398,7 +1295,6 @@ export const deployRelease = mutation({
   }),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.organizationId !== orgId) {
       throw new ConvexError("Release not found");
@@ -1544,7 +1440,6 @@ export const savePlaylist = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     return savePlaylistRecord(ctx, orgId, {
       ...args,
       folderId: args.folderId ?? undefined,
@@ -1561,7 +1456,6 @@ export const updatePlaylist = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const playlist = await ctx.db.get(args.playlistId);
     if (!playlist || playlist.organizationId !== orgId) {
       throw new ConvexError("Playlist not found");
@@ -1593,7 +1487,6 @@ export const setDefaultPlaylist = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const playlist = await ctx.db.get(args.playlistId);
     if (!playlist || playlist.organizationId !== orgId) {
       throw new ConvexError("Playlist not found");
@@ -1627,7 +1520,6 @@ export const saveSchedule = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const playlist = await ctx.db.get(args.playlistId);
 
     if (!playlist || playlist.organizationId !== orgId) {
@@ -1727,12 +1619,10 @@ export const updateScreen = mutation({
     orientation: v.union(v.literal(0), v.literal(90), v.literal(180), v.literal(270)),
     volume: v.number(),
     defaultPlaylistId: v.optional(v.union(v.id("playlists"), v.null())),
-    archived: v.optional(v.boolean()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const device = await ctx.db.get(args.deviceId);
     if (!device || device.organizationId !== orgId) {
       throw new ConvexError("Device not found");
@@ -1752,8 +1642,6 @@ export const updateScreen = mutation({
       orientation: args.orientation,
       volume: args.volume,
       defaultPlaylistId: args.defaultPlaylistId ?? undefined,
-      archivedAt: args.archived ? Date.now() : undefined,
-      billingExcluded: args.archived ? true : false,
       updatedAt: Date.now(),
     });
 
@@ -1781,7 +1669,6 @@ export const updateScreen = mutation({
       orientation: updated.orientation,
       volume: updated.volume,
       defaultPlaylistId: updated.defaultPlaylistId ?? defaultPlaylist?._id ?? null,
-      archivedAt: updated.archivedAt ?? null,
     };
   },
 });
@@ -1798,7 +1685,6 @@ export const claimDeviceByCode = mutation({
   }),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgCanClaimDevice(ctx, orgId);
     const registration = await ctx.db
       .query("deviceRegistrations")
       .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
@@ -1829,8 +1715,6 @@ export const claimDeviceByCode = mutation({
       volume: 0,
       defaultPlaylistId: defaultPlaylist?._id,
       currentPlaylistName: defaultPlaylist?.name,
-      claimedAt: Date.now(),
-      billingExcluded: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -1869,14 +1753,12 @@ export const enqueueDeviceCommand = mutation({
       v.literal("blank_screen"),
       v.literal("unblank_screen"),
       v.literal("update_release"),
-      v.literal("update_youtube_auth"),
     ),
     payload: v.optional(v.any()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgIdentity(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const device = await ctx.db.get(args.deviceId);
     if (!device || device.organizationId !== orgId) {
       throw new ConvexError("Device not found");
@@ -1909,14 +1791,8 @@ export const compileManifests = mutation({
   }),
   handler: async (ctx) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const devices = await listOrgDevices(ctx, orgId);
-    const manifestVersion =
-      (await queueManifestCompile(
-        ctx,
-        orgId,
-        devices.map((device) => device._id),
-      )) ?? `manifest-${Date.now()}`;
+    const manifestVersion = await activateManifestsForDevices(ctx, devices);
 
     return {
       affectedDeviceCount: devices.length,
@@ -1932,7 +1808,6 @@ export const deleteLibraryFolder = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const folder = await ctx.db.get(args.folderId);
     if (!folder || folder.organizationId !== orgId) {
       throw new ConvexError("Folder not found");
@@ -1991,7 +1866,6 @@ export const deletePlaylist = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const playlist = await ctx.db.get(args.playlistId);
     if (!playlist || playlist.organizationId !== orgId) {
       throw new ConvexError("Playlist not found");
@@ -2058,7 +1932,6 @@ export const deleteSchedule = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const schedule = await ctx.db.get(args.scheduleId);
     if (!schedule || schedule.organizationId !== orgId) {
       throw new ConvexError("Schedule not found");
@@ -2094,7 +1967,6 @@ export const deleteMediaAsset = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const asset = await ctx.db.get(args.assetId);
     if (!asset || asset.organizationId !== orgId) {
       throw new ConvexError("Media asset not found");
@@ -2130,7 +2002,6 @@ export const updateMediaAsset = mutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    await assertOrgWriteAllowed(ctx, orgId);
     const asset = await ctx.db.get(args.assetId);
     if (!asset || asset.organizationId !== orgId) {
       throw new ConvexError("Media asset not found");

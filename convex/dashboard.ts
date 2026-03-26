@@ -18,18 +18,15 @@ export const getOverview = query({
   }),
   handler: async (ctx) => {
     const { orgId } = await requireOrgIdentity(ctx);
-    const [devices, pendingCommands] = await Promise.all([
-      ctx.db
-        .query("devices")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
-      ctx.db
-        .query("deviceCommands")
-        .withIndex("by_org_and_status", (q) =>
-          q.eq("organizationId", orgId).eq("status", "queued"),
-        )
-        .collect(),
-    ]);
+    const devices = await ctx.db
+      .query("devices")
+      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+      .collect();
+
+    const commands = await ctx.db
+      .query("deviceCommands")
+      .collect();
+    const orgCommands = commands.filter((command) => command.organizationId === orgId);
     const statuses = devices.map((device) => deriveDeviceStatus(device));
 
     return {
@@ -38,7 +35,7 @@ export const getOverview = query({
         stale: statuses.filter((status) => status === "stale").length,
         offline: statuses.filter((status) => status === "offline").length,
         unclaimed: statuses.filter((status) => status === "unclaimed").length,
-        pendingCommands: pendingCommands.length,
+        pendingCommands: orgCommands.filter((command) => command.status === "queued").length,
       },
       devices,
     };

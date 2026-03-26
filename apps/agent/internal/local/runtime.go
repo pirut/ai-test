@@ -2,7 +2,6 @@ package local
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,17 +13,16 @@ import (
 )
 
 type kioskRuntime struct {
-	Mode            string             `json:"mode"`
-	Reason          string             `json:"reason,omitempty"`
-	BrowserURL      string             `json:"browserUrl"`
-	ManifestVersion string             `json:"manifestVersion,omitempty"`
-	Volume          int                `json:"volume,omitempty"`
-	Asset           *kioskRuntimeAsset `json:"asset,omitempty"`
+	Mode            string              `json:"mode"`
+	Reason          string              `json:"reason,omitempty"`
+	BrowserURL      string              `json:"browserUrl"`
+	ManifestVersion string              `json:"manifestVersion,omitempty"`
+	Volume          int                 `json:"volume,omitempty"`
+	Playlist        []kioskRuntimeAsset `json:"playlist,omitempty"`
 }
 
 type kioskRuntimeAsset struct {
 	AssetID         string `json:"assetId"`
-	AssetType       string `json:"assetType"`
 	Title           string `json:"title"`
 	LocalPath       string `json:"localPath"`
 	DurationSeconds int    `json:"durationSeconds,omitempty"`
@@ -36,10 +34,6 @@ func (s *Server) handleKioskRuntime(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) kioskRuntime() kioskRuntime {
-	return s.kioskRuntimeAt(time.Now())
-}
-
-func (s *Server) kioskRuntimeAt(now time.Time) kioskRuntime {
 	runtime := kioskRuntime{
 		Mode:       "browser",
 		Reason:     "default-browser",
@@ -58,17 +52,44 @@ func (s *Server) kioskRuntimeAt(now time.Time) kioskRuntime {
 		return runtime
 	}
 
-	asset, reason := s.chooseCachedRuntimeAsset(manifest, now)
-	if asset == nil {
-		runtime.Reason = reason
+	playlist := chooseActivePlaylist(manifest)
+	if len(playlist) == 0 {
+		runtime.Reason = "empty-playlist"
 		return runtime
 	}
 
 	runtime.ManifestVersion = manifest.ManifestVersion
 	runtime.Volume = manifest.Volume
+
+	assets := make([]kioskRuntimeAsset, 0, len(playlist))
+	for _, item := range playlist {
+		if item.AssetType != "video" {
+			runtime.Reason = "non-video-playlist"
+			return runtime
+		}
+		if !strings.HasPrefix(item.URL, "/assets/") {
+			runtime.Reason = "non-local-asset"
+			return runtime
+		}
+
+		localPath := filepath.Join(s.config.StorageRoot, strings.TrimPrefix(item.URL, "/assets/"))
+		info, err := os.Stat(localPath)
+		if err != nil || info.IsDir() {
+			runtime.Reason = "missing-cached-asset"
+			return runtime
+		}
+
+		assets = append(assets, kioskRuntimeAsset{
+			AssetID:         item.AssetID,
+			Title:           item.Title,
+			LocalPath:       localPath,
+			DurationSeconds: item.DurationSeconds,
+		})
+	}
+
 	runtime.Mode = "mpv"
-	runtime.Reason = reason
-	runtime.Asset = asset
+	runtime.Reason = "cached-video-playlist"
+	runtime.Playlist = assets
 	return runtime
 }
 
@@ -94,10 +115,7 @@ func (s *Server) loadManifest() (*remote.DeviceManifest, error) {
 }
 
 func chooseActivePlaylist(manifest *remote.DeviceManifest) []remote.ManifestPlaylistItem {
-	return chooseActivePlaylistAt(manifest, time.Now())
-}
-
-func chooseActivePlaylistAt(manifest *remote.DeviceManifest, now time.Time) []remote.ManifestPlaylistItem {
+	now := time.Now()
 	active := make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
 	for _, window := range manifest.ScheduleWindows {
 		startsAt, err := time.Parse(time.RFC3339, window.StartsAt)
@@ -121,98 +139,4 @@ func chooseActivePlaylistAt(manifest *remote.DeviceManifest, now time.Time) []re
 		return active[0].Playlist
 	}
 	return manifest.DefaultPlaylist
-}
-
-const (
-	defaultImageDurationSeconds = 15
-	defaultVideoDurationSeconds = 30
-)
-
-func (s *Server) chooseCachedRuntimeAsset(manifest *remote.DeviceManifest, now time.Time) (*kioskRuntimeAsset, string) {
-	playlist := chooseActivePlaylistAt(manifest, now)
-	if len(playlist) == 0 {
-		return nil, "empty-playlist"
-	}
-
-	item, err := chooseCurrentAsset(playlist, runtimeAnchor(manifest, now), now)
-	if err != nil {
-		if errors.Is(err, errEmptyPlaylist) {
-			return nil, "empty-playlist"
-		}
-		return nil, "invalid-playlist"
-	}
-
-	if item.AssetType != "video" && item.AssetType != "image" {
-		return nil, "unsupported-asset-type"
-	}
-	if !strings.HasPrefix(item.URL, "/assets/") {
-		return nil, "non-local-asset"
-	}
-
-	localPath := filepath.Join(s.config.StorageRoot, strings.TrimPrefix(item.URL, "/assets/"))
-	info, err := os.Stat(localPath)
-	if err != nil || info.IsDir() {
-		return nil, "missing-cached-asset"
-	}
-
-	return &kioskRuntimeAsset{
-		AssetID:         item.AssetID,
-		AssetType:       item.AssetType,
-		Title:           item.Title,
-		LocalPath:       localPath,
-		DurationSeconds: runtimeDurationSeconds(item),
-	}, "cached-local-asset"
-}
-
-var errEmptyPlaylist = errors.New("empty playlist")
-
-func chooseCurrentAsset(playlist []remote.ManifestPlaylistItem, anchor time.Time, now time.Time) (remote.ManifestPlaylistItem, error) {
-	if len(playlist) == 0 {
-		return remote.ManifestPlaylistItem{}, errEmptyPlaylist
-	}
-	if !anchor.Before(now) {
-		return playlist[0], nil
-	}
-
-	totalDuration := 0
-	for _, item := range playlist {
-		totalDuration += runtimeDurationSeconds(item)
-	}
-	if totalDuration <= 0 {
-		return playlist[0], nil
-	}
-
-	elapsed := int(now.Sub(anchor).Seconds())
-	if elapsed < 0 {
-		elapsed = 0
-	}
-	offset := elapsed % totalDuration
-	for _, item := range playlist {
-		duration := runtimeDurationSeconds(item)
-		if offset < duration {
-			return item, nil
-		}
-		offset -= duration
-	}
-
-	return playlist[len(playlist)-1], nil
-}
-
-func runtimeAnchor(manifest *remote.DeviceManifest, now time.Time) time.Time {
-	if manifest != nil && manifest.GeneratedAt != "" {
-		if parsed, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err == nil {
-			return parsed
-		}
-	}
-	return now.Truncate(24 * time.Hour)
-}
-
-func runtimeDurationSeconds(item remote.ManifestPlaylistItem) int {
-	if item.DurationSeconds > 0 {
-		return item.DurationSeconds
-	}
-	if item.AssetType == "image" {
-		return defaultImageDurationSeconds
-	}
-	return defaultVideoDurationSeconds
 }

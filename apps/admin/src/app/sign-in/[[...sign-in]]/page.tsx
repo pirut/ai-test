@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { SignIn } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 
-import { PublicAuthShell } from "@/components/marketing/public-auth-shell";
+import { PublicAuthShell } from "@/components/public-site";
 
 export default async function SignInPage() {
   if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {

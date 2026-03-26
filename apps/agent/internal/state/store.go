@@ -13,22 +13,21 @@ type AssetRecord struct {
 }
 
 type DeviceState struct {
-	DeviceSessionID     string                 `json:"deviceSessionId,omitempty"`
-	ClaimCode           string                 `json:"claimCode,omitempty"`
-	ClaimToken          string                 `json:"claimToken,omitempty"`
-	DeviceID            string                 `json:"deviceId,omitempty"`
-	Credential          string                 `json:"credential,omitempty"`
-	CredentialExpiresAt string                 `json:"credentialExpiresAt,omitempty"`
-	AgentVersion        string                 `json:"agentVersion,omitempty"`
-	PlayerVersion       string                 `json:"playerVersion,omitempty"`
-	ManifestVersion     string                 `json:"manifestVersion,omitempty"`
-	LastSyncAt          string                 `json:"lastSyncAt,omitempty"`
-	LastHeartbeatAt     string                 `json:"lastHeartbeatAt,omitempty"`
-	LastScreenshotAt    string                 `json:"lastScreenshotAt,omitempty"`
-	LastError           string                 `json:"lastError,omitempty"`
-	CurrentAssetID      string                 `json:"currentAssetId,omitempty"`
-	CurrentPlaylistID   string                 `json:"currentPlaylistId,omitempty"`
-	CachedAssets        map[string]AssetRecord `json:"cachedAssets,omitempty"`
+	DeviceSessionID   string                 `json:"deviceSessionId,omitempty"`
+	ClaimCode         string                 `json:"claimCode,omitempty"`
+	ClaimToken        string                 `json:"claimToken,omitempty"`
+	DeviceID          string                 `json:"deviceId,omitempty"`
+	Credential        string                 `json:"credential,omitempty"`
+	AgentVersion      string                 `json:"agentVersion,omitempty"`
+	PlayerVersion     string                 `json:"playerVersion,omitempty"`
+	ManifestVersion   string                 `json:"manifestVersion,omitempty"`
+	LastSyncAt        string                 `json:"lastSyncAt,omitempty"`
+	LastHeartbeatAt   string                 `json:"lastHeartbeatAt,omitempty"`
+	LastScreenshotAt  string                 `json:"lastScreenshotAt,omitempty"`
+	LastError         string                 `json:"lastError,omitempty"`
+	CurrentAssetID    string                 `json:"currentAssetId,omitempty"`
+	CurrentPlaylistID string                 `json:"currentPlaylistId,omitempty"`
+	CachedAssets      map[string]AssetRecord `json:"cachedAssets,omitempty"`
 }
 
 type PlayerStatus struct {
@@ -79,7 +78,9 @@ func (s *Store) Snapshot() DeviceState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	copy := s.state
-	copy.CachedAssets = cloneAssetRecords(s.state.CachedAssets)
+	if copy.CachedAssets == nil {
+		copy.CachedAssets = map[string]AssetRecord{}
+	}
 	return copy
 }
 
@@ -112,21 +113,9 @@ func (s *Store) saveLocked() error {
 	}
 
 	tempPath := s.path + ".tmp"
-	if err := os.WriteFile(tempPath, payload, 0o600); err != nil {
+	if err := os.WriteFile(tempPath, payload, 0o644); err != nil {
 		return err
 	}
 
 	return os.Rename(tempPath, s.path)
-}
-
-func cloneAssetRecords(records map[string]AssetRecord) map[string]AssetRecord {
-	if len(records) == 0 {
-		return map[string]AssetRecord{}
-	}
-
-	copy := make(map[string]AssetRecord, len(records))
-	for key, value := range records {
-		copy[key] = value
-	}
-	return copy
 }

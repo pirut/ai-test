@@ -8,20 +8,17 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "benchmark:heartbeat": "node --import tsx scripts/heartbeat-load.ts",
     "convex:codegen": "npx convex codegen",
     "convex:dev": "npx convex dev",
     "dev": "npm run dev --workspace @showroom/admin",
     "lint": "eslint apps/admin/src apps/player/src convex packages tests --max-warnings=0",
-    "saas:check": "node --import tsx scripts/saas-readiness.ts",
     "pi:prepare-release": "./infra/pi-image/prepare-release-artifacts.sh",
     "pi:publish-release": "./scripts/publish-pi-release.sh",
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:convex",
     "typecheck:convex": "tsc --noEmit -p convex/tsconfig.json",
     "test": "npm run test:unit && npm run test:go",
     "test:go": "cd apps/agent && go test ./...",
-    "test:unit": "node --test --import tsx tests/**/*.test.ts",
-    "youtube-auth-helper": "node ./scripts/youtube-auth-helper.mjs"
+    "test:unit": "node --test --import tsx tests/**/*.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.23.0",

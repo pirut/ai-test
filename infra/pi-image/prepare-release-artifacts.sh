@@ -13,9 +13,7 @@ rm -rf "${SYSTEM_ROOT}"
 tar -C "${ARTIFACTS_DIR}/player" -czf "${ARTIFACTS_DIR}/player-release.tar.gz" .
 
 mkdir -p "${SYSTEM_ROOT}/usr/local/bin"
-mkdir -p "${SYSTEM_ROOT}/etc/showroom-agent"
 install -m 0755 "${ROOT_DIR}/systemd/start-kiosk.sh" "${SYSTEM_ROOT}/usr/local/bin/showroom-start-kiosk"
-install -m 0644 "${ROOT_DIR}/config/config.env" "${SYSTEM_ROOT}/etc/showroom-agent/config.env"
 tar -C "${SYSTEM_ROOT}" -czf "${ARTIFACTS_DIR}/system-release.tar.gz" .
 
 echo "Prepared release artifacts:"

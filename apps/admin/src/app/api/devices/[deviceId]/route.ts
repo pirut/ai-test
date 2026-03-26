@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
-import { syncStripeSubscriptionQuantity } from "@/lib/billing/stripe-subscriptions";
 import { updateScreen } from "@/lib/backend";
 
 const schema = z.object({
@@ -12,7 +11,6 @@ const schema = z.object({
   orientation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
   volume: z.number().min(0).max(100),
   defaultPlaylistId: z.string().nullable().optional(),
-  archived: z.boolean().optional(),
 });
 
 export async function PATCH(
@@ -30,14 +28,10 @@ export async function PATCH(
 
   const { deviceId } = await params;
   const payload = schema.parse(await request.json());
-  const device = await updateScreen({
-    deviceId,
-    ...payload,
-  });
-
-  await syncStripeSubscriptionQuantity(session.orgId).catch(() => null);
-
   return NextResponse.json({
-    device,
+    device: await updateScreen({
+      deviceId,
+      ...payload,
+    }),
   });
 }

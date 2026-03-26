@@ -71,7 +71,6 @@ export default async function ScreenDetailPage({
                 orientation: device.orientation,
                 volume: device.volume,
                 defaultPlaylistId: device.defaultPlaylistId ?? null,
-                archivedAt: device.archivedAt ?? null,
               }}
               playlists={playlists.map((playlist) => ({
                 id: playlist.id,
