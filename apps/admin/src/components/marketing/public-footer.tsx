@@ -7,7 +7,6 @@ const productLinks = [
   { href: "/security", label: "Security" },
   { href: "/getting-started", label: "Getting started" },
   { href: "/contact", label: "Contact" },
-  { href: "/status", label: "System status" },
 ];
 
 const legalLinks = [
@@ -76,9 +75,14 @@ export function PublicFooter() {
             <a href={`mailto:${siteConfig.supportEmail}`} className="hover:text-white">
               {siteConfig.supportEmail}
             </a>
-            <Link href="/status" className="hover:text-white">
+            <a
+              href={siteConfig.statusPageUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-white"
+            >
               Status
-            </Link>
+            </a>
           </div>
         </div>
       </div>
