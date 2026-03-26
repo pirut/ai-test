@@ -14,6 +14,7 @@ export const commandTypeSchema = z.enum([
   "take_screenshot",
   "blank_screen",
   "unblank_screen",
+  "update_youtube_auth",
   "update_release",
 ]);
 

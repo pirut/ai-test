@@ -15,6 +15,7 @@ const commandTypeValidator = v.union(
   v.literal("take_screenshot"),
   v.literal("blank_screen"),
   v.literal("unblank_screen"),
+  v.literal("update_youtube_auth"),
   v.literal("update_release"),
 );
 

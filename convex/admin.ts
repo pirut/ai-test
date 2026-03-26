@@ -1752,6 +1752,7 @@ export const enqueueDeviceCommand = mutation({
       v.literal("take_screenshot"),
       v.literal("blank_screen"),
       v.literal("unblank_screen"),
+      v.literal("update_youtube_auth"),
       v.literal("update_release"),
     ),
     payload: v.optional(v.any()),
