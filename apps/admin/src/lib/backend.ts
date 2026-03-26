@@ -151,45 +151,13 @@ function isUnauthorizedDeviceError(error: unknown) {
   );
 }
 
-function isRecoverableAdminAuthError(error: unknown) {
-  return (
-    error instanceof Error &&
-    /Unable to mint Clerk token for Convex|Missing Clerk|publishable key|secret key|JWT issuer|auth\(\)|auth\(\)\.protect|getToken/i.test(
-      error.message,
-    )
-  );
-}
-
-async function withMockReadFallback<T>(
-  label: string,
-  loadLive: () => Promise<T>,
-  loadMock: () => T,
-) {
-  if (!hasConvexBackend()) {
-    return loadMock();
-  }
-
-  try {
-    return await loadLive();
-  } catch (error) {
-    if (isRecoverableAdminAuthError(error)) {
-      console.warn(`[backend] Falling back to mock data for ${label}.`, error);
-      return loadMock();
-    }
-
-    throw error;
-  }
-}
-
 export async function getDashboardStats(orgId: string) {
-  return withMockReadFallback(
-    "dashboard stats",
-    async () => {
-      const result = await convexQuery(api.dashboard.getOverview, {});
-      return dashboardStatsSchema.parse((result as { stats: unknown }).stats);
-    },
-    () => mock.getDashboardStats(orgId),
-  );
+  if (!hasConvexBackend()) {
+    return mock.getDashboardStats(orgId);
+  }
+
+  const result = await convexQuery(api.dashboard.getOverview, {});
+  return dashboardStatsSchema.parse((result as { stats: unknown }).stats);
 }
 
 export async function getBillingAccount(orgId: string) {
@@ -203,13 +171,12 @@ export async function getBillingAccount(orgId: string) {
 }
 
 export async function getEntitlementSnapshot(orgId: string) {
-  return withMockReadFallback(
-    "billing entitlements",
-    async () =>
-      entitlementSnapshotSchema.parse(
-        await convexQuery(api.billing.getCurrentEntitlements, {}),
-      ),
-    () => resolveEntitlements(createMockBillingAccount(orgId), 0),
+  if (!hasConvexBackend()) {
+    return resolveEntitlements(createMockBillingAccount(orgId), 0);
+  }
+
+  return entitlementSnapshotSchema.parse(
+    await convexQuery(api.billing.getCurrentEntitlements, {}),
   );
 }
 
@@ -286,14 +253,12 @@ export async function applyStripeSubscriptionWebhook(input: {
 }
 
 export async function listDevices(orgId: string) {
-  return withMockReadFallback(
-    "devices",
-    async () => {
-      const result = await convexQuery(api.admin.listScreens, {});
-      return z.array(deviceSummarySchema).parse(result);
-    },
-    () => mock.listDevices(orgId),
-  );
+  if (!hasConvexBackend()) {
+    return mock.listDevices(orgId);
+  }
+
+  const result = await convexQuery(api.admin.listScreens, {});
+  return z.array(deviceSummarySchema).parse(result);
 }
 
 export async function getDevice(
@@ -330,14 +295,12 @@ export async function latestScreenshot(deviceId: string) {
 }
 
 export async function listMediaAssets() {
-  return withMockReadFallback(
-    "media assets",
-    async () => {
-      const result = await convexQuery(api.admin.listMediaAssets, {});
-      return z.array(mediaAssetSchema).parse(result);
-    },
-    () => mock.listMediaAssets(),
-  );
+  if (!hasConvexBackend()) {
+    return mock.listMediaAssets();
+  }
+
+  const result = await convexQuery(api.admin.listMediaAssets, {});
+  return z.array(mediaAssetSchema).parse(result);
 }
 
 export async function listMediaFolders() {
@@ -370,14 +333,12 @@ export async function listReleases() {
 }
 
 export async function listPlaylists() {
-  return withMockReadFallback(
-    "playlists",
-    async () => {
-      const result = await convexQuery(api.admin.listPlaylists, {});
-      return z.array(playlistSchema).parse(result);
-    },
-    () => mock.listPlaylists(),
-  );
+  if (!hasConvexBackend()) {
+    return mock.listPlaylists();
+  }
+
+  const result = await convexQuery(api.admin.listPlaylists, {});
+  return z.array(playlistSchema).parse(result);
 }
 
 export async function listSchedules() {
