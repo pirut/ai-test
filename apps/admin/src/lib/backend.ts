@@ -154,7 +154,7 @@ function isUnauthorizedDeviceError(error: unknown) {
 function isRecoverableAdminAuthError(error: unknown) {
   return (
     error instanceof Error &&
-    /Unable to mint Clerk token for Convex|Missing Clerk|publishable key|secret key|JWT issuer|auth\(\)|auth\(\)\.protect|getToken/i.test(
+    /Unable to mint Clerk token for Convex|Missing Clerk|publishable key|secret key|JWT issuer|auth\(\)|auth\(\)\.protect|getToken|Authentication required|Organization context required|Admin role required/i.test(
       error.message,
     )
   );
@@ -193,12 +193,13 @@ export async function getDashboardStats(orgId: string) {
 }
 
 export async function getBillingAccount(orgId: string) {
-  if (!hasConvexBackend()) {
-    return createMockBillingAccount(orgId);
-  }
-
-  return billingAccountSchema.parse(
-    await convexQuery(api.billing.getCurrentBillingAccount, {}),
+  return withMockReadFallback(
+    "billing account",
+    async () =>
+      billingAccountSchema.parse(
+        await convexQuery(api.billing.getCurrentBillingAccount, {}),
+      ),
+    () => createMockBillingAccount(orgId),
   );
 }
 
@@ -300,33 +301,41 @@ export async function getDevice(
   orgId: string,
   deviceId: string,
 ): Promise<DeviceDetail | null> {
-  if (!hasConvexBackend()) {
-    const device = mock.getDevice(orgId, deviceId);
-    return device ? deviceDetailSchema.parse(device) : null;
-  }
-
-  const result = await convexQuery(api.admin.getScreenDetail, { deviceId });
-  return result ? deviceDetailSchema.parse(result) : null;
+  return withMockReadFallback(
+    "device detail",
+    async () => {
+      const result = await convexQuery(api.admin.getScreenDetail, { deviceId });
+      return result ? deviceDetailSchema.parse(result) : null;
+    },
+    () => {
+      const device = mock.getDevice(orgId, deviceId);
+      return device ? deviceDetailSchema.parse(device) : null;
+    },
+  );
 }
 
 export async function listCommands(deviceId?: string) {
-  if (!hasConvexBackend()) {
-    return mock.listCommands(deviceId);
-  }
-
-  const result = await convexQuery(api.admin.listDeviceCommands, {
-    deviceId: deviceId ?? undefined,
-  });
-  return z.array(adminCommandSchema).parse(result);
+  return withMockReadFallback(
+    "device commands",
+    async () => {
+      const result = await convexQuery(api.admin.listDeviceCommands, {
+        deviceId: deviceId ?? undefined,
+      });
+      return z.array(adminCommandSchema).parse(result);
+    },
+    () => mock.listCommands(deviceId),
+  );
 }
 
 export async function latestScreenshot(deviceId: string) {
-  if (!hasConvexBackend()) {
-    return mock.latestScreenshot(deviceId);
-  }
-
-  const result = await convexQuery(api.admin.getLatestScreenshot, { deviceId });
-  return result ? screenshotSchema.parse(result) : null;
+  return withMockReadFallback(
+    "latest screenshot",
+    async () => {
+      const result = await convexQuery(api.admin.getLatestScreenshot, { deviceId });
+      return result ? screenshotSchema.parse(result) : null;
+    },
+    () => mock.latestScreenshot(deviceId),
+  );
 }
 
 export async function listMediaAssets() {
@@ -341,32 +350,36 @@ export async function listMediaAssets() {
 }
 
 export async function listMediaFolders() {
-  if (!hasConvexBackend()) {
-    return mock.listLibraryFolders("media");
-  }
-
-  return z.array(libraryFolderSchema).parse(
-    await convexQuery(api.admin.listLibraryFolders, { kind: "media" }),
+  return withMockReadFallback(
+    "media folders",
+    async () =>
+      z.array(libraryFolderSchema).parse(
+        await convexQuery(api.admin.listLibraryFolders, { kind: "media" }),
+      ),
+    () => mock.listLibraryFolders("media"),
   );
 }
 
 export async function listPlaylistFolders() {
-  if (!hasConvexBackend()) {
-    return mock.listLibraryFolders("playlist");
-  }
-
-  return z.array(libraryFolderSchema).parse(
-    await convexQuery(api.admin.listLibraryFolders, { kind: "playlist" }),
+  return withMockReadFallback(
+    "playlist folders",
+    async () =>
+      z.array(libraryFolderSchema).parse(
+        await convexQuery(api.admin.listLibraryFolders, { kind: "playlist" }),
+      ),
+    () => mock.listLibraryFolders("playlist"),
   );
 }
 
 export async function listReleases() {
-  if (!hasConvexBackend()) {
-    return mock.listReleases();
-  }
-
-  const result = await convexQuery(api.admin.listReleases, {});
-  return z.array(releaseSummarySchema).parse(result);
+  return withMockReadFallback(
+    "releases",
+    async () => {
+      const result = await convexQuery(api.admin.listReleases, {});
+      return z.array(releaseSummarySchema).parse(result);
+    },
+    () => mock.listReleases(),
+  );
 }
 
 export async function listPlaylists() {
@@ -381,8 +394,13 @@ export async function listPlaylists() {
 }
 
 export async function listSchedules() {
-  if (!hasConvexBackend()) {
-    return [
+  return withMockReadFallback(
+    "schedules",
+    async () =>
+      z.array(scheduleSummarySchema).parse(
+        await convexQuery(api.admin.listSchedules, {}),
+      ),
+    () => [
       {
         id: "schedule-opening",
         label: "Morning opening",
@@ -394,11 +412,7 @@ export async function listSchedules() {
         targetDeviceId: null,
         targetLabel: "All screens",
       },
-    ];
-  }
-
-  return z.array(scheduleSummarySchema).parse(
-    await convexQuery(api.admin.listSchedules, {}),
+    ],
   );
 }
 
