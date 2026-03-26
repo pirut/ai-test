@@ -1,14 +1,29 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { refreshDeviceAuth } from "@/lib/backend";
 
-function getDeviceCredentialFromRequest(request: Request) {
+const bodySchema = z.object({
+  credential: z.string().min(1).optional(),
+});
+
+async function getDeviceCredentialFromRequest(request: Request) {
   const header = request.headers.get("authorization");
-  return header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
+  if (header?.startsWith("Bearer ")) {
+    return header.slice("Bearer ".length);
+  }
+
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return null;
+  }
+
+  const payload = bodySchema.safeParse(await request.json().catch(() => null));
+  return payload.success ? payload.data.credential ?? null : null;
 }
 
 export async function POST(request: Request) {
-  const credential = getDeviceCredentialFromRequest(request);
+  const credential = await getDeviceCredentialFromRequest(request);
   const refreshed = await refreshDeviceAuth(credential);
 
   if (!refreshed) {
