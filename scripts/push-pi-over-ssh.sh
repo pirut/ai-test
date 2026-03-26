@@ -6,14 +6,10 @@ ARTIFACTS_DIR="${ROOT_DIR}/infra/pi-image/artifacts"
 SSH_USER="${SHOWROOM_SSH_USER:-pi}"
 SSH_PASS="${SHOWROOM_SSH_PASS:-}"
 SSH_PORT="${SHOWROOM_SSH_PORT:-22}"
-
-if [[ -z "${SSH_PASS}" ]]; then
-  echo "SHOWROOM_SSH_PASS is required." >&2
-  exit 1
-fi
+SSH_KEY="${SHOWROOM_SSH_KEY:-${HOME}/.ssh/id_ed25519}"
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: SHOWROOM_SSH_PASS=... $0 <host> [host ...]" >&2
+  echo "Usage: $0 <host> [host ...]" >&2
   exit 1
 fi
 
@@ -43,11 +39,39 @@ exit \$exit_status
 EOF
 }
 
+run_ssh() {
+  local mode="$1"
+  shift
+
+  local base_args=(
+    -P "${SSH_PORT}"
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+  )
+
+  if [[ -n "${SSH_PASS}" ]]; then
+    run_expect "${mode}" "$*"
+    return
+  fi
+
+  if [[ ! -f "${SSH_KEY}" ]]; then
+    echo "SSH key not found: ${SSH_KEY}" >&2
+    echo "Set SHOWROOM_SSH_KEY or SHOWROOM_SSH_PASS." >&2
+    exit 1
+  fi
+
+  if [[ "${mode}" == "scp" ]]; then
+    scp "${base_args[@]}" -i "${SSH_KEY}" "$@"
+  else
+    ssh "${base_args[@]/-P/-p}" -i "${SSH_KEY}" "$@"
+  fi
+}
+
 for host in "$@"; do
   echo "==> ${host}: uploading artifacts"
-  run_expect \
+  run_ssh \
     scp \
-    "\"${ARTIFACTS_DIR}/showroom-agent\" \"${ARTIFACTS_DIR}/player-release.tar.gz\" \"${ARTIFACTS_DIR}/system-release.tar.gz\" ${SSH_USER}@${host}:/tmp/"
+    "${ARTIFACTS_DIR}/showroom-agent" "${ARTIFACTS_DIR}/player-release.tar.gz" "${ARTIFACTS_DIR}/system-release.tar.gz" "${SSH_USER}@${host}:/tmp/"
 
   echo "==> ${host}: installing"
   local_install_script="$(mktemp)"
@@ -77,13 +101,13 @@ systemctl is-active showroom-agent.service showroom-kiosk.service
 cat /var/lib/showroom/state/device-state.json | sed -n '1,14p'
 EOS
 
-  run_expect \
+  run_ssh \
     scp \
-    "\"${local_install_script}\" ${SSH_USER}@${host}:/tmp/showroom-install.sh"
+    "${local_install_script}" "${SSH_USER}@${host}:/tmp/showroom-install.sh"
 
-  run_expect \
+  run_ssh \
     ssh \
-    "${SSH_USER}@${host} \"sudo -S bash /tmp/showroom-install.sh && rm -f /tmp/showroom-install.sh\""
+    "${SSH_USER}@${host}" "sudo -S bash /tmp/showroom-install.sh && rm -f /tmp/showroom-install.sh"
 
   rm -f "${local_install_script}"
 done
