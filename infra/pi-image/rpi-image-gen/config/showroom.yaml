@@ -18,6 +18,7 @@ image:
   rootfs_type: erofs
 
 layer:
+  base: trixie-showroom-base
   app: showroom-appliance
 
 ieee80211:
