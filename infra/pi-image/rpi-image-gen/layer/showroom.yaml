@@ -4,7 +4,7 @@
 # X-Env-Layer-Category: application
 # X-Env-Layer-Desc: Immutable Digital Curator signage appliance with local playback,
 #  persistent identity and cache, hardware watchdogs, and Connect OTA recovery.
-# X-Env-Layer-Requires: device-user-admin,network-manager,systemd-timesyncd,rpi-connect-lite,rpi-connect-ota
+# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota
 # METAEND
 ---
 mmdebstrap:
