@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 
 import {
   createReleaseArtifactUpload,
@@ -15,14 +16,36 @@ const formSchema = z.object({
 });
 
 async function sha256ForFile(file: File) {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((entry) => entry.toString(16).padStart(2, "0"))
-    .join("");
+  const hash = createHash("sha256");
+  const reader = file.stream().getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    hash.update(value);
+  }
+  return hash.digest("hex");
+}
+
+function signChecksum(sha256: string) {
+  const privateKey = process.env.SHOWROOM_RELEASE_SIGNING_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const keyId = process.env.SHOWROOM_RELEASE_SIGNING_KEY_ID?.trim();
+  if (!privateKey || !keyId) {
+    throw new Error(
+      "Release signing is not configured. Set SHOWROOM_RELEASE_SIGNING_PRIVATE_KEY and SHOWROOM_RELEASE_SIGNING_KEY_ID.",
+    );
+  }
+
+  const signature = sign(
+    null,
+    Buffer.from(sha256.replace(/^sha256:/, ""), "hex"),
+    createPrivateKey(privateKey),
+  );
+  return { signature: signature.toString("base64"), keyId };
 }
 
 async function uploadArtifact(file: File) {
+  const sha256 = await sha256ForFile(file);
+  const signed = signChecksum(sha256);
   const upload = await createReleaseArtifactUpload({
     fileName: file.name,
     mimeType: file.type || "application/octet-stream",
@@ -48,13 +71,15 @@ async function uploadArtifact(file: File) {
 
   return {
     fileName: file.name,
-    sha256: await sha256ForFile(file),
+    sha256,
+    signature: signed.signature,
+    signingKeyId: signed.keyId,
     storageId: payload.storageId,
   };
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -75,6 +100,13 @@ export async function POST(request: Request) {
     );
   }
 
+  if (system instanceof File) {
+    return NextResponse.json(
+      { error: "Operating-system images are deployed through the A/B Raspberry Pi Connect OTA lane, not the app release lane." },
+      { status: 400 },
+    );
+  }
+
   const payload = formSchema.parse({
     name: formData.get("name"),
     version: formData.get("version"),
@@ -85,10 +117,9 @@ export async function POST(request: Request) {
         : String(formData.get("deployToAll")).toLowerCase() !== "false",
   });
 
-  const [playerArtifact, agentArtifact, systemArtifact] = await Promise.all([
+  const [playerArtifact, agentArtifact] = await Promise.all([
     player instanceof File ? uploadArtifact(player) : Promise.resolve(undefined),
     agent instanceof File ? uploadArtifact(agent) : Promise.resolve(undefined),
-    system instanceof File ? uploadArtifact(system) : Promise.resolve(undefined),
   ]);
 
   const result = await publishReleaseArtifacts({
@@ -98,7 +129,6 @@ export async function POST(request: Request) {
     deployToAll: payload.deployToAll,
     player: playerArtifact,
     agent: agentArtifact,
-    system: systemArtifact,
   });
 
   return NextResponse.json(result, { status: 201 });

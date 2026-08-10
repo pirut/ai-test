@@ -1,12 +1,27 @@
 [Unit]
 Description=Showroom device agent
+After=local-fs.target NetworkManager.service
+Wants=NetworkManager.service
+StartLimitIntervalSec=10min
+StartLimitBurst=8
 
 [Service]
+Type=notify
 EnvironmentFile=/etc/showroom-agent/config.env
-ExecStart=/usr/local/bin/showroom-agent
-Restart=always
+ExecStart=/usr/local/bin/showroom-agent-launch
+Restart=on-failure
 RestartSec=3
 User=root
+WatchdogSec=45s
+NotifyAccess=main
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=full
+ReadWritePaths=/var/lib/showroom /etc/NetworkManager/system-connections /tmp /run
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

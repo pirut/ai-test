@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
-  ChevronRight,
   CalendarRange,
   ImageIcon,
   LayoutDashboard,
@@ -11,12 +10,10 @@ import {
   MonitorSmartphone,
   Package2,
   PlaySquare,
-  Search,
   Users,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import { Input } from "@/components/ui/input";
 import {
   Sidebar,
   SidebarContent,
@@ -29,7 +26,6 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -50,19 +46,23 @@ const clerkAppearance = {
     colorInputBackground: "#1d2024",
     colorInputText: "#f9f9fd",
     colorNeutral: "#f9f9fd",
-    fontFamily: "var(--font-sans)",
+    fontFamily: "var(--font-app-sans)",
     borderRadius: "8px",
     fontSize: "14px",
   },
 } as const;
 
-export function TopShell({ children }: { children: React.ReactNode }) {
+export function TopShell({ children, authEnabled }: { children: React.ReactNode; authEnabled: boolean }) {
   const pathname = usePathname();
+  const currentSection = navItems.find(
+    (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+  ) ?? navItems[0];
+  const CurrentIcon = currentSection.icon;
 
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader className="space-y-4">
+        <SidebarHeader className="pb-5">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-xl bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground">
               DC
@@ -75,17 +75,9 @@ export function TopShell({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
 
-          <div className="rounded-xl border border-sidebar-border bg-background/30 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-sidebar-foreground/45">
-              Workspace
-            </div>
-            <div className="mt-2 text-sm text-sidebar-foreground/80">
-              Manage screens, playlists, and campaign media from one control surface.
-            </div>
-          </div>
         </SidebarHeader>
 
-        <SidebarContent className="gap-6">
+        <SidebarContent>
           <div>
             <div className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.24em] text-sidebar-foreground/40">
               Navigation
@@ -110,87 +102,54 @@ export function TopShell({ children }: { children: React.ReactNode }) {
             </SidebarMenu>
           </div>
 
-          <div className="rounded-xl border border-sidebar-border bg-background/20 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-sidebar-foreground/40">
-              Library
-            </div>
-            <Link
-              className="mt-3 flex items-center justify-between rounded-lg px-2 py-2 text-sm text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              href="/media"
-            >
-              <span>Open media workspace</span>
-              <ChevronRight className="size-4" />
-            </Link>
-          </div>
         </SidebarContent>
 
-        <SidebarFooter>
-          <div className="rounded-xl border border-sidebar-border bg-background/20 p-3 text-xs text-sidebar-foreground/58">
-            Sidebar navigation now stays persistent on desktop and moves into a sheet on smaller screens.
-          </div>
+        <SidebarFooter className="border-t border-sidebar-border pt-3">
+          <p className="px-2 text-xs leading-5 text-sidebar-foreground/50">
+            Content control for every connected showroom screen.
+          </p>
         </SidebarFooter>
       </Sidebar>
 
       <SidebarInset>
         <header className="sticky top-0 z-30 border-b border-sidebar-border bg-background/95 backdrop-blur">
-          <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+          <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
             <SidebarTrigger className="md:hidden">
               <Menu className="size-4" />
               <span className="sr-only">Open navigation</span>
             </SidebarTrigger>
 
-            <div className="hidden max-w-xl flex-1 items-center gap-2 rounded-xl border border-input bg-card px-3 md:flex">
-              <Search className="size-4 text-muted-foreground" />
-              <Input
-                aria-label="Search"
-                className="border-0 bg-transparent px-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
-                placeholder="Search media, playlists, devices, or schedules"
-                type="search"
-              />
+            <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+              <CurrentIcon className="size-4 text-primary" />
+              <span className="truncate">{currentSection.label}</span>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <div className="hidden lg:block">
-                <OrganizationSwitcher
-                  afterCreateOrganizationUrl="/dashboard"
-                  afterLeaveOrganizationUrl="/"
-                  afterSelectOrganizationUrl="/dashboard"
-                  appearance={clerkAppearance}
-                  hidePersonal
-                />
-              </div>
-              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+              {authEnabled ? (
+                <>
+                  <div className="hidden lg:block">
+                    <OrganizationSwitcher
+                      afterCreateOrganizationUrl="/dashboard"
+                      afterLeaveOrganizationUrl="/"
+                      afterSelectOrganizationUrl="/dashboard"
+                      appearance={clerkAppearance}
+                      hidePersonal
+                    />
+                  </div>
+                  <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+                </>
+              ) : (
+                <span className="rounded-full border border-warning/20 bg-warning/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-warning">
+                  Local demo
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="border-t border-sidebar-border/80">
-            <nav className="flex gap-2 overflow-x-auto px-4 py-3 sm:px-6">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    key={`top-nav-${item.href}`}
-                    href={item.href}
-                    className={cn(
-                      "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
-                      isActive
-                        ? "border-foreground/18 bg-accent text-foreground"
-                        : "border-transparent text-muted-foreground hover:border-border hover:bg-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
         </header>
 
         <main className="flex-1">
-          <div className="flex min-h-[calc(100vh-3.5rem)] w-full flex-col gap-6 px-4 py-6 sm:px-6">
+          <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             {children}
           </div>
         </main>

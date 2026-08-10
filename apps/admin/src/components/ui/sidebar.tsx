@@ -87,7 +87,7 @@ function Sidebar({
   return (
     <aside
       className={cn(
-        "hidden h-screen w-72 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col",
+        "flex h-screen w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
         className,
       )}
       data-slot="sidebar"

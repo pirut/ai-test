@@ -1,0 +1,16 @@
+[Unit]
+Description=Showroom network connectivity recovery
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/showroom-network-recovery
+Restart=always
+RestartSec=15s
+NoNewPrivileges=yes
+ProtectSystem=full
+ReadWritePaths=/etc/NetworkManager/system-connections /run /tmp
+
+[Install]
+WantedBy=multi-user.target

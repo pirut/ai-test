@@ -1,5 +1,5 @@
 import { TopShell } from "@/components/top-shell";
-import { requireOrgContext } from "@/lib/auth";
+import { isLocalMockMode, requireOrgContext } from "@/lib/auth";
 
 export default async function ProtectedLayout({
   children,
@@ -7,6 +7,5 @@ export default async function ProtectedLayout({
   children: React.ReactNode;
 }) {
   await requireOrgContext();
-  return <TopShell>{children}</TopShell>;
+  return <TopShell authEnabled={!isLocalMockMode()}>{children}</TopShell>;
 }
-

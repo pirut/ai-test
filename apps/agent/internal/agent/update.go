@@ -5,7 +5,9 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -23,16 +25,20 @@ import (
 )
 
 type releaseUpdatePayload struct {
-	Version       string `json:"version,omitempty"`
-	AgentVersion  string `json:"agentVersion,omitempty"`
-	AgentURL      string `json:"agentUrl,omitempty"`
-	AgentSHA256   string `json:"agentSha256,omitempty"`
-	PlayerVersion string `json:"playerVersion,omitempty"`
-	PlayerURL     string `json:"playerUrl,omitempty"`
-	PlayerSHA256  string `json:"playerSha256,omitempty"`
-	SystemVersion string `json:"systemVersion,omitempty"`
-	SystemURL     string `json:"systemUrl,omitempty"`
-	SystemSHA256  string `json:"systemSha256,omitempty"`
+	Version         string `json:"version,omitempty"`
+	AgentVersion    string `json:"agentVersion,omitempty"`
+	AgentURL        string `json:"agentUrl,omitempty"`
+	AgentSHA256     string `json:"agentSha256,omitempty"`
+	PlayerVersion   string `json:"playerVersion,omitempty"`
+	PlayerURL       string `json:"playerUrl,omitempty"`
+	PlayerSHA256    string `json:"playerSha256,omitempty"`
+	SystemVersion   string `json:"systemVersion,omitempty"`
+	SystemURL       string `json:"systemUrl,omitempty"`
+	SystemSHA256    string `json:"systemSha256,omitempty"`
+	AgentSignature  string `json:"agentSignature,omitempty"`
+	PlayerSignature string `json:"playerSignature,omitempty"`
+	SystemSignature string `json:"systemSignature,omitempty"`
+	SigningKeyID    string `json:"signingKeyId,omitempty"`
 }
 
 func (s *Service) applyReleaseUpdate(
@@ -47,6 +53,24 @@ func (s *Service) applyReleaseUpdate(
 	if payload.AgentURL == "" && payload.PlayerURL == "" && payload.SystemURL == "" {
 		return fmt.Errorf("update_release requires agentUrl, playerUrl, and/or systemUrl")
 	}
+	if payload.AgentURL != "" && normalizeSHA256(payload.AgentSHA256) == "" {
+		return fmt.Errorf("agentSha256 is required when agentUrl is provided")
+	}
+	if payload.PlayerURL != "" && normalizeSHA256(payload.PlayerSHA256) == "" {
+		return fmt.Errorf("playerSha256 is required when playerUrl is provided")
+	}
+	if payload.SystemURL != "" && normalizeSHA256(payload.SystemSHA256) == "" {
+		return fmt.Errorf("systemSha256 is required when systemUrl is provided")
+	}
+	if payload.SystemURL != "" {
+		return fmt.Errorf("system bundles are not installed live; publish an A/B OS update instead")
+	}
+	if err := verifyReleaseSignature(payload.AgentSHA256, payload.AgentSignature, s.config.ReleasePublicKey); payload.AgentURL != "" && err != nil {
+		return fmt.Errorf("verify agent release signature: %w", err)
+	}
+	if err := verifyReleaseSignature(payload.PlayerSHA256, payload.PlayerSignature, s.config.ReleasePublicKey); payload.PlayerURL != "" && err != nil {
+		return fmt.Errorf("verify player release signature: %w", err)
+	}
 
 	workDir := filepath.Join(s.config.StateRoot, "updates", commandID)
 	if err := os.RemoveAll(workDir); err != nil {
@@ -57,7 +81,21 @@ func (s *Service) applyReleaseUpdate(
 	}
 	defer os.RemoveAll(workDir)
 
-	restartCommands := make([]string, 0, 2)
+	restartCommands := make([]string, 0, 3)
+	pending := pendingUpdate{Version: strings.TrimSpace(payload.Version), CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	committed := false
+	previousState := s.store.Snapshot()
+	defer func() {
+		if committed {
+			return
+		}
+		rollbackPendingSlots(pending)
+		_ = s.store.Update(func(next *state.DeviceState) {
+			next.AgentVersion = previousState.AgentVersion
+			next.PlayerVersion = previousState.PlayerVersion
+		})
+	}()
+	releaseRoot := filepath.Clean(filepath.Join(s.config.StateRoot, "..", "releases"))
 	nextAgentVersion := strings.TrimSpace(payload.AgentVersion)
 	if nextAgentVersion == "" && payload.AgentURL != "" {
 		nextAgentVersion = strings.TrimSpace(payload.Version)
@@ -79,9 +117,11 @@ func (s *Service) applyReleaseUpdate(
 		if err := verifySHA256(archivePath, payload.PlayerSHA256); err != nil {
 			return fmt.Errorf("verify player bundle: %w", err)
 		}
-		if err := installPlayerBundle(archivePath, s.config.PlayerDistPath, filepath.Join(workDir, "player")); err != nil {
+		previous, currentLink, err := installVersionedPlayerBundle(archivePath, filepath.Join(releaseRoot, "player"), nextPlayerVersion, filepath.Join(workDir, "player"))
+		if err != nil {
 			return fmt.Errorf("install player bundle: %w", err)
 		}
+		pending.Player = &pendingSlot{Previous: previous, CurrentLink: currentLink}
 		if strings.TrimSpace(s.config.RestartPlayerCommand) != "" {
 			restartCommands = append(restartCommands, s.config.RestartPlayerCommand)
 		}
@@ -95,27 +135,13 @@ func (s *Service) applyReleaseUpdate(
 		if err := verifySHA256(downloadPath, payload.AgentSHA256); err != nil {
 			return fmt.Errorf("verify agent binary: %w", err)
 		}
-		if err := installAgentBinary(downloadPath); err != nil {
+		previous, currentLink, err := installVersionedAgent(downloadPath, filepath.Join(releaseRoot, "agent"), nextAgentVersion)
+		if err != nil {
 			return fmt.Errorf("install agent binary: %w", err)
 		}
+		pending.Agent = &pendingSlot{Previous: previous, CurrentLink: currentLink}
 		if strings.TrimSpace(s.config.RestartAgentCommand) != "" {
 			restartCommands = append(restartCommands, s.config.RestartAgentCommand)
-		}
-	}
-
-	if payload.SystemURL != "" {
-		archivePath := filepath.Join(workDir, archiveFileName(payload.SystemURL, "system-release.tar.gz"))
-		if err := s.client.DownloadFile(ctx, payload.SystemURL, archivePath); err != nil {
-			return fmt.Errorf("download system bundle: %w", err)
-		}
-		if err := verifySHA256(archivePath, payload.SystemSHA256); err != nil {
-			return fmt.Errorf("verify system bundle: %w", err)
-		}
-		if err := installSystemBundle(archivePath, filepath.Join(workDir, "system")); err != nil {
-			return fmt.Errorf("install system bundle: %w", err)
-		}
-		if strings.TrimSpace(s.config.RestartPlayerCommand) != "" {
-			restartCommands = append(restartCommands, s.config.RestartPlayerCommand)
 		}
 	}
 
@@ -138,8 +164,64 @@ func (s *Service) applyReleaseUpdate(
 	if len(restartCommands) == 0 {
 		return nil
 	}
+	if err := writeJSONFile(filepath.Join(s.config.StateRoot, "pending-update.json"), pending); err != nil {
+		return fmt.Errorf("record pending update: %w", err)
+	}
+	restartCommands = append(restartCommands, "systemctl restart showroom-update-guard.service")
+	if err := scheduleShell(strings.Join(restartCommands, " && "), 5*time.Second); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
 
-	return scheduleShell(strings.Join(restartCommands, " && "), 5*time.Second)
+type pendingSlot struct {
+	Previous    string `json:"previous"`
+	CurrentLink string `json:"currentLink"`
+}
+
+type pendingUpdate struct {
+	Version   string       `json:"version"`
+	CreatedAt string       `json:"createdAt"`
+	Agent     *pendingSlot `json:"agent,omitempty"`
+	Player    *pendingSlot `json:"player,omitempty"`
+}
+
+func rollbackPendingSlots(pending pendingUpdate) {
+	for _, slot := range []*pendingSlot{pending.Agent, pending.Player} {
+		if slot == nil || slot.Previous == "" || slot.CurrentLink == "" {
+			continue
+		}
+		temp := slot.CurrentLink + ".rollback"
+		_ = os.Remove(temp)
+		if err := os.Symlink(slot.Previous, temp); err == nil {
+			_ = os.Rename(temp, slot.CurrentLink)
+		}
+	}
+}
+
+func verifyReleaseSignature(checksum string, signature string, publicKeyValue string) error {
+	checksum = normalizeSHA256(checksum)
+	publicKeyValue = strings.TrimSpace(publicKeyValue)
+	if publicKeyValue == "" {
+		return fmt.Errorf("SHOWROOM_RELEASE_PUBLIC_KEY is not configured")
+	}
+	publicKey, err := base64.StdEncoding.DecodeString(publicKeyValue)
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("release public key must be a base64 Ed25519 public key")
+	}
+	signatureBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(signature))
+	if err != nil || len(signatureBytes) != ed25519.SignatureSize {
+		return fmt.Errorf("artifact signature is missing or invalid")
+	}
+	digest, err := hex.DecodeString(checksum)
+	if err != nil || len(digest) != sha256.Size {
+		return fmt.Errorf("artifact checksum is invalid")
+	}
+	if !ed25519.Verify(ed25519.PublicKey(publicKey), digest, signatureBytes) {
+		return fmt.Errorf("artifact signature does not match")
+	}
+	return nil
 }
 
 func parseReleaseUpdatePayload(raw map[string]interface{}) (*releaseUpdatePayload, error) {
@@ -202,23 +284,71 @@ func archiveFileName(sourceURL string, fallback string) string {
 	return fallback
 }
 
-func installAgentBinary(downloadPath string) error {
-	executablePath, err := os.Executable()
+func releaseVersion(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("release version is required")
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '.' || character == '-' || character == '_' {
+			continue
+		}
+		return "", fmt.Errorf("release version contains an unsafe character")
+	}
+	return value, nil
+}
+
+func switchCurrentSlot(root string, version string) (string, string, error) {
+	currentLink := filepath.Join(root, "current")
+	previous, err := os.Readlink(currentLink)
+	if err != nil && !os.IsNotExist(err) {
+		return "", "", err
+	}
+	if previous == "" {
+		return "", "", fmt.Errorf("current release link is missing at %s", currentLink)
+	}
+	tempLink := currentLink + ".next"
+	_ = os.Remove(tempLink)
+	if err := os.Symlink(version, tempLink); err != nil {
+		return "", "", err
+	}
+	if err := os.Rename(tempLink, currentLink); err != nil {
+		_ = os.Remove(tempLink)
+		return "", "", err
+	}
+	return previous, currentLink, nil
+}
+
+func installVersionedAgent(downloadPath string, root string, rawVersion string) (string, string, error) {
+	version, err := releaseVersion(rawVersion)
 	if err != nil {
-		return err
+		return "", "", err
 	}
-
-	resolvedPath, err := filepath.EvalSymlinks(executablePath)
-	if err == nil {
-		executablePath = resolvedPath
+	targetDir := filepath.Join(root, version)
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return "", "", err
 	}
-
-	tempPath := executablePath + ".next"
-	if err := copyFile(downloadPath, tempPath, 0o755); err != nil {
-		return err
+	target := filepath.Join(targetDir, "showroom-agent")
+	if err := copyFile(downloadPath, target+".next", 0o755); err != nil {
+		return "", "", err
 	}
+	if err := os.Rename(target+".next", target); err != nil {
+		return "", "", err
+	}
+	return switchCurrentSlot(root, version)
+}
 
-	return os.Rename(tempPath, executablePath)
+func installVersionedPlayerBundle(archivePath string, root string, rawVersion string, workDir string) (string, string, error) {
+	version, err := releaseVersion(rawVersion)
+	if err != nil {
+		return "", "", err
+	}
+	target := filepath.Join(root, version)
+	if err := installPlayerBundle(archivePath, target, workDir); err != nil {
+		return "", "", err
+	}
+	return switchCurrentSlot(root, version)
 }
 
 func installPlayerBundle(archivePath string, targetPath string, workDir string) error {
@@ -273,55 +403,6 @@ func installPlayerBundle(archivePath string, targetPath string, workDir string) 
 	}
 
 	return os.RemoveAll(backupPath)
-}
-
-func installSystemBundle(archivePath string, workDir string) error {
-	extractRoot := filepath.Join(workDir, "extract")
-	if err := os.RemoveAll(extractRoot); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(extractRoot, 0o755); err != nil {
-		return err
-	}
-
-	if err := extractArchive(archivePath, extractRoot); err != nil {
-		return err
-	}
-
-	sourceRoot, err := resolveExtractedRoot(extractRoot)
-	if err != nil {
-		return err
-	}
-
-	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relativePath, err := filepath.Rel(sourceRoot, path)
-		if err != nil {
-			return err
-		}
-		if relativePath == "." {
-			return nil
-		}
-
-		targetPath := filepath.Join(string(filepath.Separator), relativePath)
-		if targetPath == "/" {
-			return fmt.Errorf("invalid system bundle path")
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-
-		if entry.IsDir() {
-			return os.MkdirAll(targetPath, info.Mode())
-		}
-
-		return copyFile(path, targetPath, info.Mode())
-	})
 }
 
 func resolveExtractedRoot(root string) (string, error) {

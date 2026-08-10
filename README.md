@@ -18,7 +18,7 @@ Private Raspberry Pi digital signage stack for small showroom fleets.
 1. Install dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
 2. Copy the admin environment template:
@@ -41,9 +41,12 @@ npm run dev --workspace @showroom/player
 
 ## Notes
 
-- The admin app supports a mock mode when database/storage credentials are absent.
+- The admin app supports an explicit local mock mode with `SHOWROOM_MOCK_MODE=true`. It is disabled in production even if the variable is accidentally set.
 - The production backend is Convex. Set `NEXT_PUBLIC_CONVEX_URL` and run `npx convex dev` to activate it.
 - Clerk Organizations are required for team access.
 - Clerk webhook sync is available at `/api/webhooks/clerk` to mirror org and user records into Convex.
 - YouTube video sources can be added from the media library; Pi devices resolve and cache them locally with `yt-dlp` and `ffmpeg`.
-- The Go agent source is included, but this machine does not currently have `go` installed, so the agent is not compiled as part of local verification.
+- Release artifacts must include a valid SHA-256 checksum and Ed25519 signature. The agent refuses unsigned or mismatched updates.
+- The control plane is legacy-safe: a device activates leased commands, fleet telemetry retention, network rotation, and rollout eligibility only after its first `showroom-appliance-v2` heartbeat.
+- See [`docs/reliability.md`](docs/reliability.md) for player recovery, offline behavior, and release validation.
+- See [`docs/fleet-operations.md`](docs/fleet-operations.md) and [`infra/pi-image/README.md`](infra/pi-image/README.md) for A/B OS images, staged rollouts, telemetry retention, network rotation, and fleet recovery.

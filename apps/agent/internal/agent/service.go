@@ -15,14 +15,31 @@ import (
 	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/health"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/local"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/systemdnotify"
 )
 
 const screenshotPath = "/tmp/showroom-screenshot.jpg"
 const credentialRefreshWindow = time.Hour
-const youtubeDownloadTimeout = 45 * time.Second
+
+func applianceDescriptor() map[string]interface{} {
+	return map[string]interface{}{
+		"generation":      "showroom-appliance-v2",
+		"protocolVersion": 2,
+		"capabilities": []string{
+			"appliance_telemetry",
+			"app_slot_rollback",
+			"leased_commands",
+			"network_rotation",
+			"signed_releases",
+			"staged_rollouts",
+			"transactional_content",
+		},
+	}
+}
 
 type Service struct {
 	config config.Config
@@ -43,6 +60,15 @@ func New(cfg config.Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = store.Update(func(next *state.DeviceState) {
+		releaseRoot := filepath.Clean(filepath.Join(cfg.StateRoot, "..", "releases"))
+		if target, linkErr := os.Readlink(filepath.Join(releaseRoot, "agent", "current")); linkErr == nil {
+			next.AgentVersion = filepath.Base(target)
+		}
+		if target, linkErr := os.Readlink(filepath.Join(releaseRoot, "player", "current")); linkErr == nil {
+			next.PlayerVersion = filepath.Base(target)
+		}
+	})
 
 	return &Service{
 		config: cfg,
@@ -53,6 +79,7 @@ func New(cfg config.Config) (*Service, error) {
 }
 
 func (s *Service) Run(ctx context.Context) error {
+	_ = s.store.Update(func(next *state.DeviceState) { next.Health.AgentRestarts++ })
 	server := local.NewServer(s.config, s.store)
 	httpServer := &http.Server{
 		Addr:    s.config.ListenAddr,
@@ -69,11 +96,58 @@ func (s *Service) Run(ctx context.Context) error {
 	go s.runPollLoop(ctx)
 	go s.runHeartbeatLoop(ctx)
 	go s.runScreenshotLoop(ctx)
+	go s.runHealthLoop(ctx)
+	_ = systemdnotify.Ready()
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+func (s *Service) runHealthLoop(ctx context.Context) {
+	interval := s.config.PlayerHealthInterval
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var lastRecovery time.Time
+
+	collect := func() {
+		current := s.store.Snapshot()
+		snapshot := health.Collect(ctx, health.Input{
+			HardwareProfile:       s.config.HardwareProfile,
+			LastPlayerHeartbeatAt: current.LastPlayerHeartbeatAt,
+			PlayerStaleAfter:      s.config.PlayerStaleAfter,
+			AgentRestarts:         current.Health.AgentRestarts,
+			PlayerRestarts:        current.Health.PlayerRestarts,
+			RollbackCount:         current.Health.RollbackCount,
+		})
+		if current.Credential == "" && current.LastPlayerHeartbeatAt == "" {
+			snapshot.PlayerHealthy = true
+		}
+		if !snapshot.PlayerHealthy && current.Credential != "" && time.Since(lastRecovery) > 2*time.Minute {
+			if err := s.runShell(ctx, s.config.RestartPlayerCommand); err != nil {
+				log.Printf("player health recovery failed: %v", err)
+			} else {
+				snapshot.PlayerRestarts++
+				lastRecovery = time.Now()
+			}
+		}
+		_ = s.store.Update(func(next *state.DeviceState) { next.Health = snapshot })
+		_ = systemdnotify.Watchdog()
+	}
+
+	collect()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			collect()
+		}
+	}
 }
 
 func (s *Service) runPollLoop(ctx context.Context) {
@@ -97,6 +171,15 @@ func (s *Service) runPollLoop(ctx context.Context) {
 }
 
 func (s *Service) runHeartbeatLoop(ctx context.Context) {
+	send := func() {
+		snapshot := s.store.Snapshot()
+		if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
+			s.recordError(err)
+			log.Printf("heartbeat failed: %v", err)
+		}
+	}
+	send()
+
 	ticker := time.NewTicker(s.config.HeartbeatInterval)
 	defer ticker.Stop()
 
@@ -105,11 +188,7 @@ func (s *Service) runHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			snapshot := s.store.Snapshot()
-			if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
-				s.recordError(err)
-				log.Printf("heartbeat failed: %v", err)
-			}
+			send()
 		}
 	}
 }
@@ -197,7 +276,10 @@ func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState
 		return err
 	}
 
-	return s.syncManifest(ctx, status.Credential)
+	if err := s.syncManifest(ctx, status.Credential); err != nil {
+		return err
+	}
+	return s.maybeSendHeartbeat(ctx, s.store.Snapshot())
 }
 
 func (s *Service) ensureCredentialFresh(ctx context.Context, current state.DeviceState) error {
@@ -229,30 +311,58 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		return err
 	}
 
+	previousState := s.store.Snapshot()
+	previousAssets := previousState.CachedAssets
 	cachedAssets, localManifest, err := s.cacheManifest(ctx, manifest)
 	if err != nil {
 		return err
 	}
 
 	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
+	previousManifestPath := filepath.Join(s.config.StateRoot, "manifest.previous.json")
+	if payload, err := os.ReadFile(manifestPath); err == nil {
+		if err := os.WriteFile(previousManifestPath+".tmp", payload, 0o644); err == nil {
+			_ = os.Rename(previousManifestPath+".tmp", previousManifestPath)
+		}
+	}
 	if err := writeJSONFile(manifestPath, localManifest); err != nil {
 		return err
 	}
 
-	return s.store.Update(func(next *state.DeviceState) {
+	if err := s.store.Update(func(next *state.DeviceState) {
 		next.DeviceID = manifest.DeviceID
 		next.ManifestVersion = manifest.ManifestVersion
+		next.PreviousManifestVersion = previousState.ManifestVersion
+		next.PreviousCachedAssets = previousAssets
 		next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
 		next.CachedAssets = cachedAssets
-	})
+	}); err != nil {
+		return err
+	}
+
+	retained := make(map[string]state.AssetRecord, len(cachedAssets)+len(previousAssets))
+	for id, record := range cachedAssets {
+		retained[id] = record
+	}
+	for id, record := range previousAssets {
+		if _, ok := retained[id]; !ok {
+			retained[id] = record
+		}
+	}
+	s.pruneCachedAssets(previousState.PreviousCachedAssets, retained)
+	return nil
 }
 
 func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceManifest) (map[string]state.AssetRecord, *remote.DeviceManifest, error) {
-	current := s.store.Snapshot()
-	cachedAssets := map[string]state.AssetRecord{}
-	for assetID, record := range current.CachedAssets {
-		cachedAssets[assetID] = record
+	stateSnapshot := s.store.Snapshot()
+	availableAssets := make(map[string]state.AssetRecord, len(stateSnapshot.CachedAssets)+len(stateSnapshot.PreviousCachedAssets))
+	for id, record := range stateSnapshot.PreviousCachedAssets {
+		availableAssets[id] = record
 	}
+	for id, record := range stateSnapshot.CachedAssets {
+		availableAssets[id] = record
+	}
+	cachedAssets := map[string]state.AssetRecord{}
 
 	localManifest := *manifest
 	localManifest.DefaultPlaylist = clonePlaylist(manifest.DefaultPlaylist)
@@ -262,8 +372,11 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		fileName := remote.AssetFileName(item)
 		destPath := filepath.Join(s.config.StorageRoot, fileName)
 		expectedChecksum := manifest.AssetChecksums[item.AssetID]
-		existing, ok := cachedAssets[item.AssetID]
+		existing, ok := availableAssets[item.AssetID]
 		if !ok || existing.Checksum != expectedChecksum || !fileExists(filepath.Join(s.config.StorageRoot, existing.FileName)) {
+			if err := s.ensureCacheBudget(); err != nil {
+				return item, err
+			}
 			var err error
 			if item.SourceType == "youtube" || remote.IsYouTubeURL(item.URL) {
 				err = s.downloadYouTubeVideo(ctx, item.URL, destPath)
@@ -273,19 +386,26 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 			if err != nil {
 				return item, err
 			}
-			cachedAssets[item.AssetID] = state.AssetRecord{
-				FileName: fileName,
-				Checksum: expectedChecksum,
-			}
 		} else {
 			fileName = existing.FileName
+			destPath = filepath.Join(s.config.StorageRoot, fileName)
+		}
+
+		if err := validateCachedAsset(destPath, expectedChecksum); err != nil {
+			return item, fmt.Errorf("validate cached asset %s: %w", item.AssetID, err)
+		}
+		cachedAssets[item.AssetID] = state.AssetRecord{
+			FileName: fileName,
+			Checksum: expectedChecksum,
 		}
 
 		item.URL = "/assets/" + fileName
 		if item.AssetType == "video" {
-			if duration, err := probeMediaDuration(ctx, destPath); err == nil && duration > 0 {
-				item.DurationSeconds = duration
+			duration, err := probeMediaDuration(ctx, destPath)
+			if err != nil {
+				return item, fmt.Errorf("probe video %s: %w", item.AssetID, err)
 			}
+			item.DurationSeconds = duration
 		}
 		return item, nil
 	}
@@ -314,6 +434,30 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	return cachedAssets, &localManifest, nil
 }
 
+func (s *Service) ensureCacheBudget() error {
+	freeBytes, _ := diskUsage(s.config.StorageRoot)
+	if s.config.CacheMinFreeBytes > 0 && freeBytes < s.config.CacheMinFreeBytes {
+		return fmt.Errorf("media cache has %d bytes free; %d required", freeBytes, s.config.CacheMinFreeBytes)
+	}
+	if s.config.CacheMaxBytes <= 0 {
+		return nil
+	}
+	var used int64
+	_ = filepath.WalkDir(s.config.StorageRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		if info, infoErr := entry.Info(); infoErr == nil {
+			used += info.Size()
+		}
+		return nil
+	})
+	if used >= s.config.CacheMaxBytes {
+		return fmt.Errorf("media cache reached its %d byte budget", s.config.CacheMaxBytes)
+	}
+	return nil
+}
+
 func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, destPath string) error {
 	if strings.TrimSpace(sourceURL) == "" {
 		return fmt.Errorf("youtube source url is required")
@@ -329,7 +473,11 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 
 	destBase := strings.TrimSuffix(destPath, filepath.Ext(destPath))
 	outputTemplate := destBase + ".%(ext)s"
-	downloadCtx, cancel := context.WithTimeout(ctx, youtubeDownloadTimeout)
+	downloadTimeout := s.config.YouTubeDownloadTimeout
+	if downloadTimeout <= 0 {
+		downloadTimeout = 15 * time.Minute
+	}
+	downloadCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	cmd := exec.CommandContext(
 		downloadCtx,
 		s.config.YouTubeDLBinary,
@@ -340,13 +488,13 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		"--socket-timeout",
 		"15",
 		"--retries",
-		"1",
+		"3",
 		"--fragment-retries",
-		"1",
+		"3",
 		"--file-access-retries",
-		"1",
+		"3",
 		"--extractor-retries",
-		"1",
+		"3",
 		"--format",
 		s.config.YouTubeFormat,
 		"--merge-output-format",
@@ -362,7 +510,7 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if downloadCtx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("yt-dlp download timed out after %s: %s", youtubeDownloadTimeout, strings.TrimSpace(string(output)))
+			return fmt.Errorf("yt-dlp download timed out after %s: %s", downloadTimeout, strings.TrimSpace(string(output)))
 		}
 		return fmt.Errorf("yt-dlp download failed: %s", strings.TrimSpace(string(output)))
 	}
@@ -408,6 +556,12 @@ func (s *Service) processCommands(ctx context.Context, credential string) error 
 }
 
 func (s *Service) executeCommand(ctx context.Context, credential string, command remote.DeviceCommand) error {
+	if completed, ok := s.store.Snapshot().CompletedCommands[command.ID]; ok {
+		return s.client.PostCommandResult(ctx, credential, map[string]interface{}{
+			"commandId": command.ID, "status": completed.Status, "message": completed.Message,
+			"completedAt": completed.CompletedAt, "leaseToken": command.LeaseToken,
+		})
+	}
 	var err error
 	switch command.CommandType {
 	case "sync_now":
@@ -424,6 +578,18 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 		err = s.runShell(ctx, s.config.UnblankScreenCommand)
 	case "update_release":
 		err = s.applyReleaseUpdate(ctx, command.ID, command.Payload)
+	case "update_network":
+		ssid, _ := command.Payload["ssid"].(string)
+		password, _ := command.Payload["password"].(string)
+		priority := 100
+		if rawPriority, ok := command.Payload["priority"].(float64); ok {
+			priority = int(rawPriority)
+		}
+		if strings.TrimSpace(ssid) == "" || password == "" {
+			err = fmt.Errorf("update_network requires ssid and password")
+		} else {
+			err = local.ConfigureWiFi(ctx, ssid, password, priority)
+		}
 	default:
 		err = fmt.Errorf("unsupported command: %s", command.CommandType)
 	}
@@ -432,11 +598,31 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 		"commandId": command.ID,
 		"status":    "succeeded",
 	}
+	if command.LeaseToken != "" {
+		payload["leaseToken"] = command.LeaseToken
+	}
 	if err != nil {
 		payload["status"] = "failed"
 		payload["message"] = err.Error()
 	}
 	payload["completedAt"] = time.Now().UTC().Format(time.RFC3339)
+	completed := state.CompletedCommand{Status: payload["status"].(string), CompletedAt: payload["completedAt"].(string)}
+	if message, ok := payload["message"].(string); ok {
+		completed.Message = message
+	}
+	if storeErr := s.store.Update(func(next *state.DeviceState) {
+		next.CompletedCommands[command.ID] = completed
+		if len(next.CompletedCommands) > 500 {
+			for id := range next.CompletedCommands {
+				if id != command.ID {
+					delete(next.CompletedCommands, id)
+					break
+				}
+			}
+		}
+	}); storeErr != nil {
+		return storeErr
+	}
 
 	if postErr := s.client.PostCommandResult(ctx, credential, payload); postErr != nil {
 		return fmt.Errorf("command result post failed: %w", postErr)
@@ -477,6 +663,8 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 		"currentAssetId":    current.CurrentAssetID,
 		"currentPlaylistId": current.CurrentPlaylistID,
 		"lastSeenAt":        time.Now().UTC().Format(time.RFC3339),
+		"appliance":         applianceDescriptor(),
+		"health":            current.Health,
 	}
 
 	if err := s.client.PostHeartbeat(ctx, current.Credential, payload); err != nil {
@@ -550,6 +738,41 @@ func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylis
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func validateCachedAsset(path string, expectedChecksum string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() || info.Size() == 0 {
+		return fmt.Errorf("cached file is empty or invalid")
+	}
+
+	normalized := normalizeSHA256(expectedChecksum)
+	if len(normalized) == 64 {
+		if err := verifySHA256(path, normalized); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) pruneCachedAssets(previous, active map[string]state.AssetRecord) {
+	activeFiles := make(map[string]struct{}, len(active))
+	for _, record := range active {
+		activeFiles[record.FileName] = struct{}{}
+	}
+
+	for _, record := range previous {
+		if _, keep := activeFiles[record.FileName]; keep {
+			continue
+		}
+		path := filepath.Join(s.config.StorageRoot, record.FileName)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("unable to prune stale cached asset %s: %v", record.FileName, err)
+		}
+	}
 }
 
 func probeMediaDuration(ctx context.Context, path string) (int, error) {

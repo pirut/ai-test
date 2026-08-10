@@ -17,7 +17,9 @@ type kioskRuntime struct {
 	Reason          string              `json:"reason,omitempty"`
 	BrowserURL      string              `json:"browserUrl"`
 	ManifestVersion string              `json:"manifestVersion,omitempty"`
+	PlaylistID      string              `json:"playlistId,omitempty"`
 	Volume          int                 `json:"volume,omitempty"`
+	Orientation     int                 `json:"orientation"`
 	Playlist        []kioskRuntimeAsset `json:"playlist,omitempty"`
 }
 
@@ -52,14 +54,16 @@ func (s *Server) kioskRuntime() kioskRuntime {
 		return runtime
 	}
 
-	playlist := chooseActivePlaylist(manifest)
+	playlist, playlistID := chooseActivePlaylist(manifest)
 	if len(playlist) == 0 {
 		runtime.Reason = "empty-playlist"
 		return runtime
 	}
 
 	runtime.ManifestVersion = manifest.ManifestVersion
+	runtime.PlaylistID = playlistID
 	runtime.Volume = manifest.Volume
+	runtime.Orientation = manifest.Orientation
 
 	assets := make([]kioskRuntimeAsset, 0, len(playlist))
 	for _, item := range playlist {
@@ -114,7 +118,7 @@ func (s *Server) loadManifest() (*remote.DeviceManifest, error) {
 	return &wrapped.Manifest, nil
 }
 
-func chooseActivePlaylist(manifest *remote.DeviceManifest) []remote.ManifestPlaylistItem {
+func chooseActivePlaylist(manifest *remote.DeviceManifest) ([]remote.ManifestPlaylistItem, string) {
 	now := time.Now()
 	active := make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
 	for _, window := range manifest.ScheduleWindows {
@@ -136,7 +140,7 @@ func chooseActivePlaylist(manifest *remote.DeviceManifest) []remote.ManifestPlay
 	})
 
 	if len(active) > 0 && len(active[0].Playlist) > 0 {
-		return active[0].Playlist
+		return active[0].Playlist, active[0].PlaylistID
 	}
-	return manifest.DefaultPlaylist
+	return manifest.DefaultPlaylist, manifest.DefaultPlaylistID
 }

@@ -21,12 +21,14 @@ const clerkAppearance = {
   },
 } as const;
 
-export function AuthProviders({ children }: { children: React.ReactNode }) {
+export function AuthProviders({ children, localMockMode }: { children: React.ReactNode; localMockMode: boolean }) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const content = (
-    <ConvexClientProvider url={env.convexUrl}>{children}</ConvexClientProvider>
+    <ConvexClientProvider url={env.convexUrl} authenticated={!localMockMode}>
+      {children}
+    </ConvexClientProvider>
   );
-  return publishableKey ? (
+  return publishableKey && !localMockMode ? (
     <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
       {content}
     </ClerkProvider>

@@ -350,10 +350,14 @@ export async function createRelease(input: {
   notes?: string;
   playerUrl?: string;
   playerSha256?: string;
+  playerSignature?: string;
   agentUrl?: string;
   agentSha256?: string;
+  agentSignature?: string;
   systemUrl?: string;
   systemSha256?: string;
+  systemSignature?: string;
+  signingKeyId: string;
 }) {
   if (!hasConvexBackend()) {
     return mock.createRelease(input);
@@ -385,16 +389,22 @@ export async function publishReleaseArtifacts(input: {
   player?: {
     fileName: string;
     sha256: string;
+    signature: string;
+    signingKeyId: string;
     storageId: string;
   };
   agent?: {
     fileName: string;
     sha256: string;
+    signature: string;
+    signingKeyId: string;
     storageId: string;
   };
   system?: {
     fileName: string;
     sha256: string;
+    signature: string;
+    signingKeyId: string;
     storageId: string;
   };
 }) {
@@ -429,6 +439,18 @@ export async function deployRelease(input: {
       releaseId: z.string(),
     })
     .parse(await convexMutation(api.admin.deployRelease, input));
+}
+
+export async function controlReleaseRollout(input: {
+  releaseId: string;
+  action: "pause" | "resume" | "retry_failed";
+}) {
+  if (!hasConvexBackend()) {
+    throw new Error("Rollout controls require Convex backend mode.");
+  }
+  return z.object({ status: z.string() }).parse(
+    await convexMutation(api.fleet.controlReleaseRollout, input),
+  );
 }
 
 export async function claimDevice(input: {

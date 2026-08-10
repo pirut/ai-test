@@ -15,6 +15,9 @@ import {
   deviceCommandResultSchema,
   deviceCommandSchema,
   deviceManifestSchema,
+  heartbeatPayloadSchema,
+  isFleetManagedDevice,
+  requiresFleetManagedDevice,
   libraryFolderKindSchema,
   mockDashboardStats,
   mockDevices,
@@ -190,7 +193,7 @@ function buildState(): MockState {
   return {
     devices: mockDevices.map((device) => ({
       ...device,
-      orgId: "org_demo",
+      orgId: "org-demo",
       defaultPlaylistId: basePlaylist.id,
       timezone: "America/New_York",
       orientation: 0,
@@ -698,10 +701,17 @@ export function deployRelease(input: {
     throw new Error("Release not found");
   }
 
-  const targetDevices = (input.deviceIds?.length
+  const selectedDevices = input.deviceIds?.length
     ? state().devices.filter((device) => input.deviceIds!.includes(device.id))
-    : state().devices
-  ).map((device) => ({
+    : state().devices;
+  const eligibleDevices = selectedDevices.filter(isFleetManagedDevice);
+  if (!eligibleDevices.length) {
+    throw new Error("No flashed fleet appliances are eligible for this rollout");
+  }
+  if (input.deviceIds?.length && eligibleDevices.length !== input.deviceIds.length) {
+    throw new Error("One or more selected devices must be flashed before joining a rollout");
+  }
+  const targetDevices = eligibleDevices.map((device) => ({
     id: crypto.randomUUID(),
     deviceId: device.id,
     deviceName: device.name,
@@ -782,6 +792,11 @@ export function claimDevice(input: {
     timezone: "America/New_York",
     orientation: 0,
     volume: 0,
+    fleetManagementState: "legacy",
+    applianceGeneration: null,
+    agentProtocolVersion: null,
+    capabilities: [],
+    applianceActivatedAt: null,
   };
 
   const existingIndex = state().devices.findIndex((entry) => entry.id === deviceId);
@@ -809,10 +824,18 @@ export function issueCommand(input: {
   commandType: string;
   payload?: Record<string, unknown>;
 }) {
+  const device = state().devices.find((entry) => entry.id === input.deviceId);
+  if (!device) {
+    throw new Error("Device not found");
+  }
+  const commandType = commandTypeSchema.parse(input.commandType);
+  if (requiresFleetManagedDevice(commandType) && !isFleetManagedDevice(device)) {
+    throw new Error("Flash this device with the fleet appliance before using this command");
+  }
   const command = deviceCommandSchema.parse({
     id: crypto.randomUUID(),
     deviceId: input.deviceId,
-    commandType: commandTypeSchema.parse(input.commandType),
+    commandType,
     issuedAt: new Date().toISOString(),
     payload: input.payload ?? {},
   });
@@ -909,14 +932,26 @@ export function recordHeartbeat(deviceId: string, payload: Record<string, unknow
     return null;
   }
 
+  const parsedPayload = heartbeatPayloadSchema.parse(payload);
   const heartbeat = {
-    ...payload,
+    ...parsedPayload,
     deviceId,
     receivedAt: new Date().toISOString(),
   };
 
   device.status = "online";
   device.lastHeartbeatAt = new Date().toISOString();
+  if (parsedPayload.appliance && isFleetManagedDevice({
+    applianceGeneration: parsedPayload.appliance.generation,
+    agentProtocolVersion: parsedPayload.appliance.protocolVersion,
+    capabilities: parsedPayload.appliance.capabilities,
+  })) {
+    device.fleetManagementState = "managed";
+    device.applianceGeneration = parsedPayload.appliance.generation;
+    device.agentProtocolVersion = parsedPayload.appliance.protocolVersion;
+    device.capabilities = [...parsedPayload.appliance.capabilities];
+    device.applianceActivatedAt ??= new Date().toISOString();
+  }
   return heartbeat;
 }
 

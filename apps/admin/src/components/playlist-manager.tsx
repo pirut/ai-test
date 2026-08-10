@@ -571,7 +571,8 @@ export function PlaylistManager({
 
       if (event.key === "Escape" && selectedSourceAssetIds.length > 0) {
         event.preventDefault();
-        clearSourceSelection();
+        setSelectedSourceAssetIds([]);
+        setLastSelectedSourceIndex(null);
       }
     }
 
@@ -1049,7 +1050,7 @@ export function PlaylistManager({
                 <Input
                   className="h-8 text-xs"
                   onChange={(e) => setPlaylistSearch(e.target.value)}
-                  placeholder="Search playlists\u2026"
+                  placeholder="Search playlists…"
                   value={playlistSearch}
                 />
               </div>
@@ -1140,7 +1141,7 @@ export function PlaylistManager({
                     className="h-8 text-xs"
                     id="yt-url"
                     onChange={(e) => setYoutubePlaylistUrl(e.target.value)}
-                    placeholder="https://youtube.com/playlist?list=\u2026"
+                    placeholder="https://youtube.com/playlist?list=…"
                     value={youtubePlaylistUrl}
                   />
                 </div>
@@ -1380,7 +1381,7 @@ export function PlaylistManager({
                   <Input
                     className="h-8 text-xs"
                     onChange={(e) => setMediaSearch(e.target.value)}
-                    placeholder="Search media\u2026"
+                    placeholder="Search media…"
                     value={mediaSearch}
                   />
                 </div>

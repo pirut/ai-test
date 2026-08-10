@@ -1,0 +1,49 @@
+name: Raspberry Pi appliance image
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      device_layer:
+        description: Raspberry Pi hardware layer
+        required: true
+        default: rpi5
+        type: choice
+        options: [rpi4, rpi5, cm4, cm5]
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      SHOWROOM_DEVICE_LAYER: ${{ inputs.device_layer || 'rpi5' }}
+      SHOWROOM_RPI_IMAGE_GEN_VERSION: v2.7.0
+      SHOWROOM_INSTALL_BUILD_DEPS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: false
+      - run: npm ci
+      - run: ./infra/pi-image/build-appliance-image.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.img
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.sha256
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/update.tar.zst
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.spdx*
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*sbom*
+            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*vuln*
