@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
-import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
-import { extractRouterConfig } from "uploadthing/server";
 
-import { uploadRouter } from "@/app/api/uploadthing/core";
 import { AuthProviders } from "@/components/auth-providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -30,7 +27,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <NextSSRPlugin routerConfig={extractRouterConfig(uploadRouter)} />
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"

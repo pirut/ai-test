@@ -52,9 +52,4 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           path: |
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.img
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.sha256
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/update.tar.zst
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*.spdx*
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*sbom*
-            infra/pi-image/out/rpi-image-gen-v2.7.0/work/image-showroom-appliance/*vuln*
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*

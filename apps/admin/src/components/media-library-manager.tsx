@@ -33,6 +33,7 @@ import {
   MoveRight,
   Pencil,
   Trash2,
+  Upload,
   Video,
   X,
 } from "lucide-react";
@@ -44,7 +45,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getFolderMap, getFolderTrail } from "@/lib/library";
 import { cn } from "@/lib/utils";
-import { UploadDropzone } from "@/lib/uploadthing";
 
 async function getMediaMetadata(file: File) {
   if (file.type.startsWith("image/")) {
@@ -110,13 +110,58 @@ function formatDimensions(asset: MediaAsset) {
 }
 
 type UploadedFile = {
-  fileHash: string | null;
-  key: string;
+  checksum: string;
   name: string;
+  previewUrl: string;
   size: number;
+  storageId: string;
+  storagePath: string;
   type: string;
-  ufsUrl: string;
 };
+
+type UploadDraft = {
+  assetId: string;
+  expiresInSeconds: number;
+  storagePath: string;
+  uploadUrl: string;
+};
+
+async function sha256ForFile(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function uploadFile(
+  uploadUrl: string,
+  file: File,
+  onProgress: (percent: number) => void,
+) {
+  return new Promise<{ storageId: string }>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", uploadUrl);
+    request.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onerror = () => reject(new Error(`Network error while uploading ${file.name}`));
+    request.onload = () => {
+      let payload: { error?: string; storageId?: string } = {};
+      try {
+        payload = JSON.parse(request.responseText) as typeof payload;
+      } catch {
+        // The status handling below supplies a useful error for malformed responses.
+      }
+      if (request.status < 200 || request.status >= 300 || !payload.storageId) {
+        reject(new Error(payload.error ?? `Unable to upload ${file.name}`));
+        return;
+      }
+      resolve({ storageId: payload.storageId });
+    };
+    request.send(file);
+  });
+}
 
 function MediaAssetPreview({
   asset,
@@ -327,6 +372,7 @@ export function MediaLibraryManager({
   const [uploadTags, setUploadTags] = useState("");
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
@@ -487,9 +533,10 @@ export function MediaLibraryManager({
           fileName: uploaded.name,
           mimeType: uploaded.type,
           bytes: uploaded.size,
-          storagePath: uploaded.key,
-          previewUrl: uploaded.ufsUrl,
-          checksum: `ut:${uploaded.fileHash ?? uploaded.key}`,
+          storageId: uploaded.storageId,
+          storagePath: uploaded.storagePath,
+          previewUrl: uploaded.previewUrl,
+          checksum: `sha256:${uploaded.checksum}`,
           tags: uploadTags.split(",").map((entry) => entry.trim()).filter(Boolean),
           folderId: selectedFolderId,
           ...metadata,
@@ -513,6 +560,73 @@ export function MediaLibraryManager({
       return null;
     } finally {
       setIsFinalizing(false);
+    }
+  }
+
+  async function uploadQueuedFiles() {
+    if (queuedFiles.length === 0 || isUploading) return;
+
+    try {
+      setIsUploading(true);
+      setStatus(null);
+      let successCount = 0;
+
+      for (const [index, file] of queuedFiles.entries()) {
+        setUploadProgress(`Preparing ${index + 1} of ${queuedFiles.length}: ${file.name}`);
+        const checksum = await sha256ForFile(file);
+        const draftResponse = await fetch("/api/media/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, mimeType: file.type, bytes: file.size }),
+        });
+        const draftPayload = (await draftResponse.json()) as {
+          error?: string;
+          upload?: UploadDraft;
+        };
+        if (!draftResponse.ok || !draftPayload.upload) {
+          throw new Error(draftPayload.error ?? `Unable to prepare ${file.name}`);
+        }
+
+        const stored = await uploadFile(draftPayload.upload.uploadUrl, file, (percent) => {
+          setUploadProgress(
+            `Uploading ${index + 1} of ${queuedFiles.length}: ${file.name} (${percent}%)`,
+          );
+        });
+        const asset = await finalizeUpload(
+          {
+            checksum,
+            name: file.name,
+            previewUrl: draftPayload.upload.uploadUrl.startsWith("/")
+              ? URL.createObjectURL(file)
+              : `https://storage.invalid/${encodeURIComponent(stored.storageId)}`,
+            size: file.size,
+            storageId: stored.storageId,
+            storagePath: draftPayload.upload.storagePath,
+            type: file.type,
+          },
+          file,
+        );
+        if (asset) successCount += 1;
+      }
+
+      if (successCount > 0) {
+        setUploadTitle("");
+        setUploadTags("");
+        setQueuedFiles([]);
+        setStatus({
+          ok: true,
+          text: `Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}.`,
+        });
+        refreshData();
+      }
+    } catch (error) {
+      setStatus({
+        ok: false,
+        text: error instanceof Error ? error.message : "Upload failed",
+      });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -1327,75 +1441,48 @@ export function MediaLibraryManager({
                     value={uploadTags}
                   />
                 </div>
-                <UploadDropzone
-                  appearance={{
-                    allowedContent: "text-xs text-muted-foreground",
-                    button:
-                      "mt-3 h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground hover:bg-accent",
-                    container:
-                      "rounded-md border border-dashed border-border bg-background px-4 py-6 text-card-foreground",
-                    label: "text-sm font-medium text-foreground",
-                    uploadIcon: "text-muted-foreground",
-                  }}
-                  config={{ mode: "auto" }}
-                  content={{
-                    allowedContent() {
-                      return "JPG, PNG, WEBP, MP4";
-                    },
-                    button({ isUploading }) {
-                      return isUploading ? "Uploading..." : "Choose files";
-                    },
-                    label({ isDragActive, ready }) {
-                      if (!ready) return "Preparing upload...";
-                      return isDragActive ? "Release to upload" : "Drop media here";
-                    },
-                  }}
-                  endpoint="mediaUploader"
-                  input={{
-                    tags: uploadTags.split(",").map((entry) => entry.trim()).filter(Boolean),
-                    title:
-                      uploadTitle.trim() ||
-                      queuedFiles[0]?.name.replace(/\.[^.]+$/, "") ||
-                      undefined,
-                  }}
-                  onChange={(files) => {
-                    setQueuedFiles(files);
-                    if (files.length > 0) {
+                <div className="rounded-md border border-dashed border-border bg-background p-4">
+                  <label
+                    className="flex cursor-pointer flex-col items-center gap-2 rounded-md px-3 py-4 text-center hover:bg-accent/50"
+                    htmlFor="media-files"
+                  >
+                    <Upload className="size-5 text-muted-foreground" />
+                    <span className="text-sm font-medium text-foreground">
+                      {queuedFiles.length > 0
+                        ? `${queuedFiles.length} file${queuedFiles.length !== 1 ? "s" : ""} selected`
+                        : "Choose photos or videos"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      JPG, PNG, WEBP, or MP4 · up to 250 MB each
+                    </span>
+                  </label>
+                  <input
+                    accept="image/jpeg,image/png,image/webp,video/mp4"
+                    className="sr-only"
+                    disabled={isUploading || isFinalizing}
+                    id="media-files"
+                    multiple
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? []);
+                      setQueuedFiles(files);
                       setUploadProgress(
-                        `Selected ${files.length} file${files.length !== 1 ? "s" : ""}`,
+                        files.length > 0
+                          ? `Selected ${files.length} file${files.length !== 1 ? "s" : ""}`
+                          : null,
                       );
-                    }
-                  }}
-                  onClientUploadComplete={async (result) => {
-                    if (!result.length) {
-                      setStatus({ ok: false, text: "Upload completed without any files." });
-                      return;
-                    }
-
-                    let successCount = 0;
-                    for (const uploaded of result) {
-                      const sourceFile = queuedFiles.find((file) => file.name === uploaded.name);
-                      const asset = await finalizeUpload(uploaded, sourceFile);
-                      if (asset) {
-                        successCount += 1;
-                      }
-                    }
-                    setQueuedFiles([]);
-                    setUploadProgress(null);
-                    if (successCount > 0) {
-                      setUploadTitle("");
-                      setUploadTags("");
-                      setStatus({
-                        ok: true,
-                        text: `Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}.`,
-                      });
-                      refreshData();
-                    }
-                  }}
-                  onUploadError={(error) => {
-                    setStatus({ ok: false, text: error.message });
-                  }}
-                />
+                    }}
+                    type="file"
+                  />
+                  <Button
+                    className="mt-3 w-full"
+                    disabled={queuedFiles.length === 0 || isUploading || isFinalizing}
+                    onClick={() => void uploadQueuedFiles()}
+                    type="button"
+                  >
+                    <Upload className="size-4" />
+                    {isUploading ? "Uploading…" : "Upload selected media"}
+                  </Button>
+                </div>
               </div>
 
               <div className="border-t border-border pt-4">

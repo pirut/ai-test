@@ -5,12 +5,11 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/uploadthing(.*)",
   "/api/webhooks/clerk",
   "/api/device(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+const proxy = clerkMiddleware(async (auth, req) => {
   const localMockMode =
     process.env.NODE_ENV !== "production" &&
     ["1", "true", "yes", "on"].includes((process.env.SHOWROOM_MOCK_MODE ?? "").toLowerCase());
@@ -22,6 +21,8 @@ export default clerkMiddleware(async (auth, req) => {
     });
   }
 });
+
+export default proxy;
 
 export const config = {
   matcher: [

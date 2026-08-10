@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="${ROOT_DIR}/out"
+BUILD_DIR="${OUT_DIR}/build-${SHOWROOM_DEVICE_LAYER:-rpi5}"
+RELEASE_DIR="${OUT_DIR}/release-${SHOWROOM_DEVICE_LAYER:-rpi5}"
 RIG_VERSION="${SHOWROOM_RPI_IMAGE_GEN_VERSION:-v2.7.0}"
 RIG_DIR="${SHOWROOM_RPI_IMAGE_GEN_DIR:-${OUT_DIR}/rpi-image-gen-${RIG_VERSION}}"
 DEVICE_LAYER="${SHOWROOM_DEVICE_LAYER:-rpi5}"
@@ -25,6 +27,7 @@ case "${DEVICE_LAYER}" in
 esac
 
 mkdir -p "${OUT_DIR}"
+mkdir -p "${BUILD_DIR}"
 if [[ -z "${SHOWROOM_RELEASE_PUBLIC_KEY:-}" && -f "${PUBLIC_KEY_FILE}" ]]; then
   export SHOWROOM_RELEASE_PUBLIC_KEY="$(tr -d '\r\n' < "${PUBLIC_KEY_FILE}")"
 fi
@@ -48,15 +51,35 @@ if [[ -n "${SHOWROOM_CONNECT_AUTH_KEY:-}" ]]; then
   BUILD_ARGS+=(-- "IGconf_connect_authkey=${SHOWROOM_CONNECT_AUTH_KEY}")
 fi
 
-"${RIG_DIR}/rpi-image-gen" build \
-  -S "${ROOT_DIR}/rpi-image-gen" \
-  -c "${CONFIG_GENERATED}" \
-  "${BUILD_ARGS[@]}"
+(
+  cd "${BUILD_DIR}"
+  "${RIG_DIR}/rpi-image-gen" build \
+    -S "${ROOT_DIR}/rpi-image-gen" \
+    -c "${CONFIG_GENERATED}" \
+    "${BUILD_ARGS[@]}"
+)
 
-IMAGE_WORK="${RIG_DIR}/work/image-showroom-appliance"
-if command -v sha256sum >/dev/null 2>&1; then
-  find "${IMAGE_WORK}" -maxdepth 1 -type f -name '*.img' -exec sha256sum {} \; > "${IMAGE_WORK}/SHA256SUMS.sha256"
-else
-  find "${IMAGE_WORK}" -maxdepth 1 -type f -name '*.img' -exec shasum -a 256 {} \; > "${IMAGE_WORK}/SHA256SUMS.sha256"
+IMAGE_WORK="${BUILD_DIR}/work/image-showroom-appliance"
+RAW_IMAGE="${IMAGE_WORK}/showroom-appliance.img"
+if [[ ! -f "${RAW_IMAGE}" ]]; then
+  echo "Image generator completed without producing ${RAW_IMAGE}" >&2
+  exit 1
 fi
-find "${IMAGE_WORK}" -maxdepth 1 -type f \( -name '*.img' -o -name 'update.tar.zst' -o -name '*.spdx*' -o -name '*sbom*' \) -print
+
+rm -rf "${RELEASE_DIR}"
+mkdir -p "${RELEASE_DIR}"
+RELEASE_IMAGE="${RELEASE_DIR}/showroom-${DEVICE_LAYER}-${IMAGE_VERSION}.img.xz"
+xz -T0 -3 -c "${RAW_IMAGE}" > "${RELEASE_IMAGE}"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${RELEASE_DIR}" && sha256sum "$(basename "${RELEASE_IMAGE}")" > SHA256SUMS.sha256)
+else
+  (cd "${RELEASE_DIR}" && shasum -a 256 "$(basename "${RELEASE_IMAGE}")" > SHA256SUMS.sha256)
+fi
+
+DEPLOY_DIR="$(find "${BUILD_DIR}/work" -maxdepth 1 -type d -name 'deploy-*' -print | sort | tail -n 1)"
+if [[ -n "${DEPLOY_DIR}" ]]; then
+  find "${DEPLOY_DIR}" -maxdepth 1 -type f \( -name '*sbom*.zst' -o -name 'manifest.zst' -o -name 'config.yaml.zst' \) -exec cp {} "${RELEASE_DIR}/" \;
+fi
+
+find "${RELEASE_DIR}" -maxdepth 1 -type f -print
