@@ -20,12 +20,13 @@ Run on a supported Debian/Ubuntu arm64 builder (a Pi 5, arm64 CI runner, or arm6
 Linux VM):
 
 ```bash
-# The production public verification key is committed at release-public.base64.
-# Override it only when intentionally rotating the release signing key.
-export SHOWROOM_RELEASE_PUBLIC_KEY="$(cat /secure/release-public.base64)"
 export SHOWROOM_DEVICE_LAYER=rpi5
 ./infra/pi-image/build-appliance-image.sh
 ```
+
+The production public verification key is committed at
+`release-public.base64`. Override `SHOWROOM_RELEASE_PUBLIC_KEY` only when
+intentionally rotating the signing key.
 
 The builder pins `rpi-image-gen` to v2.7.0 by default. Set
 `SHOWROOM_RPI_IMAGE_GEN_VERSION` deliberately when upgrading it. The generated
