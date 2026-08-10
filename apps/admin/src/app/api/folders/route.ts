@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { createLibraryFolder } from "@/lib/backend";
@@ -11,7 +11,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

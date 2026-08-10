@@ -17,11 +17,12 @@
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:convex",
     "typecheck:convex": "tsc --noEmit -p convex/tsconfig.json",
     "test": "npm run test:unit && npm run test:go",
-    "test:go": "cd apps/agent && go test ./...",
+    "test:go": "cd apps/agent && GOCACHE=/tmp/showroom-go-build-cache go test ./...",
     "test:unit": "node --test --import tsx tests/**/*.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.23.0",
+    "@eslint/eslintrc": "^3.3.1",
     "@types/node": "^22.13.10",
     "convex": "^1.26.2",
     "eslint": "^9.23.0",

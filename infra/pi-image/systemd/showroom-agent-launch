@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+
+PERSISTENT_AGENT=/var/lib/showroom/releases/agent/current/showroom-agent
+BUILTIN_AGENT=/usr/local/libexec/showroom-agent
+
+if [[ -x "${PERSISTENT_AGENT}" ]]; then
+  exec "${PERSISTENT_AGENT}"
+fi
+
+exec "${BUILTIN_AGENT}"

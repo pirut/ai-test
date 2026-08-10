@@ -448,7 +448,9 @@ export function MediaLibraryManager({
 
       if (event.key === "Escape" && selectedAssetIds.length > 0) {
         event.preventDefault();
-        clearSelection();
+        setSelectedAssetIds([]);
+        setFocusedAssetId(null);
+        setLastSelectedIndex(null);
       }
     }
 

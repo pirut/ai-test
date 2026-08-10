@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
@@ -25,6 +26,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/local/manifest", s.handleManifest)
 	mux.HandleFunc("/local/status", s.handleStatus)
+	mux.HandleFunc("/local/playback", s.handlePlayback)
 	mux.HandleFunc("/local/kiosk/runtime", s.handleKioskRuntime)
 	mux.HandleFunc("/local/wifi/status", s.handleWiFiStatus)
 	mux.HandleFunc("/local/wifi/configure", s.handleWiFiConfigure)
@@ -33,9 +35,43 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		AssetID    string `json:"assetId"`
+		PlaylistID string `json:"playlistId"`
+		State      string `json:"state"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
+		http.Error(w, "invalid playback status", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.Update(func(next *state.DeviceState) {
+		next.CurrentAssetID = strings.TrimSpace(payload.AssetID)
+		next.CurrentPlaylistID = strings.TrimSpace(payload.PlaylistID)
+		next.PlayerState = strings.TrimSpace(payload.State)
+		next.LastPlayerHeartbeatAt = time.Now().UTC().Format(time.RFC3339)
+	}); err != nil {
+		http.Error(w, "unable to persist playback status", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
+	current := s.store.Snapshot()
+	if r.URL.Query().Get("deep") == "1" && current.Credential != "" {
+		heartbeatAt, err := time.Parse(time.RFC3339, current.LastPlayerHeartbeatAt)
+		if err != nil || time.Since(heartbeatAt) > s.config.PlayerStaleAfter {
+			http.Error(w, "player heartbeat is stale", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})

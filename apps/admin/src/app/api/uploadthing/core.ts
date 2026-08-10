@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getAuthSession } from "@/lib/auth";
 import type { FileRouter } from "uploadthing/next";
 import { createRouteHandler, createUploadthing } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
@@ -24,7 +24,7 @@ export const uploadRouter = {
       }),
     )
     .middleware(async () => {
-      const session = await auth();
+      const session = await getAuthSession();
 
       if (!session.userId || !session.orgId || !session.has({ role: "org:admin" })) {
         throw new UploadThingError("Unauthorized");

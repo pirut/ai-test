@@ -18,3 +18,14 @@ infra/pi-image/artifacts
 infra/pi-image/out
 infra/pi-image/boot/network.env
 infra/pi-image/boot/network-config
+.env*
+infra/pi-image/rpi-image-gen/rootfs-overlay/opt/showroom/player/
+infra/pi-image/rpi-image-gen/rootfs-overlay/usr/local/libexec/showroom-agent
+infra/pi-image/rpi-image-gen/rootfs-overlay/usr/local/bin/
+infra/pi-image/rpi-image-gen/rootfs-overlay/var/lib/showroom/releases/
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/showroom-agent/config.env
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/X11/
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/systemd/system/*.service
+infra/pi-image/out/appliance-source/
+infra/pi-image/out/rpi-image-gen-*/
+infra/pi-image/secrets/

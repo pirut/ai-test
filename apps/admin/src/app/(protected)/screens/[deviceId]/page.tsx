@@ -4,7 +4,7 @@ import { CommandPanel } from "@/components/command-panel";
 import { PageHeader } from "@/components/page-header";
 import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
-import { requireOrgId } from "@/lib/auth";
+import { getAuthSession, requireOrgId } from "@/lib/auth";
 import {
   getDevice,
   latestScreenshot,
@@ -20,6 +20,8 @@ export default async function ScreenDetailPage({
 }) {
   const { deviceId } = await params;
   const orgId = await requireOrgId();
+  const session = await getAuthSession();
+  const canAdmin = session.has({ role: "org:admin" });
   const device = await getDevice(orgId, deviceId);
 
   if (!device) notFound();
@@ -62,26 +64,80 @@ export default async function ScreenDetailPage({
           </div>
 
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-            <ScreenSettingsPanel
-              device={{
-                deviceId: device.id,
-                name: device.name,
-                siteName: device.siteName,
-                timezone: device.timezone,
-                orientation: device.orientation,
-                volume: device.volume,
-                defaultPlaylistId: device.defaultPlaylistId ?? null,
-              }}
-              playlists={playlists.map((playlist) => ({
-                id: playlist.id,
-                name: playlist.name,
-              }))}
+            {canAdmin ? (
+              <ScreenSettingsPanel
+                device={{
+                  deviceId: device.id,
+                  name: device.name,
+                  siteName: device.siteName,
+                  timezone: device.timezone,
+                  orientation: device.orientation,
+                  volume: device.volume,
+                  defaultPlaylistId: device.defaultPlaylistId ?? null,
+                }}
+                playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              />
+            ) : (
+              <div className="rounded-xl border border-white/5 bg-card p-5 text-sm text-muted-foreground">
+                Device settings are read-only for members. Ask an organization admin to change playback defaults.
+              </div>
+            )}
+            <CommandPanel
+              canAdmin={canAdmin}
+              deviceId={device.id}
+              fleetManagementState={device.fleetManagementState}
             />
-            <CommandPanel deviceId={device.id} />
           </div>
         </div>
 
         <aside className="space-y-5">
+          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Appliance health
+              </p>
+              <StatusPill
+                status={device.fleetManagementState === "legacy"
+                  ? "unclaimed"
+                  : device.health?.playerHealthy && device.health?.hdmiConnected
+                    ? "online"
+                    : "stale"}
+                label={device.fleetManagementState === "legacy"
+                  ? "legacy protected"
+                  : device.health?.playerHealthy && device.health?.hdmiConnected
+                    ? "healthy"
+                    : "attention"}
+              />
+            </div>
+            {device.fleetManagementState === "legacy" ? (
+              <div className="mt-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-3 text-[0.8rem] leading-5 text-warning">
+                Current-device compatibility is active. This screen keeps the legacy command protocol and is excluded from network changes, telemetry retention, and release rollouts until its first appliance heartbeat.
+              </div>
+            ) : null}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {[
+                { label: "Player", value: device.health?.playerHealthy ? "Healthy" : "No heartbeat" },
+                { label: "HDMI", value: device.health?.hdmiConnected ? "Connected" : "Disconnected" },
+                { label: "CPU", value: device.health?.cpuTemperatureC == null ? "—" : `${device.health.cpuTemperatureC.toFixed(1)}°C` },
+                { label: "Wi-Fi", value: device.health?.signalPercent == null ? "—" : `${device.health.signalPercent}%` },
+                { label: "Boot slot", value: device.health?.bootSlot ?? "—" },
+                { label: "Rollback", value: String(device.health?.rollbackCount ?? 0) },
+              ].map((item) => (
+                <div key={item.label} className="rounded-lg border border-white/6 bg-[var(--surface-low)] px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
+                  <p className="mt-1 font-mono text-[0.78rem] text-foreground">{item.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 rounded-lg border border-white/6 bg-[var(--surface-low)] px-3 py-2.5 text-[0.75rem] text-muted-foreground">
+              Agent {device.agentVersion ?? "unknown"} / desired {device.desiredAgentVersion ?? "current"}<br />
+              Player {device.appVersion ?? "unknown"} / desired {device.desiredPlayerVersion ?? "current"}
+              <br />Fleet {device.fleetManagementState === "managed"
+                ? `${device.applianceGeneration} / protocol ${device.agentProtocolVersion}`
+                : "waiting for flash"}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               Device profile

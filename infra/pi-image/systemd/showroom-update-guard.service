@@ -1,0 +1,12 @@
+[Unit]
+Description=Showroom transactional update health guard
+After=showroom-agent.service showroom-kiosk.service
+Wants=showroom-agent.service showroom-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/showroom-update-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

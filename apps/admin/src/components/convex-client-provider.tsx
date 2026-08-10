@@ -8,13 +8,14 @@ import { useAuth } from "@clerk/nextjs";
 type Props = {
   children: React.ReactNode;
   url?: string;
+  authenticated?: boolean;
 };
 
-export function ConvexClientProvider({ children, url }: Props) {
+export function ConvexClientProvider({ children, url, authenticated = true }: Props) {
   const [client] = useState(() => (url ? new ConvexReactClient(url) : null));
   const hasClerk = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-  if (!client) {
+  if (!client || !authenticated) {
     return <>{children}</>;
   }
 

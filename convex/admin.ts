@@ -1,4 +1,11 @@
 import { ConvexError, v } from "convex/values";
+import {
+  defaultRolloutRings,
+  fleetManagedGeneration,
+  isFleetManagedDevice,
+  requiresFleetManagedDevice,
+  rolloutRingForIndex,
+} from "@showroom/contracts";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
@@ -11,6 +18,47 @@ import {
 } from "./lib";
 
 const deviceCredentialTtlMs = 24 * 60 * 60_000;
+const defaultFailureThresholdPercent = 10;
+
+function releaseCommandPayload(release: Doc<"releases">) {
+  return {
+    version: release.version,
+    agentVersion: release.agentUrl ? release.version : undefined,
+    agentUrl: release.agentUrl,
+    agentSha256: release.agentSha256,
+    agentSignature: release.agentSignature,
+    playerVersion: release.playerUrl ? release.version : undefined,
+    playerUrl: release.playerUrl,
+    playerSha256: release.playerSha256,
+    playerSignature: release.playerSignature,
+    systemVersion: release.systemUrl ? release.version : undefined,
+    systemUrl: release.systemUrl,
+    systemSha256: release.systemSha256,
+    systemSignature: release.systemSignature,
+    signingKeyId: release.signingKeyId,
+  };
+}
+
+async function queueReleaseCommand(
+  ctx: any,
+  release: Doc<"releases">,
+  device: Doc<"devices">,
+  now: number,
+) {
+  if (!isFleetManagedDevice(device)) {
+    throw new ConvexError("Flash this device with the fleet appliance before deploying releases");
+  }
+  return ctx.db.insert("deviceCommands", {
+    organizationId: release.organizationId,
+    deviceId: device._id,
+    commandType: "update_release",
+    status: "queued",
+    payload: releaseCommandPayload(release),
+    queuedAt: now,
+    maxAttempts: 5,
+    idempotencyKey: `release:${release._id}:${device._id}`,
+  });
+}
 
 function expiresAtFromNow(now: number, ttlMs: number) {
   return now + ttlMs;
@@ -32,21 +80,21 @@ async function listOrgPlaylists(ctx: any, orgId: string) {
   return ctx.db
     .query("playlists")
     .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
-    .collect() as Promise<Array<Doc<"playlists">>>;
+    .take(2_000) as Promise<Array<Doc<"playlists">>>;
 }
 
 async function listOrgMediaAssets(ctx: any, orgId: string) {
   return ctx.db
     .query("mediaAssets")
     .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
-    .collect() as Promise<Array<Doc<"mediaAssets">>>;
+    .take(10_000) as Promise<Array<Doc<"mediaAssets">>>;
 }
 
 async function listOrgDevices(ctx: any, orgId: string) {
   return ctx.db
     .query("devices")
     .withIndex("by_org", (q: any) => q.eq("organizationId", orgId))
-    .collect() as Promise<Array<Doc<"devices">>>;
+    .take(2_000) as Promise<Array<Doc<"devices">>>;
 }
 
 async function listOrgFolders(
@@ -500,7 +548,7 @@ export const listScreens = query({
     const devices = await ctx.db
       .query("devices")
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-      .collect();
+      .take(2_000);
 
     return Promise.all(
       devices.map(async (device) => {
@@ -518,6 +566,21 @@ export const listScreens = query({
           currentPlaylistName:
             device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
           manifestVersion: device.manifestVersion ?? null,
+          desiredAgentVersion: device.desiredAgentVersion ?? null,
+          desiredPlayerVersion: device.desiredPlayerVersion ?? null,
+          agentVersion: device.agentVersion ?? null,
+          appVersion: device.appVersion ?? null,
+          releaseChannel: device.releaseChannel ?? null,
+          hardwareProfile: device.hardwareProfile ?? null,
+          currentAssetId: device.currentAssetId ?? null,
+          fleetManagementState: isFleetManagedDevice(device) ? "managed" : "legacy",
+          applianceGeneration: device.applianceGeneration ?? null,
+          agentProtocolVersion: device.agentProtocolVersion ?? null,
+          capabilities: device.capabilities ?? [],
+          applianceActivatedAt: device.applianceActivatedAt
+            ? new Date(device.applianceActivatedAt).toISOString()
+            : null,
+          health: device.health ?? null,
         };
       }),
     );
@@ -551,6 +614,21 @@ export const getScreenDetail = query({
       currentPlaylistName:
         device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
       manifestVersion: device.manifestVersion ?? null,
+      desiredAgentVersion: device.desiredAgentVersion ?? null,
+      desiredPlayerVersion: device.desiredPlayerVersion ?? null,
+      agentVersion: device.agentVersion ?? null,
+      appVersion: device.appVersion ?? null,
+      releaseChannel: device.releaseChannel ?? null,
+      hardwareProfile: device.hardwareProfile ?? null,
+      currentAssetId: device.currentAssetId ?? null,
+      fleetManagementState: isFleetManagedDevice(device) ? "managed" : "legacy",
+      applianceGeneration: device.applianceGeneration ?? null,
+      agentProtocolVersion: device.agentProtocolVersion ?? null,
+      capabilities: device.capabilities ?? [],
+      applianceActivatedAt: device.applianceActivatedAt
+        ? new Date(device.applianceActivatedAt).toISOString()
+        : null,
+      health: device.health ?? null,
       timezone: device.timezone,
       orientation: device.orientation,
       volume: device.volume,
@@ -605,7 +683,7 @@ export const listDeviceCommands = query({
     const devices = await ctx.db
       .query("devices")
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-      .collect();
+      .take(2_000);
 
     const allowedIds = new Set(devices.map((device) => device._id));
     if (args.deviceId && !allowedIds.has(args.deviceId)) {
@@ -620,7 +698,11 @@ export const listDeviceCommands = query({
         .order("desc")
         .take(20);
     } else {
-      commands = await ctx.db.query("deviceCommands").order("desc").take(50);
+      commands = await ctx.db
+        .query("deviceCommands")
+        .withIndex("by_org_and_queued_at", (q) => q.eq("organizationId", orgId))
+        .order("desc")
+        .take(50);
     }
 
     return commands
@@ -674,16 +756,16 @@ export const listReleases = query({
         .query("releases")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .order("desc")
-        .collect(),
+        .take(100),
       ctx.db
         .query("devices")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
+        .take(2_000),
       ctx.db
         .query("releaseRollouts")
         .withIndex("by_org_and_queued_at", (q) => q.eq("organizationId", orgId))
         .order("desc")
-        .collect(),
+        .take(2_000),
     ]);
 
     const deviceNameById = new Map(
@@ -700,10 +782,17 @@ export const listReleases = query({
         notes: release.notes ?? null,
         playerUrl: release.playerUrl ?? null,
         playerSha256: release.playerSha256 ?? null,
+        playerSignature: release.playerSignature ?? null,
         agentUrl: release.agentUrl ?? null,
         agentSha256: release.agentSha256 ?? null,
+        agentSignature: release.agentSignature ?? null,
         systemUrl: release.systemUrl ?? null,
         systemSha256: release.systemSha256 ?? null,
+        systemSignature: release.systemSignature ?? null,
+        signingKeyId: release.signingKeyId ?? null,
+        rolloutStatus: release.rolloutStatus ?? "draft",
+        rolloutRings: release.rolloutRings ?? [],
+        currentRing: release.currentRing ?? 0,
         createdAt: new Date(release.createdAt).toISOString(),
         updatedAt: new Date(release.updatedAt).toISOString(),
         rolloutSummary: {
@@ -756,7 +845,7 @@ export const listSchedules = query({
       ctx.db.query("schedules").withIndex("by_org", (q) => q.eq("organizationId", orgId)).collect(),
       ctx.db.query("scheduleTargets").withIndex("by_org", (q) => q.eq("organizationId", orgId)).collect(),
       ctx.db.query("playlists").withIndex("by_org", (q) => q.eq("organizationId", orgId)).collect(),
-      ctx.db.query("devices").withIndex("by_org", (q) => q.eq("organizationId", orgId)).collect(),
+      ctx.db.query("devices").withIndex("by_org", (q) => q.eq("organizationId", orgId)).take(2_000),
     ]);
 
     const playlistMap = new Map(playlists.map((playlist) => [playlist._id, playlist]));
@@ -1036,16 +1125,38 @@ export const createRelease = mutation({
     notes: v.optional(v.string()),
     playerUrl: v.optional(v.string()),
     playerSha256: v.optional(v.string()),
+    playerSignature: v.optional(v.string()),
     agentUrl: v.optional(v.string()),
     agentSha256: v.optional(v.string()),
+    agentSignature: v.optional(v.string()),
     systemUrl: v.optional(v.string()),
     systemSha256: v.optional(v.string()),
+    systemSignature: v.optional(v.string()),
+    signingKeyId: v.string(),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const identity = await requireAdmin(ctx);
+    if (args.systemUrl) {
+      throw new ConvexError("Operating-system updates must use the A/B OTA lane");
+    }
     if (!args.playerUrl && !args.agentUrl && !args.systemUrl) {
       throw new ConvexError("Provide a player URL, agent URL, and/or system bundle URL");
+    }
+    for (const [url, checksum, signature, label] of [
+      [args.playerUrl, args.playerSha256, args.playerSignature, "player"],
+      [args.agentUrl, args.agentSha256, args.agentSignature, "agent"],
+      [args.systemUrl, args.systemSha256, args.systemSignature, "system"],
+    ] as const) {
+      if (url && !checksum) {
+        throw new ConvexError(`A SHA-256 checksum is required for the ${label} artifact`);
+      }
+      if (checksum && !/^(sha256:)?[a-f0-9]{64}$/i.test(checksum)) {
+        throw new ConvexError(`The ${label} checksum is not a valid SHA-256 digest`);
+      }
+      if (url && !signature) {
+        throw new ConvexError(`An Ed25519 signature is required for the ${label} artifact`);
+      }
     }
 
     const releaseId = await ctx.db.insert("releases", {
@@ -1055,10 +1166,14 @@ export const createRelease = mutation({
       notes: args.notes,
       playerUrl: args.playerUrl,
       playerSha256: args.playerSha256,
+      playerSignature: args.playerSignature,
       agentUrl: args.agentUrl,
       agentSha256: args.agentSha256,
+      agentSignature: args.agentSignature,
       systemUrl: args.systemUrl,
       systemSha256: args.systemSha256,
+      systemSignature: args.systemSignature,
+      signingKeyId: args.signingKeyId,
       createdByUserId: identity.userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1071,10 +1186,14 @@ export const createRelease = mutation({
       notes: args.notes ?? null,
       playerUrl: args.playerUrl ?? null,
       playerSha256: args.playerSha256 ?? null,
+      playerSignature: args.playerSignature ?? null,
       agentUrl: args.agentUrl ?? null,
       agentSha256: args.agentSha256 ?? null,
+      agentSignature: args.agentSignature ?? null,
       systemUrl: args.systemUrl ?? null,
       systemSha256: args.systemSha256 ?? null,
+      systemSignature: args.systemSignature ?? null,
+      signingKeyId: args.signingKeyId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       rolloutSummary: {
@@ -1120,6 +1239,8 @@ export const publishReleaseArtifacts = mutation({
       v.object({
         fileName: v.string(),
         sha256: v.string(),
+        signature: v.string(),
+        signingKeyId: v.string(),
         storageId: v.id("_storage"),
       }),
     ),
@@ -1127,6 +1248,8 @@ export const publishReleaseArtifacts = mutation({
       v.object({
         fileName: v.string(),
         sha256: v.string(),
+        signature: v.string(),
+        signingKeyId: v.string(),
         storageId: v.id("_storage"),
       }),
     ),
@@ -1134,6 +1257,8 @@ export const publishReleaseArtifacts = mutation({
       v.object({
         fileName: v.string(),
         sha256: v.string(),
+        signature: v.string(),
+        signingKeyId: v.string(),
         storageId: v.id("_storage"),
       }),
     ),
@@ -1152,6 +1277,16 @@ export const publishReleaseArtifacts = mutation({
     if (!args.player && !args.agent && !args.system) {
       throw new ConvexError("Provide a player artifact, agent artifact, and/or system bundle");
     }
+    if (args.system) {
+      throw new ConvexError("Operating-system updates must use the A/B OTA lane");
+    }
+    const signingKeyIds = [
+      args.player?.signingKeyId,
+      args.agent?.signingKeyId,
+    ].filter((keyId): keyId is string => Boolean(keyId));
+    if (new Set(signingKeyIds).size !== 1) {
+      throw new ConvexError("All release artifacts must use the same signing key");
+    }
 
     const playerUrl = args.player
       ? await ctx.storage.getUrl(args.player.storageId)
@@ -1159,18 +1294,12 @@ export const publishReleaseArtifacts = mutation({
     const agentUrl = args.agent
       ? await ctx.storage.getUrl(args.agent.storageId)
       : null;
-    const systemUrl = args.system
-      ? await ctx.storage.getUrl(args.system.storageId)
-      : null;
 
     if (args.player && !playerUrl) {
       throw new ConvexError("Unable to resolve player artifact URL");
     }
     if (args.agent && !agentUrl) {
       throw new ConvexError("Unable to resolve agent artifact URL");
-    }
-    if (args.system && !systemUrl) {
-      throw new ConvexError("Unable to resolve system artifact URL");
     }
 
     const now = Date.now();
@@ -1181,10 +1310,11 @@ export const publishReleaseArtifacts = mutation({
       notes: args.notes,
       playerUrl: playerUrl ?? undefined,
       playerSha256: args.player?.sha256,
+      playerSignature: args.player?.signature,
       agentUrl: agentUrl ?? undefined,
       agentSha256: args.agent?.sha256,
-      systemUrl: systemUrl ?? undefined,
-      systemSha256: args.system?.sha256,
+      agentSignature: args.agent?.signature,
+      signingKeyId: signingKeyIds[0],
       createdAt: now,
       updatedAt: now,
       createdByUserId: identity.userId,
@@ -1201,59 +1331,67 @@ export const publishReleaseArtifacts = mutation({
           releaseId: Id<"releases">;
         }
       | undefined;
+    let rolloutTotal = 0;
 
     if (args.deployToAll || (args.deviceIds && args.deviceIds.length > 0)) {
       const orgDevices = await ctx.db
         .query("devices")
         .withIndex("by_org", (q) => q.eq("organizationId", identity.orgId))
-        .collect();
+        .take(2_000);
 
       const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
-      const targetDevices = requestedIds
+      const selectedDevices = requestedIds
         ? orgDevices.filter((device) => requestedIds.has(device._id))
         : orgDevices;
+      const targetDevices = selectedDevices.filter(isFleetManagedDevice);
 
       if (!targetDevices.length) {
-        throw new ConvexError("No target devices selected");
+        throw new ConvexError("No flashed fleet appliances are eligible for this rollout");
       }
+      if (requestedIds && targetDevices.length !== requestedIds.size) {
+        throw new ConvexError("One or more selected devices must be flashed before joining a rollout");
+      }
+      rolloutTotal = targetDevices.length;
 
-      for (const device of targetDevices) {
-        const commandId = await ctx.db.insert("deviceCommands", {
-          organizationId: identity.orgId,
-          deviceId: device._id,
-          commandType: "update_release",
-          status: "queued",
-          payload: {
-            version: release.version,
-            agentVersion: release.agentUrl ? release.version : undefined,
-            agentUrl: release.agentUrl,
-            agentSha256: release.agentSha256,
-            playerVersion: release.playerUrl ? release.version : undefined,
-            playerUrl: release.playerUrl,
-            playerSha256: release.playerSha256,
-            systemVersion: release.systemUrl ? release.version : undefined,
-            systemUrl: release.systemUrl,
-            systemSha256: release.systemSha256,
-          },
-          queuedAt: now,
-        });
+      let queuedDeviceCount = 0;
+      for (const [index, device] of targetDevices.entries()) {
+        const ring = rolloutRingForIndex(index, targetDevices.length);
+        const commandId = ring === 0
+          ? await queueReleaseCommand(ctx, release, device, now)
+          : undefined;
+        if (commandId) queuedDeviceCount += 1;
 
         await ctx.db.insert("releaseRollouts", {
           organizationId: identity.orgId,
           releaseId: release._id,
           deviceId: device._id,
           commandId,
-          status: "queued",
+          ring,
+          status: commandId ? "queued" : "waiting",
+          applianceGeneration: fleetManagedGeneration,
           queuedAt: now,
           createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.patch(device._id, {
+          desiredAgentVersion: release.agentUrl ? release.version : device.desiredAgentVersion,
+          desiredPlayerVersion: release.playerUrl ? release.version : device.desiredPlayerVersion,
           updatedAt: now,
         });
       }
 
       rollout = {
-        queuedDeviceCount: targetDevices.length,
+        queuedDeviceCount,
         releaseId: release._id,
       };
+      await ctx.db.patch(release._id, {
+        rolloutStatus: "active",
+        rolloutRings: [...defaultRolloutRings],
+        currentRing: 0,
+        failureThresholdPercent: defaultFailureThresholdPercent,
+        rolloutStartedAt: now,
+        updatedAt: now,
+      });
     }
 
     return {
@@ -1264,14 +1402,18 @@ export const publishReleaseArtifacts = mutation({
         notes: release.notes ?? null,
         playerUrl: release.playerUrl ?? null,
         playerSha256: release.playerSha256 ?? null,
+        playerSignature: release.playerSignature ?? null,
         agentUrl: release.agentUrl ?? null,
         agentSha256: release.agentSha256 ?? null,
+        agentSignature: release.agentSignature ?? null,
         systemUrl: release.systemUrl ?? null,
         systemSha256: release.systemSha256 ?? null,
+        systemSignature: release.systemSignature ?? null,
+        signingKeyId: release.signingKeyId ?? null,
         createdAt: new Date(release.createdAt).toISOString(),
         updatedAt: new Date(release.updatedAt).toISOString(),
         rolloutSummary: {
-          total: rollout?.queuedDeviceCount ?? 0,
+          total: rolloutTotal,
           queued: rollout?.queuedDeviceCount ?? 0,
           inProgress: 0,
           succeeded: 0,
@@ -1303,57 +1445,60 @@ export const deployRelease = mutation({
     const orgDevices = await ctx.db
       .query("devices")
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-      .collect();
+      .take(2_000);
 
     const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
-    const targetDevices = requestedIds
+    const selectedDevices = requestedIds
       ? orgDevices.filter((device) => requestedIds.has(device._id))
       : orgDevices;
+    const targetDevices = selectedDevices.filter(isFleetManagedDevice);
 
     if (!targetDevices.length) {
-      throw new ConvexError("No target devices selected");
+      throw new ConvexError("No flashed fleet appliances are eligible for this rollout");
+    }
+    if (requestedIds && targetDevices.length !== requestedIds.size) {
+      throw new ConvexError("One or more selected devices must be flashed before joining a rollout");
     }
 
     const now = Date.now();
-    for (const device of targetDevices) {
-      const commandId = await ctx.db.insert("deviceCommands", {
-        organizationId: orgId,
-        deviceId: device._id,
-        commandType: "update_release",
-        status: "queued",
-        payload: {
-          version: release.version,
-          agentVersion: release.agentUrl ? release.version : undefined,
-          agentUrl: release.agentUrl,
-          agentSha256: release.agentSha256,
-          playerVersion: release.playerUrl ? release.version : undefined,
-          playerUrl: release.playerUrl,
-          playerSha256: release.playerSha256,
-          systemVersion: release.systemUrl ? release.version : undefined,
-          systemUrl: release.systemUrl,
-          systemSha256: release.systemSha256,
-        },
-        queuedAt: now,
-      });
+    let queuedDeviceCount = 0;
+    for (const [index, device] of targetDevices.entries()) {
+      const ring = rolloutRingForIndex(index, targetDevices.length);
+      const commandId = ring === 0
+        ? await queueReleaseCommand(ctx, release, device, now)
+        : undefined;
+      if (commandId) queuedDeviceCount += 1;
 
       await ctx.db.insert("releaseRollouts", {
         organizationId: orgId,
         releaseId: release._id,
         deviceId: device._id,
         commandId,
-        status: "queued",
+        ring,
+        status: commandId ? "queued" : "waiting",
+        applianceGeneration: fleetManagedGeneration,
         queuedAt: now,
         createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.patch(device._id, {
+        desiredAgentVersion: release.agentUrl ? release.version : device.desiredAgentVersion,
+        desiredPlayerVersion: release.playerUrl ? release.version : device.desiredPlayerVersion,
         updatedAt: now,
       });
     }
 
     await ctx.db.patch(release._id, {
+      rolloutStatus: "active",
+      rolloutRings: [...defaultRolloutRings],
+      currentRing: 0,
+      failureThresholdPercent: defaultFailureThresholdPercent,
+      rolloutStartedAt: now,
       updatedAt: now,
     });
 
     return {
-      queuedDeviceCount: targetDevices.length,
+      queuedDeviceCount,
       releaseId: release._id,
     };
   },
@@ -1397,7 +1542,7 @@ export const cancelReleaseRollout = internalMutation({
         updatedAt: now,
       });
 
-      const command = await ctx.db.get(rollout.commandId);
+      const command = rollout.commandId ? await ctx.db.get(rollout.commandId) : null;
       if (!command) {
         continue;
       }
@@ -1754,15 +1899,29 @@ export const enqueueDeviceCommand = mutation({
       v.literal("unblank_screen"),
       v.literal("update_youtube_auth"),
       v.literal("update_release"),
+      v.literal("update_network"),
     ),
     payload: v.optional(v.any()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgIdentity(ctx);
+    const identity = await requireOrgIdentity(ctx);
+    const { orgId } = identity;
+    if (
+      (args.commandType === "reboot_device" ||
+        args.commandType === "restart_player" ||
+        args.commandType === "update_release" ||
+        args.commandType === "update_network") &&
+      identity.role !== "org:admin"
+    ) {
+      throw new ConvexError("Admin role required");
+    }
     const device = await ctx.db.get(args.deviceId);
     if (!device || device.organizationId !== orgId) {
       throw new ConvexError("Device not found");
+    }
+    if (requiresFleetManagedDevice(args.commandType) && !isFleetManagedDevice(device)) {
+      throw new ConvexError("Flash this device with the fleet appliance before using this command");
     }
 
     const commandId = await ctx.db.insert("deviceCommands", {

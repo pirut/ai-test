@@ -17,6 +17,12 @@ CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_ROOT}/${HOSTNAME_SHORT}"
 APP_PID=""
 APP_MODE=""
 APP_TOKEN=""
+CURRENT_ASSET_ID=""
+CURRENT_MANIFEST_VERSION=""
+CURRENT_PLAYLIST_ID=""
+LAST_PLAYBACK_REPORT=0
+MPV_SOCKET=/tmp/showroom-mpv.sock
+MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json
 
 if ! command -v startx >/dev/null 2>&1; then
   echo "startx not found; install the xinit package" >&2
@@ -105,24 +111,40 @@ read_runtime() {
   python3 - "${RUNTIME_PATH}" <<'PY'
 import hashlib
 import json
+import os
 import sys
 
 with open(sys.argv[1], "r", encoding="utf-8") as handle:
     payload = json.load(handle)
 
-asset = payload.get("asset") or {}
 volume = payload.get("volume")
 if volume is None:
     volume = 100
+orientation = int(payload.get("orientation", 0) or 0)
+playlist = payload.get("playlist") or []
+playlist_paths = [item.get("localPath", "") for item in playlist if item.get("localPath")]
+playlist_path = "/tmp/showroom-mpv-playlist.m3u"
+asset_map_path = "/tmp/showroom-mpv-assets.json"
+
+if payload.get("mode") == "mpv" and playlist_paths:
+    next_path = playlist_path + ".next"
+    with open(next_path, "w", encoding="utf-8") as handle:
+        handle.write("#EXTM3U\n")
+        for path in playlist_paths:
+            handle.write(path.replace("\n", "") + "\n")
+    os.replace(next_path, playlist_path)
+    next_map = asset_map_path + ".next"
+    with open(next_map, "w", encoding="utf-8") as handle:
+        json.dump({item.get("localPath", ""): item.get("assetId") or item.get("id") for item in playlist if item.get("localPath")}, handle)
+    os.replace(next_map, asset_map_path)
 
 token_payload = {
     "mode": payload.get("mode", "browser"),
     "browserUrl": payload.get("browserUrl", "http://127.0.0.1:4173"),
     "manifestVersion": payload.get("manifestVersion", ""),
     "volume": int(volume),
-    "assetPath": asset.get("localPath", ""),
-    "assetType": asset.get("assetType", ""),
-    "durationSeconds": int(asset.get("durationSeconds", 0) or 0),
+    "orientation": orientation,
+    "playlist": playlist_paths,
 }
 
 token = hashlib.sha256(json.dumps(token_payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -131,9 +153,50 @@ print(payload.get("mode", "browser"))
 print(token)
 print(payload.get("browserUrl", "http://127.0.0.1:4173"))
 print(int(volume))
-print(asset.get("assetType", ""))
-print(asset.get("localPath", ""))
-print(int(asset.get("durationSeconds", 0) or 0))
+print(orientation)
+print(playlist_path if playlist_paths else "")
+print(payload.get("manifestVersion", ""))
+print((playlist[0].get("assetId") or playlist[0].get("id") or "") if playlist else "")
+print(payload.get("playlistId", ""))
+PY
+}
+
+report_playback() {
+  if [[ "${APP_MODE}" != "mpv" ]]; then return; fi
+  local now
+  now="$(date +%s)"
+  if (( now - LAST_PLAYBACK_REPORT < 10 )); then return; fi
+  LAST_PLAYBACK_REPORT="${now}"
+  python3 - "${CURRENT_ASSET_ID}" "${CURRENT_PLAYLIST_ID}" "${MPV_SOCKET}" "${MPV_ASSET_MAP}" <<'PY' >/dev/null 2>&1 || true
+import json
+import socket
+import sys
+import urllib.request
+
+asset_id = sys.argv[1] or None
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(1)
+        client.connect(sys.argv[3])
+        client.sendall(b'{"command":["get_property","path"]}\n')
+        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+    with open(sys.argv[4], "r", encoding="utf-8") as handle:
+        asset_id = json.load(handle).get(response.get("data"), asset_id)
+except (OSError, ValueError, KeyError):
+    pass
+
+payload = json.dumps({
+    "assetId": asset_id,
+    "playlistId": sys.argv[2] or None,
+    "state": "playing",
+}).encode("utf-8")
+request = urllib.request.Request(
+    "http://127.0.0.1:4173/local/playback",
+    data=payload,
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+urllib.request.urlopen(request, timeout=2).read()
 PY
 }
 
@@ -162,9 +225,8 @@ launch_browser() {
 
 launch_mpv() {
   local volume="$1"
-  local asset_type="$2"
-  local asset_path="$3"
-  local duration="$4"
+  local orientation="$2"
+  local playlist_path="$3"
 
   if ! command -v mpv >/dev/null 2>&1; then
     launch_browser "http://127.0.0.1:4173"
@@ -182,6 +244,11 @@ launch_mpv() {
     --gpu-context=x11egl
     --hwdec=auto-safe
     --profile=fast
+    --loop-playlist=inf
+    --audio-display=no
+    "--input-ipc-server=${MPV_SOCKET}"
+    "--video-rotate=${orientation}"
+    "--playlist=${playlist_path}"
   )
 
   if [[ "${volume}" -le 0 ]]; then
@@ -190,14 +257,7 @@ launch_mpv() {
     args+=("--volume=${volume}")
   fi
 
-  if [[ "${asset_type}" == "image" ]]; then
-    if [[ "${duration}" -le 0 ]]; then
-      duration=15
-    fi
-    args+=(--image-display-duration="${duration}" --loop-file=inf "${asset_path}")
-  else
-    args+=("${asset_path}")
-  fi
+  rm -f "${MPV_SOCKET}"
   setsid mpv "${args[@]}" >/tmp/showroom-mpv.log 2>&1 &
   APP_PID=$!
   APP_MODE="mpv"
@@ -211,9 +271,11 @@ while true; do
   DESIRED_TOKEN="${runtime_lines[1]:-browser}"
   BROWSER_URL="${runtime_lines[2]:-http://127.0.0.1:4173}"
   VOLUME="${runtime_lines[3]:-0}"
-  ASSET_TYPE="${runtime_lines[4]:-}"
-  ASSET_PATH="${runtime_lines[5]:-}"
-  ASSET_DURATION="${runtime_lines[6]:-0}"
+  ORIENTATION="${runtime_lines[4]:-0}"
+  PLAYLIST_PATH="${runtime_lines[5]:-}"
+  CURRENT_MANIFEST_VERSION="${runtime_lines[6]:-}"
+  CURRENT_ASSET_ID="${runtime_lines[7]:-}"
+  CURRENT_PLAYLIST_ID="${runtime_lines[8]:-${CURRENT_MANIFEST_VERSION}}"
 
   if [[ -n "${APP_PID}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
     APP_PID=""
@@ -221,13 +283,15 @@ while true; do
 
   if [[ "${DESIRED_MODE}" != "${APP_MODE}" || "${DESIRED_TOKEN}" != "${APP_TOKEN}" || -z "${APP_PID}" ]]; then
     stop_app
-    if [[ "${DESIRED_MODE}" == "mpv" && -n "${ASSET_PATH}" ]]; then
-      launch_mpv "${VOLUME}" "${ASSET_TYPE}" "${ASSET_PATH}" "${ASSET_DURATION}"
+    if [[ "${DESIRED_MODE}" == "mpv" && -n "${PLAYLIST_PATH}" ]]; then
+      launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}"
     else
       launch_browser "${BROWSER_URL}"
     fi
     APP_TOKEN="${DESIRED_TOKEN}"
   fi
+
+  report_playback
 
   sleep 1
 done

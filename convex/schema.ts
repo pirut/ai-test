@@ -17,6 +17,7 @@ const commandTypeValidator = v.union(
   v.literal("unblank_screen"),
   v.literal("update_youtube_auth"),
   v.literal("update_release"),
+  v.literal("update_network"),
 );
 
 const commandStatusValidator = v.union(
@@ -26,11 +27,22 @@ const commandStatusValidator = v.union(
   v.literal("failed"),
 );
 
+const rolloutControlStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("completed"),
+  v.literal("rolled_back"),
+);
+
 const releaseRolloutStatusValidator = v.union(
+  v.literal("waiting"),
   v.literal("queued"),
   v.literal("in_progress"),
   v.literal("succeeded"),
   v.literal("failed"),
+  v.literal("paused"),
+  v.literal("rolled_back"),
 );
 
 export default defineSchema({
@@ -63,7 +75,8 @@ export default defineSchema({
     address: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_org", ["organizationId"]),
+  })
+    .index("by_org", ["organizationId"]),
 
   screenGroups: defineTable({
     organizationId: v.string(),
@@ -95,6 +108,19 @@ export default defineSchema({
     agentVersion: v.optional(v.string()),
     screenshotUrl: v.optional(v.string()),
     currentPlaylistName: v.optional(v.string()),
+    currentAssetId: v.optional(v.string()),
+    desiredAgentVersion: v.optional(v.string()),
+    desiredPlayerVersion: v.optional(v.string()),
+    releaseChannel: v.optional(v.string()),
+    hardwareProfile: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    applianceGeneration: v.optional(v.string()),
+    agentProtocolVersion: v.optional(v.number()),
+    capabilities: v.optional(v.array(v.string())),
+    applianceActivatedAt: v.optional(v.number()),
+    health: v.optional(v.any()),
+    lastHealthAt: v.optional(v.number()),
+    connectDeviceId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -135,9 +161,15 @@ export default defineSchema({
     storageTotalBytes: v.number(),
     currentAssetId: v.optional(v.string()),
     currentPlaylistId: v.optional(v.string()),
+    applianceGeneration: v.optional(v.string()),
+    agentProtocolVersion: v.optional(v.number()),
     payload: v.any(),
+    health: v.optional(v.any()),
     receivedAt: v.number(),
-  }).index("by_device_and_received_at", ["deviceId", "receivedAt"]),
+  })
+    .index("by_device_and_received_at", ["deviceId", "receivedAt"])
+    .index("by_received_at", ["receivedAt"])
+    .index("by_appliance_generation_and_received_at", ["applianceGeneration", "receivedAt"]),
 
   deviceScreenshots: defineTable({
     organizationId: v.optional(v.string()),
@@ -146,8 +178,12 @@ export default defineSchema({
     publicUrl: v.string(),
     capturedAt: v.number(),
     bytes: v.number(),
+    applianceGeneration: v.optional(v.string()),
     createdAt: v.number(),
-  }).index("by_device_and_captured_at", ["deviceId", "capturedAt"]),
+  })
+    .index("by_device_and_captured_at", ["deviceId", "capturedAt"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_appliance_generation_and_created_at", ["applianceGeneration", "createdAt"]),
 
   libraryFolders: defineTable({
     organizationId: v.string(),
@@ -196,21 +232,35 @@ export default defineSchema({
     agentSha256: v.optional(v.string()),
     systemUrl: v.optional(v.string()),
     systemSha256: v.optional(v.string()),
+    playerSignature: v.optional(v.string()),
+    agentSignature: v.optional(v.string()),
+    systemSignature: v.optional(v.string()),
+    signingKeyId: v.optional(v.string()),
+    rolloutStatus: v.optional(rolloutControlStatusValidator),
+    rolloutRings: v.optional(v.array(v.number())),
+    currentRing: v.optional(v.number()),
+    failureThresholdPercent: v.optional(v.number()),
+    rolloutStartedAt: v.optional(v.number()),
+    rolloutCompletedAt: v.optional(v.number()),
     createdByUserId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_org", ["organizationId"]),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_rollout_status", ["rolloutStatus"]),
 
   releaseRollouts: defineTable({
     organizationId: v.string(),
     releaseId: v.id("releases"),
     deviceId: v.id("devices"),
-    commandId: v.id("deviceCommands"),
+    commandId: v.optional(v.id("deviceCommands")),
+    ring: v.optional(v.number()),
     status: releaseRolloutStatusValidator,
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     message: v.optional(v.string()),
+    applianceGeneration: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -287,9 +337,17 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     resultMessage: v.optional(v.string()),
+    attempts: v.optional(v.number()),
+    maxAttempts: v.optional(v.number()),
+    leaseToken: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    deadlineAt: v.optional(v.number()),
+    idempotencyKey: v.optional(v.string()),
   })
     .index("by_device_and_queued_at", ["deviceId", "queuedAt"])
-    .index("by_device_and_status", ["deviceId", "status"]),
+    .index("by_device_and_status", ["deviceId", "status"])
+    .index("by_org_and_status", ["organizationId", "status"])
+    .index("by_org_and_queued_at", ["organizationId", "queuedAt"]),
 
   activityLogs: defineTable({
     organizationId: v.string(),
@@ -316,12 +374,42 @@ export default defineSchema({
 
   alertEvents: defineTable({
     organizationId: v.string(),
-    alertRuleId: v.id("alertRules"),
+    alertRuleId: v.optional(v.id("alertRules")),
     deviceId: v.id("devices"),
     alertType: v.string(),
     state: v.string(),
     openedAt: v.number(),
     resolvedAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
-  }).index("by_device", ["deviceId"]),
+  })
+    .index("by_device", ["deviceId"])
+    .index("by_org_and_state", ["organizationId", "state"]),
+
+  hardwareProfiles: defineTable({
+    organizationId: v.string(),
+    name: v.string(),
+    deviceClass: v.union(v.literal("rpi4"), v.literal("rpi5"), v.literal("cm4"), v.literal("cm5")),
+    storageClass: v.union(v.literal("industrial_sd"), v.literal("emmc"), v.literal("nvme")),
+    minimumStorageBytes: v.number(),
+    requireManagedPower: v.boolean(),
+    targetResolution: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+
+  deviceDiagnostics: defineTable({
+    organizationId: v.optional(v.string()),
+    deviceId: v.id("devices"),
+    level: v.union(v.literal("info"), v.literal("warning"), v.literal("error")),
+    source: v.string(),
+    message: v.string(),
+    metadata: v.optional(v.any()),
+    applianceGeneration: v.optional(v.string()),
+    occurredAt: v.number(),
+  })
+    .index("by_device_and_occurred_at", ["deviceId", "occurredAt"])
+    .index("by_org_and_occurred_at", ["organizationId", "occurredAt"])
+    .index("by_occurred_at", ["occurredAt"])
+    .index("by_appliance_generation_and_occurred_at", ["applianceGeneration", "occurredAt"]),
 });

@@ -1,12 +1,10 @@
 :root {
   color-scheme: dark;
-  font-family: "IBM Plex Sans", sans-serif;
-  background: #02070a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #030608;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html,
 body,
@@ -15,160 +13,167 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #02070a;
+  background: #030608;
 }
 
 .playerRoot {
   position: relative;
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(110, 231, 255, 0.1), transparent 30%),
-    #02070a;
+  overflow: hidden;
+  background: #030608;
+}
+
+.playerViewport {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  overflow: hidden;
+  transform-origin: center;
+  background: #030608;
 }
 
 .playerMedia {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  display: block;
+  object-fit: contain;
+  background: #030608;
 }
 
-.playerOverlay {
+.playerStatus {
   position: absolute;
-  top: 1rem;
-  left: 1rem;
+  right: 1.25rem;
+  bottom: 1.25rem;
   z-index: 5;
-  display: flex;
-  gap: 0.75rem;
   padding: 0.65rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.42);
-  color: #c8f9ff;
-  letter-spacing: 0.08em;
-  font-size: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.65rem;
+  background: rgba(3, 6, 8, 0.78);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  backdrop-filter: blur(12px);
 }
 
-.fallbackScreen {
+.playerStatusError { left: 1.25rem; right: auto; color: #ffd0d6; }
+
+.fallbackScreen,
+.setupScreen {
   display: grid;
   place-content: center;
   width: 100%;
   height: 100%;
-  text-align: center;
-  color: #eef6f6;
-}
-
-.fallbackScreen .label {
-  color: #6ee7ff;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.75rem;
-}
-
-.fallbackScreen h1 {
-  margin: 0.5rem 0;
-  font-size: clamp(2.4rem, 6vw, 4rem);
-  text-transform: uppercase;
-}
-
-.setupScreen {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
   padding: 2rem;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(91, 127, 255, 0.12), transparent 32rem),
+    linear-gradient(160deg, #090d13, #030608 65%);
+  color: #f5f7fb;
+}
+
+.fallbackScreen { text-align: center; }
+
+.label {
+  margin: 0;
+  color: #91aaff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.fallbackScreen h1,
+.setupCard h1 {
+  margin: 0.6rem 0 0.85rem;
+  font-size: clamp(2.2rem, 6vw, 4.8rem);
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.fallbackScreen p:not(.label):not(.technicalError),
+.setupCopy {
+  max-width: 38rem;
+  margin: 0 auto;
+  color: rgba(245, 247, 251, 0.66);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.55;
+}
+
+.claimCode { font-variant-numeric: tabular-nums; letter-spacing: 0.14em !important; }
+
+.waitingMark {
+  width: 3.25rem;
+  height: 3.25rem;
+  margin: 0 auto 1.5rem;
+  border: 1px solid rgba(145, 170, 255, 0.4);
+  border-radius: 1rem;
+  box-shadow: inset 0 0 0 0.6rem rgba(145, 170, 255, 0.08);
+}
+
+.technicalError {
+  max-width: 46rem;
+  margin: 2rem auto 0;
+  color: rgba(255, 176, 187, 0.75);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
 }
 
 .setupCard {
-  width: min(42rem, 100%);
-  padding: 2rem;
-  border: 1px solid rgba(110, 231, 255, 0.2);
-  border-radius: 1.5rem;
-  background:
-    linear-gradient(180deg, rgba(9, 18, 24, 0.96), rgba(4, 10, 14, 0.96)),
-    rgba(0, 0, 0, 0.6);
-  box-shadow: 0 2rem 5rem rgba(0, 0, 0, 0.35);
-  color: #eef6f6;
+  width: min(38rem, calc(100vw - 3rem));
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  background: rgba(14, 18, 25, 0.9);
+  box-shadow: 0 2rem 6rem rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
 }
 
-.setupCard h1 {
-  margin: 0.35rem 0 0.75rem;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-}
-
-.setupCopy {
-  margin: 0 0 1.5rem;
-  color: rgba(238, 246, 246, 0.78);
-  line-height: 1.5;
-}
-
-.wifiForm {
-  display: grid;
-  gap: 1rem;
-}
-
-.wifiField {
-  display: grid;
-  gap: 0.45rem;
-  text-align: left;
-}
+.setupCard h1 { font-size: clamp(2rem, 5vw, 3.5rem); }
+.setupCopy { margin: 0 0 1.5rem; font-size: 1rem; }
+.wifiForm { display: grid; gap: 1rem; }
+.wifiField { display: grid; gap: 0.45rem; text-align: left; }
 
 .wifiField span {
-  color: #6ee7ff;
-  font-size: 0.82rem;
+  color: rgba(245, 247, 251, 0.68);
+  font-size: 0.76rem;
+  font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .wifiField input {
   width: 100%;
-  padding: 0.95rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.06);
-  color: #eef6f6;
+  min-height: 3rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0.7rem;
+  outline: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f5f7fb;
   font: inherit;
-}
-
-.wifiField input::placeholder {
-  color: rgba(238, 246, 246, 0.38);
 }
 
 .wifiField input:focus {
-  outline: none;
-  border-color: rgba(110, 231, 255, 0.75);
-  box-shadow: 0 0 0 0.2rem rgba(110, 231, 255, 0.15);
+  border-color: #91aaff;
+  box-shadow: 0 0 0 0.2rem rgba(145, 170, 255, 0.14);
 }
 
 .wifiForm button {
-  padding: 1rem 1.1rem;
+  min-height: 3rem;
   border: 0;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #6ee7ff, #8cf7d2);
-  color: #031118;
+  border-radius: 0.7rem;
+  background: #a9baff;
+  color: #071332;
   font: inherit;
-  font-weight: 700;
+  font-weight: 750;
   cursor: pointer;
 }
 
-.wifiForm button:disabled {
-  opacity: 0.7;
-  cursor: wait;
-}
+.wifiForm button:disabled { opacity: 0.62; cursor: wait; }
+.setupMeta { display: grid; gap: 0.4rem; margin-top: 1.2rem; color: rgba(245, 247, 251, 0.5); font-size: 0.82rem; }
+.setupMessage { color: #9ce7b7; }
+.setupMessage.error { color: #ff9aab; }
 
-.setupMeta {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 1.2rem;
-  color: rgba(238, 246, 246, 0.68);
-  font-size: 0.95rem;
-}
-
-.setupMessage {
-  color: #8cf7d2;
-}
-
-.setupMessage.error {
-  color: #ff9a9a;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; }
 }

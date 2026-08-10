@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+FAILURES=0
+. /etc/showroom-agent/config.env
+while true; do
+  if curl -fsSI --max-time 8 "${SHOWROOM_API_BASE_URL}/" >/dev/null 2>&1 \
+    || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+    FAILURES=0
+  else
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  if (( FAILURES == 3 )); then
+    nmcli networking connectivity check >/dev/null 2>&1 || true
+    nmcli device connect wlan0 >/dev/null 2>&1 || true
+  elif (( FAILURES >= 10 )); then
+    nmcli radio wifi off >/dev/null 2>&1 || true
+    sleep 3
+    nmcli radio wifi on >/dev/null 2>&1 || true
+    FAILURES=3
+  fi
+
+  sleep 30
+done

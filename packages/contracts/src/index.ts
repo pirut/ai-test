@@ -1,5 +1,44 @@
 import { z } from "zod";
 
+export const defaultRolloutRings = [1, 5, 25, 100] as const;
+export const fleetManagedGeneration = "showroom-appliance-v2";
+export const fleetManagedProtocolVersion = 2;
+export const fleetManagedCapabilities = [
+  "appliance_telemetry",
+  "app_slot_rollback",
+  "leased_commands",
+  "network_rotation",
+  "signed_releases",
+  "staged_rollouts",
+  "transactional_content",
+] as const;
+
+export type FleetManagedDeviceDescriptor = {
+  applianceGeneration?: string | null;
+  agentProtocolVersion?: number | null;
+  capabilities?: readonly string[] | null;
+};
+
+export function isFleetManagedDevice(device: FleetManagedDeviceDescriptor) {
+  return device.applianceGeneration === fleetManagedGeneration &&
+    (device.agentProtocolVersion ?? 0) >= fleetManagedProtocolVersion &&
+    fleetManagedCapabilities.every((capability) => device.capabilities?.includes(capability));
+}
+
+export function rolloutRingForIndex(
+  index: number,
+  deviceCount: number,
+  rings: readonly number[] = defaultRolloutRings,
+) {
+  return rings.findIndex(
+    (percentage) => index < Math.max(1, Math.ceil((deviceCount * percentage) / 100)),
+  );
+}
+
+export function shouldPauseRollout(failed: number, total: number, thresholdPercent = 10) {
+  return total > 0 && failed > 0 && (failed / total) * 100 >= thresholdPercent;
+}
+
 export const orientationSchema = z.union([
   z.literal(0),
   z.literal(90),
@@ -16,9 +55,16 @@ export const commandTypeSchema = z.enum([
   "unblank_screen",
   "update_youtube_auth",
   "update_release",
+  "update_network",
 ]);
 
-const sha256Schema = z
+export type CommandType = z.infer<typeof commandTypeSchema>;
+
+export function requiresFleetManagedDevice(commandType: CommandType) {
+  return commandType === "update_release" || commandType === "update_network";
+}
+
+export const sha256Schema = z
   .string()
   .trim()
   .regex(/^(sha256:)?[a-f0-9]{64}$/i, "Expected a SHA-256 hex digest");
@@ -35,20 +81,59 @@ export const releaseUpdatePayloadSchema = z
     systemVersion: z.string().trim().min(1).optional(),
     systemUrl: z.string().url().optional(),
     systemSha256: sha256Schema.optional(),
+    agentSignature: z.string().trim().min(1).optional(),
+    playerSignature: z.string().trim().min(1).optional(),
+    systemSignature: z.string().trim().min(1).optional(),
+    signingKeyId: z.string().trim().min(1).optional(),
   })
   .refine((value) => Boolean(value.agentUrl || value.playerUrl || value.systemUrl), {
     message: "Provide at least one release URL",
     path: ["agentUrl"],
+  })
+  .superRefine((value, context) => {
+    if (value.systemUrl) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Operating-system updates must use the A/B OTA lane",
+        path: ["systemUrl"],
+      });
+    }
+    if ((value.agentUrl || value.playerUrl || value.systemUrl) && !value.signingKeyId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A signing key ID is required",
+        path: ["signingKeyId"],
+      });
+    }
+    for (const [urlField, checksumField, signatureField] of [
+      ["agentUrl", "agentSha256", "agentSignature"],
+      ["playerUrl", "playerSha256", "playerSignature"],
+      ["systemUrl", "systemSha256", "systemSignature"],
+    ] as const) {
+      if (value[urlField] && !value[checksumField]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `A SHA-256 checksum is required with ${urlField}`,
+          path: [checksumField],
+        });
+      }
+      if (value[urlField] && !value[signatureField]) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `An Ed25519 signature is required with ${urlField}`, path: [signatureField] });
+      }
+    }
   });
 
 export const mediaTypeSchema = z.enum(["image", "video"]);
 export const assetSourceTypeSchema = z.enum(["upload", "youtube"]);
 export const libraryFolderKindSchema = z.enum(["media", "playlist"]);
 export const releaseRolloutStatusSchema = z.enum([
+  "waiting",
   "queued",
   "in_progress",
   "succeeded",
   "failed",
+  "paused",
+  "rolled_back",
 ]);
 
 export const manifestPlaylistItemSchema = z.object({
@@ -68,6 +153,7 @@ export const scheduleWindowSchema = z.object({
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
   priority: z.number().int(),
+  playlistId: z.string().optional(),
   playlist: z.array(manifestPlaylistItemSchema),
 });
 
@@ -78,10 +164,17 @@ export const deviceManifestSchema = z.object({
   timezone: z.string(),
   orientation: orientationSchema,
   volume: z.number().min(0).max(100),
+  defaultPlaylistId: z.string().optional(),
   defaultPlaylist: z.array(manifestPlaylistItemSchema),
   scheduleWindows: z.array(scheduleWindowSchema),
   assetBaseUrl: z.string(),
   assetChecksums: z.record(z.string()),
+});
+
+export const applianceDescriptorSchema = z.object({
+  generation: z.string().trim().min(1),
+  protocolVersion: z.number().int().positive(),
+  capabilities: z.array(z.string().trim().min(1)),
 });
 
 export const heartbeatPayloadSchema = z.object({
@@ -96,6 +189,31 @@ export const heartbeatPayloadSchema = z.object({
   currentAssetId: z.string().optional(),
   currentPlaylistId: z.string().optional(),
   lastSeenAt: z.string().datetime(),
+  appliance: applianceDescriptorSchema.optional(),
+  health: z.object({
+    capturedAt: z.string().datetime(),
+    hardwareProfile: z.string(),
+    model: z.string().optional(),
+    serialNumber: z.string().optional(),
+    osVersion: z.string().optional(),
+    kernelVersion: z.string().optional(),
+    bootSlot: z.string().optional(),
+    bootReason: z.string().optional(),
+    cpuTemperatureC: z.number().optional(),
+    load1: z.number().optional(),
+    memoryAvailableBytes: z.number().int().nonnegative().optional(),
+    throttledFlags: z.string().optional(),
+    hdmiConnected: z.boolean(),
+    networkInterface: z.string().optional(),
+    ssid: z.string().optional(),
+    signalPercent: z.number().int().min(0).max(100).optional(),
+    ipAddress: z.string().optional(),
+    playerHealthy: z.boolean(),
+    playerHeartbeatAt: z.string().datetime().optional(),
+    agentRestarts: z.number().int().nonnegative().optional(),
+    playerRestarts: z.number().int().nonnegative().optional(),
+    rollbackCount: z.number().int().nonnegative().optional(),
+  }).optional(),
 });
 
 export const screenshotUploadPayloadSchema = z.object({
@@ -111,14 +229,16 @@ export const deviceCommandSchema = z.object({
   commandType: commandTypeSchema,
   issuedAt: z.string().datetime(),
   payload: z.record(z.string(), z.unknown()).default({}),
+  leaseToken: z.string().optional(),
 });
 
 export const deviceCommandResultSchema = z.object({
   commandId: z.string(),
-  deviceId: z.string(),
+  deviceId: z.string().optional(),
   status: z.enum(["queued", "in_progress", "succeeded", "failed"]),
   message: z.string().optional(),
   completedAt: z.string().datetime().optional(),
+  leaseToken: z.string().optional(),
 });
 
 export const temporaryRegistrationResponseSchema = z.object({
@@ -145,6 +265,19 @@ export const deviceSummarySchema = z.object({
   screenshotUrl: z.string().nullable(),
   currentPlaylistName: z.string().nullable(),
   manifestVersion: z.string().nullable(),
+  desiredAgentVersion: z.string().nullable().optional(),
+  desiredPlayerVersion: z.string().nullable().optional(),
+  agentVersion: z.string().nullable().optional(),
+  appVersion: z.string().nullable().optional(),
+  releaseChannel: z.string().nullable().optional(),
+  hardwareProfile: z.string().nullable().optional(),
+  currentAssetId: z.string().nullable().optional(),
+  fleetManagementState: z.enum(["legacy", "managed"]),
+  applianceGeneration: z.string().nullable(),
+  agentProtocolVersion: z.number().int().positive().nullable(),
+  capabilities: z.array(z.string()),
+  applianceActivatedAt: z.string().datetime().nullable(),
+  health: heartbeatPayloadSchema.shape.health.nullable().optional(),
 });
 
 export const libraryFolderSchema = z.object({
@@ -211,6 +344,13 @@ export const releaseSummarySchema = z.object({
   agentSha256: z.string().nullable(),
   systemUrl: z.string().url().nullable(),
   systemSha256: z.string().nullable(),
+  playerSignature: z.string().nullable().optional(),
+  agentSignature: z.string().nullable().optional(),
+  systemSignature: z.string().nullable().optional(),
+  signingKeyId: z.string().nullable().optional(),
+  rolloutStatus: z.enum(["draft", "active", "paused", "completed", "rolled_back"]).optional(),
+  rolloutRings: z.array(z.number()).optional(),
+  currentRing: z.number().int().nonnegative().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   rolloutSummary: z.object({
@@ -404,38 +544,81 @@ export const mockManifest: DeviceManifest = {
   ),
 };
 
+const mockNow = Date.now();
+
 export const mockDevices: DeviceSummary[] = [
   {
     id: "device-demo-001",
     name: "Front Window",
     siteName: "Chelsea showroom",
     status: "online",
-    lastHeartbeatAt: "2026-03-11T10:02:00.000Z",
+    lastHeartbeatAt: new Date(mockNow - 25_000).toISOString(),
     screenshotUrl:
       "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80",
     currentPlaylistName: mockPlaylist.name,
     manifestVersion: mockManifest.manifestVersion,
+    agentVersion: "1.0.0",
+    appVersion: "1.0.0",
+    desiredAgentVersion: "1.0.0",
+    desiredPlayerVersion: "1.0.0",
+    hardwareProfile: "rpi5-industrial-sd",
+    fleetManagementState: "managed",
+    applianceGeneration: fleetManagedGeneration,
+    agentProtocolVersion: fleetManagedProtocolVersion,
+    capabilities: [...fleetManagedCapabilities],
+    applianceActivatedAt: new Date(mockNow - 24 * 60 * 60_000).toISOString(),
+    health: {
+      capturedAt: new Date(mockNow - 25_000).toISOString(),
+      hardwareProfile: "rpi5-industrial-sd",
+      bootSlot: "A",
+      cpuTemperatureC: 52.4,
+      hdmiConnected: true,
+      signalPercent: 82,
+      playerHealthy: true,
+      rollbackCount: 0,
+    },
   },
   {
     id: "device-demo-002",
     name: "Product Wall",
     siteName: "Chelsea showroom",
     status: "stale",
-    lastHeartbeatAt: "2026-03-11T09:58:12.000Z",
+    lastHeartbeatAt: new Date(mockNow - 7 * 60_000).toISOString(),
     screenshotUrl:
       "https://images.unsplash.com/photo-1497366412874-3415097a27e7?auto=format&fit=crop&w=1200&q=80",
     currentPlaylistName: "Accessories focus",
     manifestVersion: "manifest-2026-03-11T09:30:00Z",
+    hardwareProfile: "rpi5-industrial-sd",
+    fleetManagementState: "managed",
+    applianceGeneration: fleetManagedGeneration,
+    agentProtocolVersion: fleetManagedProtocolVersion,
+    capabilities: [...fleetManagedCapabilities],
+    applianceActivatedAt: new Date(mockNow - 12 * 60 * 60_000).toISOString(),
+    health: {
+      capturedAt: new Date(mockNow - 7 * 60_000).toISOString(),
+      hardwareProfile: "rpi5-industrial-sd",
+      bootSlot: "B",
+      cpuTemperatureC: 74.2,
+      hdmiConnected: true,
+      signalPercent: 18,
+      playerHealthy: false,
+      rollbackCount: 1,
+    },
   },
   {
     id: "device-demo-003",
     name: "Entry Totem",
     siteName: "Chelsea showroom",
     status: "offline",
-    lastHeartbeatAt: "2026-03-11T09:42:55.000Z",
+    lastHeartbeatAt: new Date(mockNow - 60 * 60_000).toISOString(),
     screenshotUrl: null,
     currentPlaylistName: null,
     manifestVersion: null,
+    fleetManagementState: "legacy",
+    applianceGeneration: null,
+    agentProtocolVersion: null,
+    capabilities: [],
+    applianceActivatedAt: null,
   },
 ];
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { updateScreen } from "@/lib/backend";
@@ -17,7 +17,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

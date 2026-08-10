@@ -9,7 +9,7 @@ function resolveConvexUrl() {
 }
 
 export const env = {
-  isMockMode: truthy.has((process.env.SHOWROOM_MOCK_MODE ?? "true").toLowerCase()),
+  isMockMode: truthy.has((process.env.SHOWROOM_MOCK_MODE ?? "false").toLowerCase()),
   convexUrl: resolveConvexUrl(),
   convexDeployment: normalizeEnv(process.env.CONVEX_DEPLOYMENT),
   clerkJwtIssuerDomain: normalizeEnv(process.env.CLERK_JWT_ISSUER_DOMAIN),

@@ -198,6 +198,7 @@ export async function buildManifestForDevice(
         startsAt: new Date(schedule.startsAt).toISOString(),
         endsAt: new Date(schedule.endsAt).toISOString(),
         priority: schedule.priority,
+        playlistId: target.playlistId,
         playlist: await buildManifestPlaylistItems(ctx, target.playlistId),
       };
     }),
@@ -216,6 +217,7 @@ export async function buildManifestForDevice(
     timezone: device.timezone,
     orientation: device.orientation as 0 | 90 | 180 | 270,
     volume: device.volume,
+    defaultPlaylistId: defaultPlaylist?._id,
     defaultPlaylist: defaultPlaylistItems,
     scheduleWindows: scheduleWindows.filter(
       (window): window is NonNullable<typeof window> => window !== null,

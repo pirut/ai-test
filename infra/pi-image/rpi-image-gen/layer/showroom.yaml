@@ -1,0 +1,35 @@
+# METABEGIN
+# X-Env-Layer-Name: showroom-appliance
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Category: application
+# X-Env-Layer-Desc: Immutable Digital Curator signage appliance with local playback,
+#  persistent identity and cache, hardware watchdogs, and Connect OTA recovery.
+# X-Env-Layer-Requires: device-user-admin,network-manager,systemd-timesyncd,rpi-connect-lite,rpi-connect-ota
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - ca-certificates
+    - chromium
+    - curl
+    - ffmpeg
+    - iputils-ping
+    - jq
+    - mpv
+    - openbox
+    - python3-xdg
+    - scrot
+    - unclutter
+    - xinit
+    - x11-xserver-utils
+    - xserver-xorg
+    - yt-dlp
+  customize-hooks:
+    - $BDEBSTRAP_HOOKS/enable-units "$1" showroom-agent showroom-kiosk showroom-update-guard showroom-network-recovery
+    - |-
+      set -eu
+      mkdir -p "$1/var/lib/showroom/cache" "$1/var/lib/showroom/state" "$1/opt/showroom/player"
+      chroot "$1" chown -R pi:pi /home/pi
+      if ! grep -q '^kernel_watchdog_timeout=' "$1/boot/firmware/config.txt"; then
+        printf '\nkernel_watchdog_timeout=20\n' >> "$1/boot/firmware/config.txt"
+      fi

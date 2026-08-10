@@ -27,39 +27,48 @@ type ManifestPlaylistItem struct {
 }
 
 type ScheduleWindow struct {
-	ID        string                 `json:"id"`
-	Label     string                 `json:"label"`
-	StartsAt  string                 `json:"startsAt"`
-	EndsAt    string                 `json:"endsAt"`
-	Priority  int                    `json:"priority"`
-	Playlist  []ManifestPlaylistItem `json:"playlist"`
+	ID         string                 `json:"id"`
+	Label      string                 `json:"label"`
+	StartsAt   string                 `json:"startsAt"`
+	EndsAt     string                 `json:"endsAt"`
+	Priority   int                    `json:"priority"`
+	PlaylistID string                 `json:"playlistId,omitempty"`
+	Playlist   []ManifestPlaylistItem `json:"playlist"`
 }
 
 type DeviceManifest struct {
-	ManifestVersion string                 `json:"manifestVersion"`
-	DeviceID        string                 `json:"deviceId"`
-	GeneratedAt     string                 `json:"generatedAt"`
-	Timezone        string                 `json:"timezone"`
-	Orientation     int                    `json:"orientation"`
-	Volume          int                    `json:"volume"`
-	DefaultPlaylist []ManifestPlaylistItem `json:"defaultPlaylist"`
-	ScheduleWindows []ScheduleWindow       `json:"scheduleWindows"`
-	AssetBaseURL    string                 `json:"assetBaseUrl"`
-	AssetChecksums  map[string]string      `json:"assetChecksums"`
+	ManifestVersion   string                 `json:"manifestVersion"`
+	DeviceID          string                 `json:"deviceId"`
+	GeneratedAt       string                 `json:"generatedAt"`
+	Timezone          string                 `json:"timezone"`
+	Orientation       int                    `json:"orientation"`
+	Volume            int                    `json:"volume"`
+	DefaultPlaylistID string                 `json:"defaultPlaylistId,omitempty"`
+	DefaultPlaylist   []ManifestPlaylistItem `json:"defaultPlaylist"`
+	ScheduleWindows   []ScheduleWindow       `json:"scheduleWindows"`
+	AssetBaseURL      string                 `json:"assetBaseUrl"`
+	AssetChecksums    map[string]string      `json:"assetChecksums"`
 }
 
 type TemporaryRegistrationResponse struct {
-	DeviceSessionID         string `json:"deviceSessionId"`
-	ClaimCode               string `json:"claimCode"`
-	ClaimToken              string `json:"claimToken"`
-	PollingIntervalSeconds  int    `json:"pollingIntervalSeconds"`
+	DeviceSessionID        string `json:"deviceSessionId"`
+	ClaimCode              string `json:"claimCode"`
+	ClaimToken             string `json:"claimToken"`
+	PollingIntervalSeconds int    `json:"pollingIntervalSeconds"`
 }
 
 type ClaimStatusResponse struct {
 	Claimed          bool   `json:"claimed"`
 	DeviceID         string `json:"deviceId"`
 	Credential       string `json:"credential"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
 	PollAgainSeconds int    `json:"pollAgainSeconds"`
+}
+
+type RefreshAuthResponse struct {
+	DeviceID         string `json:"deviceId"`
+	Credential       string `json:"credential"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
 }
 
 type DeviceCommand struct {
@@ -68,6 +77,7 @@ type DeviceCommand struct {
 	CommandType string                 `json:"commandType"`
 	IssuedAt    string                 `json:"issuedAt"`
 	Payload     map[string]interface{} `json:"payload"`
+	LeaseToken  string                 `json:"leaseToken,omitempty"`
 }
 
 type Client struct {
@@ -113,6 +123,20 @@ func (c *Client) ClaimStatus(ctx context.Context, sessionID string, claimToken s
 	request.Header.Set("Content-Type", "application/json")
 
 	var payload ClaimStatusResponse
+	if err := c.doJSON(request, &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+func (c *Client) RefreshAuth(ctx context.Context, credential string) (*RefreshAuthResponse, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/device/auth/refresh", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+credential)
+
+	var payload RefreshAuthResponse
 	if err := c.doJSON(request, &payload); err != nil {
 		return nil, err
 	}
@@ -208,9 +232,20 @@ func (c *Client) UploadScreenshot(ctx context.Context, credential string, device
 }
 
 func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath string) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+	partialPath := destPath + ".part"
+	partialSize := int64(0)
+	if info, err := os.Stat(partialPath); err == nil {
+		partialSize = info.Size()
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return err
+	}
+	if partialSize > 0 {
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", partialSize))
 	}
 
 	response, err := c.httpClient.Do(request)
@@ -223,17 +258,28 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 		return fmt.Errorf("download failed for %s: %s", sourceURL, response.Status)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return err
+	flags := os.O_CREATE | os.O_WRONLY
+	if response.StatusCode == http.StatusPartialContent && partialSize > 0 {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+		partialSize = 0
 	}
-
-	tempPath := destPath + ".tmp"
-	file, err := os.Create(tempPath)
+	file, err := os.OpenFile(partialPath, flags, 0o644)
 	if err != nil {
 		return err
 	}
 
-	if _, err := io.Copy(file, response.Body); err != nil {
+	written, err := io.Copy(file, response.Body)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	if written == 0 && partialSize == 0 {
+		file.Close()
+		return fmt.Errorf("download returned an empty file for %s", sourceURL)
+	}
+	if err := file.Sync(); err != nil {
 		file.Close()
 		return err
 	}
@@ -241,7 +287,7 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 		return err
 	}
 
-	return os.Rename(tempPath, destPath)
+	return os.Rename(partialPath, destPath)
 }
 
 func AssetFileName(item ManifestPlaylistItem) string {

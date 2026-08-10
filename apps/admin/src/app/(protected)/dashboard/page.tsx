@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { DeviceSummary } from "@showroom/contracts";
 
 import { ClaimDeviceForm } from "@/components/claim-device-form";
 import { MetricCard } from "@/components/metric-card";
@@ -20,6 +21,30 @@ function sortByHeartbeat<T extends { lastHeartbeatAt: string }>(items: T[]) {
   );
 }
 
+function hasHealthWarning(device: DeviceSummary) {
+  const health = device.health;
+  return Boolean(
+    health && (
+      !health.playerHealthy ||
+      !health.hdmiConnected ||
+      (health.cpuTemperatureC ?? 0) >= 80 ||
+      (health.signalPercent != null && health.signalPercent < 25) ||
+      (health.throttledFlags != null && !/(?:^|=)0x0+$/i.test(health.throttledFlags))
+    )
+  );
+}
+
+function sortByPriority<T extends DeviceSummary>(items: T[]) {
+  const rank = { offline: 0, stale: 1, online: 2, unclaimed: 3 } as const;
+  return [...items].sort((a, b) => {
+    const statusDifference = rank[a.status] - rank[b.status];
+    if (!statusDifference && hasHealthWarning(a) !== hasHealthWarning(b)) {
+      return hasHealthWarning(a) ? -1 : 1;
+    }
+    return statusDifference || new Date(b.lastHeartbeatAt).getTime() - new Date(a.lastHeartbeatAt).getTime();
+  });
+}
+
 export default async function DashboardPage() {
   const orgId = await requireOrgId();
   const [stats, devices, mediaAssets, playlists] = await Promise.all([
@@ -29,13 +54,26 @@ export default async function DashboardPage() {
     listPlaylists(),
   ]);
 
-  const leadDevice = sortByHeartbeat(devices)[0] ?? null;
+  const leadDevice = sortByPriority(devices)[0] ?? null;
   const recentDevices = sortByHeartbeat(devices).slice(0, 4);
+  const attentionCount = devices.filter(
+    (device) => device.status === "stale" || device.status === "offline" || hasHealthWarning(device),
+  ).length;
+  const healthWarningCount = devices.filter(hasHealthWarning).length;
+  const fleetMessage =
+    devices.length === 0
+      ? "No screens connected"
+      : attentionCount > 0
+        ? `${attentionCount} screen${attentionCount === 1 ? "" : "s"} need attention`
+        : stats.unclaimed > 0
+          ? `${stats.unclaimed} screen${stats.unclaimed === 1 ? "" : "s"} awaiting setup`
+          : "All screens healthy";
   const fleetStatus = [
     { label: "Online", value: stats.online, status: "online" as const },
     { label: "Stale", value: stats.stale, status: "stale" as const },
     { label: "Offline", value: stats.offline, status: "offline" as const },
     { label: "Unclaimed", value: stats.unclaimed, status: "unclaimed" as const },
+    { label: "Health warnings", value: healthWarningCount, status: "stale" as const },
   ];
 
   return (
@@ -44,9 +82,9 @@ export default async function DashboardPage() {
         title="Overview"
         description="Real-time status across your media catalog, playlists, and screen fleet."
         action={
-          <div className="hidden items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary lg:flex">
-            <span className="size-2 rounded-full bg-primary shadow-[0_0_10px_rgba(141,172,255,0.65)]" />
-            System status: operational
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground">
+            <span className={`size-2 rounded-full ${attentionCount > 0 ? "bg-danger" : stats.unclaimed > 0 ? "bg-warning" : "bg-signal"}`} />
+            {fleetMessage}
           </div>
         }
       />
@@ -57,20 +95,20 @@ export default async function DashboardPage() {
             <MetricCard
               label="Total assets"
               value={mediaAssets.length}
-              hint={`${mediaAssets.filter((asset) => asset.type === "video").length} videos`}
+              hint={`${mediaAssets.filter((asset) => asset.type === "video").length} ${mediaAssets.filter((asset) => asset.type === "video").length === 1 ? "video" : "videos"}`}
               tone="primary"
             />
             <MetricCard
-              label="Active playlists"
+              label="Playlists"
               value={playlists.length}
-              hint={`${stats.pendingCommands} queued`}
+              hint={`${stats.pendingCommands} command${stats.pendingCommands === 1 ? "" : "s"} queued`}
               tone="queue"
             />
             <MetricCard
-              label="Active screens"
-              value={devices.length}
-              hint={`${stats.offline} offline`}
-              tone="signal"
+              label="Screens online"
+              value={stats.online}
+              hint={`${devices.length} total`}
+              tone={attentionCount > 0 ? "danger" : "signal"}
             />
           </div>
 
@@ -83,7 +121,7 @@ export default async function DashboardPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      Active campaign preview
+                      Priority screen
                     </p>
                     <h2 className="font-heading mt-2 text-xl font-bold text-foreground">
                       {leadDevice?.currentPlaylistName ?? "No playlist assigned"}
@@ -104,7 +142,7 @@ export default async function DashboardPage() {
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    No screenshot available yet.
+                    {leadDevice ? "Waiting for the first screenshot" : "Connect a screen to see its live preview"}
                   </div>
                 )}
               </div>

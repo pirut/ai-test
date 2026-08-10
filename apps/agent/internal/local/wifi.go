@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,6 +22,7 @@ type wifiStatus struct {
 type wifiConfigureRequest struct {
 	SSID     string `json:"ssid"`
 	Password string `json:"password"`
+	Priority int    `json:"priority,omitempty"`
 }
 
 func (s *Server) handleWiFiStatus(w http.ResponseWriter, _ *http.Request) {
@@ -42,13 +44,15 @@ func (s *Server) handleWiFiConfigure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	request.SSID = strings.TrimSpace(request.SSID)
-	request.Password = strings.TrimSpace(request.Password)
+	if request.Priority == 0 {
+		request.Priority = 100
+	}
 	if request.SSID == "" || request.Password == "" {
 		http.Error(w, "ssid and password are required", http.StatusBadRequest)
 		return
 	}
 
-	if err := connectWiFi(r.Context(), request.SSID, request.Password); err != nil {
+	if err := ConfigureWiFi(r.Context(), request.SSID, request.Password, request.Priority); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -116,7 +120,7 @@ func wifiStatusSnapshot(ctx context.Context) (wifiStatus, error) {
 	return status, nil
 }
 
-func connectWiFi(ctx context.Context, ssid string, password string) error {
+func ConfigureWiFi(ctx context.Context, ssid string, password string, priority int) error {
 	if _, err := exec.LookPath("nmcli"); err != nil {
 		return errors.New("nmcli not found")
 	}
@@ -154,6 +158,12 @@ func connectWiFi(ctx context.Context, ssid string, password string) error {
 		}
 		return errors.New(message)
 	}
+	connectionName := strings.TrimSpace(ssid)
+	_ = exec.CommandContext(connectCtx, "nmcli", "connection", "modify", connectionName,
+		"connection.autoconnect", "yes",
+		"connection.autoconnect-retries", "0",
+		"connection.autoconnect-priority", strconv.Itoa(priority),
+	).Run()
 
 	return nil
 }

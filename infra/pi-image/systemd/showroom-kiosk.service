@@ -3,6 +3,8 @@ Description=Showroom Chromium kiosk
 After=showroom-agent.service systemd-user-sessions.service
 Wants=showroom-agent.service
 Conflicts=getty@tty1.service
+StartLimitIntervalSec=10min
+StartLimitBurst=6
 
 [Service]
 ExecStart=/usr/local/bin/showroom-start-kiosk
@@ -17,6 +19,13 @@ StandardError=journal
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
+OOMScoreAdjust=-250
+Nice=-5
+TimeoutStopSec=15s
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/pi /tmp /run
 
 [Install]
 WantedBy=multi-user.target

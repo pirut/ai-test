@@ -9,7 +9,6 @@ DEPLOY_TO_ALL="${SHOWROOM_DEPLOY_TO_ALL:-true}"
 COOKIE="${SHOWROOM_RELEASE_COOKIE:-}"
 AGENT_ARTIFACT="${SHOWROOM_AGENT_ARTIFACT:-}"
 PLAYER_ARTIFACT="${SHOWROOM_PLAYER_ARTIFACT:-}"
-SYSTEM_ARTIFACT="${SHOWROOM_SYSTEM_ARTIFACT:-}"
 
 if [[ -z "${COOKIE}" ]]; then
   echo "SHOWROOM_RELEASE_COOKIE is required." >&2
@@ -21,8 +20,8 @@ if [[ -z "${NAME}" || -z "${VERSION}" ]]; then
   exit 1
 fi
 
-if [[ -z "${AGENT_ARTIFACT}" && -z "${PLAYER_ARTIFACT}" && -z "${SYSTEM_ARTIFACT}" ]]; then
-  echo "Provide at least one of SHOWROOM_AGENT_ARTIFACT, SHOWROOM_PLAYER_ARTIFACT, or SHOWROOM_SYSTEM_ARTIFACT." >&2
+if [[ -z "${AGENT_ARTIFACT}" && -z "${PLAYER_ARTIFACT}" ]]; then
+  echo "Provide SHOWROOM_AGENT_ARTIFACT and/or SHOWROOM_PLAYER_ARTIFACT." >&2
   exit 1
 fi
 
@@ -45,10 +44,6 @@ fi
 
 if [[ -n "${PLAYER_ARTIFACT}" ]]; then
   args+=( -F "player=@${PLAYER_ARTIFACT}" )
-fi
-
-if [[ -n "${SYSTEM_ARTIFACT}" ]]; then
-  args+=( -F "system=@${SYSTEM_ARTIFACT}" )
 fi
 
 curl --fail-with-body "${args[@]}"
