@@ -77,6 +77,7 @@ validate_source() {
   local sudoers="${ROOT_DIR}/config/showroom-maintenance.sudoers"
   local ssh="${ROOT_DIR}/config/20-showroom-ssh.conf"
   local prepare="${ROOT_DIR}/prepare-appliance-rootfs.sh"
+  local build="${ROOT_DIR}/build-appliance-image.sh"
   local customize="${ROOT_DIR}/rpi-image-gen/customize.sh"
 
   require_contains "${config}" '^  user1: pi$' "primary kiosk/Connect user must be explicit"
@@ -102,8 +103,9 @@ validate_source() {
   require_contains "${customize}" 'enable-units.*root' "post-overlay customize hook must enable appliance units"
   require_contains "${customize}" 'visudo -cf' "post-overlay customize hook must validate maintenance sudoers"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
-  require_contains "${BASH_SOURCE[0]}" 'fsck\.erofs --extract=' "image validator must inspect EROFS in userspace"
+  require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
   require_contains "${BASH_SOURCE[0]}" 'debugfs -R.*rdump' "image validator must inspect persistent ext4 in userspace"
+  require_contains "${build}" 'SHOWROOM_FSCK_EROFS=' "image build must pass its 16 KiB-capable EROFS checker to validation"
 
   require_contains "${ssh}" '^PasswordAuthentication no$' "SSH password authentication must be disabled in the final rootfs"
   require_contains "${ssh}" "^DenyUsers ${MAINTENANCE_USER}$" "maintenance account must be physical-console only"
@@ -237,11 +239,15 @@ validate_persistent_permissions() {
 
 validate_image() {
   local image="$1"
+  local erofs_fsck="${SHOWROOM_FSCK_EROFS:-}"
   [[ "${EUID}" -eq 0 ]] || fail "--image validation must run as root"
   require_file "${image}"
   command -v losetup >/dev/null || fail "losetup is required for image inspection"
   command -v lsblk >/dev/null || fail "lsblk is required for image inspection"
-  command -v fsck.erofs >/dev/null || fail "fsck.erofs is required for userspace EROFS inspection"
+  if [[ -z "${erofs_fsck}" ]]; then
+    erofs_fsck="$(command -v fsck.erofs || true)"
+  fi
+  [[ -x "${erofs_fsck}" ]] || fail "a 16 KiB-capable fsck.erofs is required for userspace EROFS inspection"
   command -v e2fsck >/dev/null || fail "e2fsck is required for persistent filesystem inspection"
   command -v debugfs >/dev/null || fail "debugfs is required for userspace persistent filesystem extraction"
 
@@ -262,8 +268,8 @@ validate_image() {
   # Pi 5 images use 16 KiB filesystem blocks. GitHub's ARM runner can have a
   # 4 KiB-page host kernel that cannot mount them, so inspect and extract both
   # filesystems with userspace tools instead of weakening the Pi layout.
-  fsck.erofs --extract="${root_a}" --preserve "${system_a}" >/dev/null
-  fsck.erofs --extract="${root_b}" --preserve "${system_b}" >/dev/null
+  "${erofs_fsck}" --extract="${root_a}" --preserve "${system_a}" >/dev/null
+  "${erofs_fsck}" --extract="${root_b}" --preserve "${system_b}" >/dev/null
   e2fsck -fn "${persistent}" >/dev/null
   debugfs -R "rdump / ${persistent_root}" "${persistent}" >/dev/null
 
