@@ -73,7 +73,13 @@ mkdir -p "${RELEASE_DIR}"
 RELEASE_IMAGE="${RELEASE_DIR}/showroom-${DEVICE_LAYER}-${IMAGE_VERSION}.img.xz"
 printf '%s\n' "${IMAGE_VERSION}" > "${RELEASE_DIR}/IMAGE_VERSION.txt"
 
-sudo "${ROOT_DIR}/validate-appliance.sh" --image "${RAW_IMAGE}" 2>&1 | tee "${RELEASE_DIR}/appliance-validation.txt"
+EROFS_FSCK="$(find "${BUILD_DIR}/work" -type f -name fsck.erofs -perm -u+x -print -quit)"
+if [[ -z "${EROFS_FSCK}" ]]; then
+  echo "The rpi-image-gen 16 KiB-capable fsck.erofs binary is missing" >&2
+  exit 1
+fi
+sudo env SHOWROOM_FSCK_EROFS="${EROFS_FSCK}" \
+  "${ROOT_DIR}/validate-appliance.sh" --image "${RAW_IMAGE}" 2>&1 | tee "${RELEASE_DIR}/appliance-validation.txt"
 xz -T0 -3 -c "${RAW_IMAGE}" > "${RELEASE_IMAGE}"
 xz -t "${RELEASE_IMAGE}"
 
