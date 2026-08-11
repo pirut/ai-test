@@ -14,10 +14,12 @@ mmdebstrap:
     - curl
     - ffmpeg
     - iputils-ping
+    - iproute2
     - jq
     - kbd
     - mpv
     - openbox
+    - procps
     - python3-xdg
     - scrot
     - unclutter
@@ -27,4 +29,5 @@ mmdebstrap:
     - xserver-xorg-legacy
     - sudo
     - util-linux
+    - wpasupplicant
     - yt-dlp

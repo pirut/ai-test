@@ -31,6 +31,7 @@ infra/pi-image/rpi-image-gen/rootfs-overlay/etc/systemd/system/getty@tty1.servic
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/profile.d/20-showroom-console.sh
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/ssh/sshd_config.d/20-showroom.conf
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/sudoers.d/020-showroom-maintenance
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/sysctl.d/20-showroom-kernel-console.conf
 infra/pi-image/out/appliance-source/
 infra/pi-image/out/rpi-image-gen-*/
 infra/pi-image/secrets/

@@ -1,7 +1,8 @@
 [Unit]
 Description=Showroom network connectivity recovery
-After=NetworkManager.service
+After=NetworkManager.service showroom-network-onboarding.service
 Wants=NetworkManager.service
+Requires=showroom-network-onboarding.service
 
 [Service]
 Type=simple

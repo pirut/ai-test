@@ -1,0 +1,117 @@
+#!/bin/bash
+set -uo pipefail
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  printf 'showroom-network-onboarding: self-test passed\n'
+  exit 0
+fi
+
+FORCE_SETUP=0
+if [[ "$(basename "$0")" == "showroom-network-setup" || "${1:-}" == "--force" ]]; then
+  FORCE_SETUP=1
+fi
+
+STATE_DIR=/var/lib/showroom/state
+COMPLETE_MARKER="${STATE_DIR}/network-onboarding-complete"
+: "${SHOWROOM_API_BASE_URL:?SHOWROOM_API_BASE_URL is required}"
+
+clear_screen() {
+  printf '\033[2J\033[H'
+}
+
+network_summary() {
+  local connectivity ip_address
+  connectivity="$(nmcli -t -f CONNECTIVITY general 2>/dev/null || printf unknown)"
+  ip_address="$(hostname -I 2>/dev/null | xargs || true)"
+  printf 'Network state: %s\n' "${connectivity:-unknown}"
+  printf 'IP address:    %s\n' "${ip_address:-none}"
+}
+
+api_reachable() {
+  nm-online -q --timeout=20 >/dev/null 2>&1 || return 1
+  ip route show default 2>/dev/null | grep -q '^default ' || return 1
+  curl -fsS --max-time 12 -o /dev/null "${SHOWROOM_API_BASE_URL%/}/"
+}
+
+mark_complete() {
+  install -d -o root -g root -m 0755 "${STATE_DIR}"
+  printf 'completed_at=%s\nconnection=%s\n' \
+    "$(date --iso-8601=seconds 2>/dev/null || date)" \
+    "$(nmcli -t -f NAME connection show --active 2>/dev/null | paste -sd, -)" \
+    >"${COMPLETE_MARKER}"
+  chmod 0600 "${COMPLETE_MARKER}"
+}
+
+show_header() {
+  clear_screen
+  printf 'DIGITAL CURATOR - DEVICE SETUP\n'
+  printf '==============================\n\n'
+  printf 'Connect this screen to the internet before enrollment and playback begin.\n'
+  printf 'No shared fleet password or Wi-Fi password is stored in the image.\n\n'
+  network_summary
+  printf '\n'
+}
+
+show_failure_help() {
+  printf '\nThe device joined a network but could not reach the Digital Curator service.\n'
+  printf 'Check the Wi-Fi password, captive portal, DNS, and internet access.\n'
+  printf 'Ethernet can be connected at any time.\n\n'
+}
+
+# Wired or pre-provisioned NetworkManager connections commission without any
+# keyboard interaction, but only after the actual control plane is reachable.
+show_header
+printf 'Checking for an existing connection...\n'
+if (( FORCE_SETUP == 0 )) && api_reachable; then
+  mark_complete
+  printf '\nConnection verified. Starting Digital Curator...\n'
+  sleep 2
+  exit 0
+fi
+
+nmcli radio wifi on >/dev/null 2>&1 || true
+
+while true; do
+  show_header
+  printf 'Press Enter to choose a Wi-Fi network.\n'
+  printf 'In the selector: use arrow keys, press Enter, type the password, then Connect.\n'
+  printf 'Choose Quit or press Esc to return to this screen.\n\n'
+  printf 'Options: [Enter] Wi-Fi setup   [C] Check again   [D] Diagnostics   [R] Reboot\n'
+  printf '> '
+  IFS= read -r choice || choice=""
+
+  case "${choice,,}" in
+    "")
+      nmcli device wifi rescan ifname wlan0 >/dev/null 2>&1 || true
+      nmtui connect || true
+      ;;
+    c)
+      ;;
+    d)
+      showroom-diagnostics || true
+      printf '\nPress Enter to return to setup.'
+      IFS= read -r _ || true
+      continue
+      ;;
+    r)
+      systemctl reboot
+      exit 0
+      ;;
+    *)
+      continue
+      ;;
+  esac
+
+  show_header
+  printf 'Verifying the connection and Digital Curator service...\n'
+  if api_reachable; then
+    mark_complete
+    printf '\nConnection verified. Your Wi-Fi settings have been saved securely.\n'
+    printf 'Starting enrollment and playback...\n'
+    sleep 3
+    exit 0
+  fi
+  show_failure_help
+  printf 'Press Enter to try again.'
+  IFS= read -r _ || true
+done

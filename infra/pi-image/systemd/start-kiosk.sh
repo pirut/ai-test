@@ -125,6 +125,7 @@ fi
 # the historical /usr/bin/unclutter alias is no longer provided.
 unclutter-classic -idle 0.1 -root &
 set_display_mode
+systemd-notify --ready --pid="$$"
 
 fetch_runtime() {
   if curl -fsS "${RUNTIME_URL}" -o "${RUNTIME_PATH}.next"; then

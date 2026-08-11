@@ -56,6 +56,7 @@ printf 'Enrollment:    %s\n' "$(if [[ "$(state_value '.credential' '')" == "" ]]
 printf 'Claim code:    %s\n' "$(state_value '.claimCode' 'none')"
 
 heading "Services"
+unit_summary showroom-network-onboarding.service
 unit_summary showroom-agent.service
 unit_summary showroom-kiosk.service
 
@@ -64,6 +65,14 @@ if command -v nmcli >/dev/null 2>&1; then
   nmcli -t -f STATE general 2>&1 || true
   nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>&1 || true
   printf 'IP addresses:  %s\n' "$(hostname -I 2>/dev/null | xargs || true)"
+  printf 'First setup:   %s\n' "$(if [[ -r /var/lib/showroom/state/network-onboarding-complete ]]; then printf complete; else printf pending; fi)"
+  if pgrep -x wpa_supplicant >/dev/null 2>&1; then
+    printf 'Wi-Fi backend: wpa_supplicant (supported)\n'
+  elif pgrep -x iwd >/dev/null 2>&1; then
+    printf 'Wi-Fi backend: iwd (unsupported on this appliance)\n'
+  else
+    printf 'Wi-Fi backend: not running\n'
+  fi
 else
   printf 'nmcli is unavailable\n'
 fi
@@ -79,6 +88,19 @@ if [[ "${display_found}" -eq 0 ]]; then
   printf 'No HDMI connector status files found\n'
 fi
 printf 'X11 socket:    %s\n' "$(if [[ -S /tmp/.X11-unix/X0 ]]; then printf present; else printf absent; fi)"
+printf 'Display processes:\n'
+pgrep -a -f 'Xorg|chromium|openbox|showroom-start-kiosk' 2>/dev/null || printf 'none\n'
+
+heading "Power and firmware"
+if command -v vcgencmd >/dev/null 2>&1; then
+  vcgencmd get_throttled 2>&1 || true
+else
+  printf 'vcgencmd is unavailable\n'
+fi
+printf 'Recent Wi-Fi/SDIO events:\n'
+journalctl --no-pager -k -b -n 500 2>/dev/null | \
+  grep -Ei 'brcmfmac|mmc1|firmware trap|auth frame|external authentication|under-voltage|voltage' | \
+  tail -n 60 || true
 
 heading "Player health"
 if curl -fsS --max-time 3 'http://127.0.0.1:4173/healthz?deep=1' >/dev/null 2>&1; then
@@ -102,6 +124,8 @@ heading "Recent relevant logs"
 journalctl --no-pager -b -n 100 \
   -u showroom-agent.service \
   -u showroom-kiosk.service \
+  -u showroom-network-onboarding.service \
+  -u NetworkManager.service \
   -u showroom-kiosk-recovery.service \
   -u getty@tty1.service 2>&1 || true
 
@@ -112,6 +136,8 @@ heading "Previous boot appliance failures"
 journalctl --no-pager -b -1 -n 60 \
   -u showroom-agent.service \
   -u showroom-kiosk.service \
+  -u showroom-network-onboarding.service \
+  -u NetworkManager.service \
   -u showroom-kiosk-recovery.service 2>&1 || true
 
 heading "Recent X11 log"

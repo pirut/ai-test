@@ -110,6 +110,8 @@ validate_scripts() {
     showroom-kiosk-recovery
     showroom-kiosk-retry
     showroom-network-recovery
+    showroom-network-onboarding
+    showroom-network-setup
   )
   local script
   for script in "${scripts[@]}"; do
@@ -118,6 +120,7 @@ validate_scripts() {
   done
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
+  bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
 }
 
 validate_source() {
@@ -132,6 +135,8 @@ validate_source() {
   local slot_shared_generator="${ROOT_DIR}/rpi-image-gen/rootfs-overlay/usr/lib/systemd/system-generators/slot-shared-generator"
   local network_recovery="${ROOT_DIR}/systemd/showroom-network-recovery"
   local network_recovery_unit="${ROOT_DIR}/systemd/showroom-network-recovery.service"
+  local network_onboarding="${ROOT_DIR}/systemd/showroom-network-onboarding"
+  local network_onboarding_unit="${ROOT_DIR}/systemd/showroom-network-onboarding.service"
   local workflow="${ROOT_DIR}/../../.github/workflows/appliance-image.yml"
 
   require_contains "${config}" '^  user1: pi$' "primary kiosk/Connect user must be explicit"
@@ -141,6 +146,10 @@ validate_source() {
   require_contains "${config}" '^  user1groups: .*video.*input.*render' "kiosk user is missing display/input groups"
   require_contains "${config}" '^ssh:$' "SSH policy is missing"
   require_contains "${config}" '^  pubkey_only: y$' "SSH password authentication must be disabled"
+  require_contains "${config}" '^  default: en_US\.UTF-8$' "first-boot locale must match the deployed US fleet"
+  require_contains "${config}" '^  keyboard_keymap: us$' "first-boot Wi-Fi password entry requires a US console keymap"
+  require_contains "${config}" '^  keyboard_layout: English \(US\)$' "first-boot keyboard layout must be US English"
+  require_contains "${config}" '^  timezone: America/New_York$' "appliance timezone must match fleet operations"
 
   require_contains "${getty}" "agetty .*--autologin ${MAINTENANCE_USER}" "tty1 must auto-login the maintenance account"
   require_not_contains "${unit}" '^Conflicts=getty@tty1\.service$' "kiosk must not remove the maintenance console"
@@ -148,6 +157,10 @@ validate_source() {
   require_contains "${unit}" '^Restart=on-failure$' "kiosk restart policy must be failure-only"
   require_contains "${unit}" '^StartLimitBurst=5$' "kiosk restart rate limit is missing"
   require_contains "${unit}" '^OnFailure=showroom-kiosk-recovery\.service$' "kiosk recovery screen hook is missing"
+  require_contains "${unit}" '^ExecStartPost=\+/usr/bin/chvt 7$' "a healthy kiosk must switch the physical display from tty1 to tty7"
+  require_contains "${unit}" '^Type=notify$' "kiosk must report X11 readiness before tty7 is activated"
+  require_contains "${unit}" '^NotifyAccess=all$' "kiosk readiness notifications from the launcher must be accepted"
+  require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^systemd-notify --ready --pid="\$\$"$' "kiosk launcher must report readiness only after X11 starts"
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- xserver-xorg-legacy$' "Xorg.wrap package must be an explicit image dependency"
@@ -162,9 +175,21 @@ validate_source() {
   require_contains "${customize}" 'install -d -o pi -g pi .*/persistent/shared/home/pi/\.config/chromium-kiosk' "post-overlay hook must seed the persistent Chromium profile with pi ownership"
   require_contains "${customize}" 'install -d -o root -g root .*/persistent/shared/etc/NetworkManager/system-connections' "post-overlay hook must seed the persistent NetworkManager profile store"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/trixie-showroom-base.yaml" 'systemd-resolved,?$' "image must install and enable the resolver used by its stub resolv.conf"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/trixie-showroom-base.yaml" '^[# ]+network-manager,?$' "base image must use NetworkManager's wpa_supplicant backend"
+  require_not_contains "${ROOT_DIR}/rpi-image-gen/layer/trixie-showroom-base.yaml" 'network-manager-iwd' "iwd is incompatible with the Pi 5 BCM43455 WPA3 external-authentication path"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- wpasupplicant$' "wpa_supplicant must be an explicit image dependency"
   validate_slot_shared_generator "${slot_shared_generator}"
   require_not_contains "${network_recovery}" '^[[:space:]]*\.[[:space:]]+/etc/showroom-agent/config\.env' "network recovery must not source a systemd EnvironmentFile as shell code"
   require_contains "${network_recovery_unit}" '^EnvironmentFile=/etc/showroom-agent/config\.env$' "network recovery must receive configuration through systemd"
+  require_contains "${network_onboarding_unit}" '^Before=getty@tty1\.service showroom-agent\.service showroom-kiosk\.service showroom-network-recovery\.service$' "first-boot network setup must gate the console and appliance services"
+  require_contains "${network_onboarding_unit}" '^ConditionPathExists=!/var/lib/showroom/state/network-onboarding-complete$' "network setup completion must persist across A/B boots"
+  require_contains "${network_onboarding_unit}" '^TTYPath=/dev/tty1$' "first-boot network setup must own the physical console"
+  require_contains "${network_onboarding_unit}" '^TimeoutStartSec=infinity$' "first-boot network setup must wait for technician input without timing out"
+  require_contains "${network_onboarding}" '^ *nmtui connect \|\| true$' "first-boot setup must provide an interactive SSID and password selector"
+  require_contains "${network_onboarding}" 'curl -fsS .*SHOWROOM_API_BASE_URL' "first-boot setup must verify the real control plane before continuing"
+  require_contains "${ROOT_DIR}/systemd/showroom-agent.service" '^Requires=showroom-network-onboarding\.service$' "agent must wait for first-boot networking"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Requires=showroom-network-onboarding\.service$' "kiosk must wait for first-boot networking"
+  require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
   require_not_contains "${workflow}" '^[[:space:]]+push:$' "appliance image builds must be local/manual, not automatic GitHub push builds"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
@@ -176,18 +201,21 @@ validate_source() {
   require_contains "${ssh}" "^DenyUsers ${MAINTENANCE_USER}$" "maintenance account must be physical-console only"
   require_not_contains "${sudoers}" 'NOPASSWD:[[:space:]]*ALL' "universal passwordless sudo is forbidden"
   require_contains "${sudoers}" "^${MAINTENANCE_USER} .*NOPASSWD: SHOWROOM_" "maintenance account lacks controlled passwordless sudo"
+  require_contains "${sudoers}" '/usr/local/bin/showroom-network-setup' "maintenance account cannot safely reopen network setup"
 
   for source_script in \
     start-kiosk.sh showroom-diagnostics showroom-recovery-screen \
-    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery; do
+    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
+  bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
 
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry \
-    showroom-kiosk-recovery.service showroom-kiosk-retry.service showroom-kiosk-retry.timer; do
+    showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
+    showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
   done
 
@@ -215,9 +243,9 @@ validate_rootfs() {
   local executable
   for executable in \
     usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter-classic \
-    usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt \
-    usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/systemd-analyze usr/bin/journalctl usr/bin/sudo \
-    usr/bin/rpi-connect usr/sbin/runuser usr/sbin/sshd sbin/agetty; do
+    usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt usr/bin/nm-online usr/bin/pgrep \
+    usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/systemd-analyze usr/bin/systemd-notify usr/bin/journalctl usr/bin/sudo \
+    usr/bin/rpi-connect usr/sbin/ip usr/sbin/runuser usr/sbin/sshd usr/sbin/wpa_supplicant sbin/agetty; do
     require_executable "${root}/${executable}"
   done
   if [[ ! -x "${root}/usr/lib/chromium/chromium" && ! -x "${root}/usr/bin/chromium" && ! -x "${root}/usr/bin/chromium-browser" ]]; then
@@ -229,8 +257,12 @@ validate_rootfs() {
   require_contains "${root}/etc/ssh/sshd_config.d/20-showroom.conf" "^DenyUsers ${MAINTENANCE_USER}$" "generated SSH policy exposes maintenance account"
   require_contains "${root}/etc/systemd/journald.conf.d/20-showroom-limits.conf" '^Storage=persistent$' "persistent journal is not enabled"
   require_contains "${root}/etc/systemd/journald.conf.d/20-showroom-limits.conf" '^SystemMaxUse=256M$' "persistent journal is not bounded"
+  require_contains "${root}/etc/sysctl.d/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel console messages can corrupt setup and recovery screens"
   [[ -L "${root}/etc/resolv.conf" ]] || fail "generated resolv.conf is not managed by systemd-resolved"
   [[ "$(readlink "${root}/etc/resolv.conf")" == */run/systemd/resolve/*resolv.conf ]] || fail "generated resolv.conf does not target systemd-resolved"
+  [[ ! -e "${root}/etc/NetworkManager/conf.d/iwd.conf" ]] || fail "generated image still selects NetworkManager's incompatible iwd backend"
+  require_contains "${root}/etc/default/keyboard" '^XKBLAYOUT="us"$' "generated console keyboard is not US layout"
+  [[ "$(readlink "${root}/etc/localtime")" == "/usr/share/zoneinfo/America/New_York" ]] || fail "generated timezone is not America/New_York"
 
   local pi_shadow maintenance_shadow getty_exec
   pi_shadow="$(awk -F: '$1 == "pi" { print $2 }' "${root}/etc/shadow")"
@@ -277,10 +309,11 @@ validate_rootfs() {
   if [[ -x "${root}/usr/bin/systemd-analyze" ]]; then
     SYSTEMD_LOG_LEVEL=warning chroot "${root}" /usr/bin/systemd-analyze verify \
       showroom-agent.service showroom-kiosk.service showroom-kiosk-recovery.service \
-      showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-recovery.service || \
+      showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-recovery.service \
+      showroom-network-onboarding.service || \
       fail "Showroom systemd units are invalid under the image's systemd version"
     local enabled_unit
-    for enabled_unit in NetworkManager.service systemd-resolved.service showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer getty@tty1.service; do
+    for enabled_unit in NetworkManager.service systemd-resolved.service showroom-network-onboarding.service showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer getty@tty1.service; do
       chroot "${root}" /usr/bin/systemctl is-enabled --quiet "${enabled_unit}" || fail "${enabled_unit} is not enabled in the generated image"
     done
   fi

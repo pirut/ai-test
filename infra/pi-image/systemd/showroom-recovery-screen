@@ -77,7 +77,7 @@ render() {
   printf '  sudo systemctl restart showroom-agent.service\n'
   printf '  sudo systemctl reset-failed showroom-kiosk.service\n'
   printf '  sudo systemctl restart showroom-kiosk.service\n'
-  printf '  sudo nmtui\n'
+  printf '  sudo showroom-network-setup\n'
   printf '  sudo -u pi rpi-connect status\n'
   printf '  sudo reboot\n\n'
   printf 'Remote access: open https://connect.raspberrypi.com and select this device.\n'

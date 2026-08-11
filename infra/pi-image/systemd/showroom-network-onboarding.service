@@ -1,0 +1,28 @@
+[Unit]
+Description=Showroom first-boot network setup
+After=local-fs.target NetworkManager.service
+Wants=NetworkManager.service
+Before=getty@tty1.service showroom-agent.service showroom-kiosk.service showroom-network-recovery.service
+RequiresMountsFor=/var/lib/showroom
+ConditionPathExists=!/var/lib/showroom/state/network-onboarding-complete
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/showroom-agent/config.env
+ExecStart=/usr/local/bin/showroom-network-onboarding
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=no
+TimeoutStartSec=infinity
+NoNewPrivileges=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/showroom /etc/NetworkManager/system-connections /run /tmp /dev/tty1
+PrivateTmp=no
+
+[Install]
+WantedBy=multi-user.target
