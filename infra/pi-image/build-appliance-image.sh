@@ -78,8 +78,26 @@ else
 fi
 
 DEPLOY_DIR="$(find "${BUILD_DIR}/work" -maxdepth 1 -type d -name 'deploy-*' -print | sort | tail -n 1)"
-if [[ -n "${DEPLOY_DIR}" ]]; then
-  find "${DEPLOY_DIR}" -maxdepth 1 -type f \( -name '*sbom*.zst' -o -name 'manifest.zst' -o -name 'config.yaml.zst' \) -exec cp {} "${RELEASE_DIR}/" \;
+if [[ -z "${DEPLOY_DIR}" ]]; then
+  echo "Image generator completed without producing an OTA deploy directory" >&2
+  exit 1
+fi
+
+find "${DEPLOY_DIR}" -maxdepth 1 -type f \( -name '*sbom*.zst' -o -name 'manifest.zst' -o -name 'config.yaml.zst' \) -exec cp {} "${RELEASE_DIR}/" \;
+
+OTA_SOURCE="$(find "${DEPLOY_DIR}" -maxdepth 1 -type f -name 'showroom-appliance-*.tar.zst' -print | sort | tail -n 1)"
+if [[ -z "${OTA_SOURCE}" ]]; then
+  echo "Image generator completed without producing its A/B OTA archive" >&2
+  exit 1
+fi
+
+OTA_RELEASE="${RELEASE_DIR}/showroom-${DEVICE_LAYER}-${IMAGE_VERSION}-ota.tar.zst"
+cp "${OTA_SOURCE}" "${OTA_RELEASE}"
+OTA_CHECKSUM="$(basename "${OTA_RELEASE}").sha256"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${RELEASE_DIR}" && sha256sum "$(basename "${OTA_RELEASE}")" > "${OTA_CHECKSUM}")
+else
+  (cd "${RELEASE_DIR}" && shasum -a 256 "$(basename "${OTA_RELEASE}")" > "${OTA_CHECKSUM}")
 fi
 
 find "${RELEASE_DIR}" -maxdepth 1 -type f -print
