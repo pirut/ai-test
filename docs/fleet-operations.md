@@ -11,9 +11,10 @@ memory, disk, Wi-Fi signal and address, boot slot, restart counters, and rollbac
 count. Health transitions are retained as diagnostics; raw heartbeats expire
 after 30 days and screenshots after 14 days.
 
-The image workflow rebuilds the supported appliance weekly on an arm64 Linux
-self-hosted runner, producing a flash image, OTA archive, SBOM, and vulnerability
-report. Promotion remains explicit: inspect the report, soak the candidate, then
+The image workflow rebuilds the supported appliance weekly on GitHub's hosted
+arm64 Linux runner. It retains the flash image and the A/B OTA archive as
+separate checksummed artifacts alongside the build manifest, configuration, and
+SBOM. Promotion remains explicit: inspect the SBOM, soak the candidate, then
 publish it to the canary hardware ring in Connect.
 
 ## Legacy-safe cutover
@@ -50,9 +51,9 @@ Devices without the activated appliance capability contract cannot be selected
 for a rollout. If a rollout loses eligibility before a later ring is queued, it
 pauses instead of sending the update through the legacy protocol.
 
-Operating-system releases use the matching A/B `update.tar.zst` from
-`rpi-image-gen` and Raspberry Pi Connect OTA. Never send arbitrary root filesystem
-archives through the app release endpoint.
+Operating-system releases use the matching `*-ota.tar.zst` IDP archive from
+`rpi-image-gen` and Raspberry Pi Connect OTA. Never send arbitrary root
+filesystem archives through the app release endpoint.
 
 ## Network rotation
 

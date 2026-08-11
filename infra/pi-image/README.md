@@ -29,9 +29,10 @@ The production public verification key is committed at
 intentionally rotating the signing key.
 
 The builder pins `rpi-image-gen` to v2.7.0 by default. Set
-`SHOWROOM_RPI_IMAGE_GEN_VERSION` deliberately when upgrading it. The generated
-work directory contains the flashable `.img`, A/B OTA `update.tar.zst`, SBOM, and
-vulnerability report when the upstream build completes.
+`SHOWROOM_RPI_IMAGE_GEN_VERSION` deliberately when upgrading it. The release
+directory contains a Raspberry Pi Imager-ready `.img.xz`, its SHA-256 checksum,
+the separately checksummed A/B OTA archive, the package manifest, build
+configuration, and SBOM when the upstream build completes.
 
 The Linux builder needs at least 2 GB RAM and roughly 30 GB free disk for this
 partition layout. Set `SHOWROOM_INSTALL_BUILD_DEPS=1` on a disposable CI runner

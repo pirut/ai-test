@@ -48,8 +48,23 @@ jobs:
       - run: ./infra/pi-image/build-appliance-image.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-${{ github.run_number }}
+          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-flash-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 30
           path: |
-            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*.img.xz
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/SHA256SUMS.sha256
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/config.yaml.zst
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/manifest.zst
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*sbom*.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-ota-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*-ota.tar.zst
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*-ota.tar.zst.sha256
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/config.yaml.zst
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/manifest.zst
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*sbom*.zst
