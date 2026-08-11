@@ -5,6 +5,23 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="${1:---source}"
 TARGET="${2:-}"
 MAINTENANCE_USER=showroom-maint
+IMAGE_VALIDATION_LOOP=""
+IMAGE_VALIDATION_DIRS=()
+
+cleanup_image() {
+  local directory
+  for directory in "${IMAGE_VALIDATION_DIRS[@]}"; do
+    if [[ -n "${directory}" && -d "${directory}" && "${directory}" == /tmp/* ]]; then
+      find "${directory}" -depth -mindepth 1 -delete 2>/dev/null || true
+      rmdir "${directory}" 2>/dev/null || true
+    fi
+  done
+  if [[ -n "${IMAGE_VALIDATION_LOOP}" ]]; then
+    losetup -d "${IMAGE_VALIDATION_LOOP}" 2>/dev/null || true
+  fi
+  IMAGE_VALIDATION_LOOP=""
+  IMAGE_VALIDATION_DIRS=()
+}
 
 fail() {
   printf 'appliance validation: FAIL: %s\n' "$*" >&2
@@ -84,6 +101,9 @@ validate_source() {
   bash -n "${customize}"
   require_contains "${customize}" 'enable-units.*root' "post-overlay customize hook must enable appliance units"
   require_contains "${customize}" 'visudo -cf' "post-overlay customize hook must validate maintenance sudoers"
+  require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
+  require_contains "${BASH_SOURCE[0]}" 'fsck\.erofs --extract=' "image validator must inspect EROFS in userspace"
+  require_contains "${BASH_SOURCE[0]}" 'debugfs -R.*rdump' "image validator must inspect persistent ext4 in userspace"
 
   require_contains "${ssh}" '^PasswordAuthentication no$' "SSH password authentication must be disabled in the final rootfs"
   require_contains "${ssh}" "^DenyUsers ${MAINTENANCE_USER}$" "maintenance account must be physical-console only"
@@ -221,45 +241,42 @@ validate_image() {
   require_file "${image}"
   command -v losetup >/dev/null || fail "losetup is required for image inspection"
   command -v lsblk >/dev/null || fail "lsblk is required for image inspection"
+  command -v fsck.erofs >/dev/null || fail "fsck.erofs is required for userspace EROFS inspection"
+  command -v e2fsck >/dev/null || fail "e2fsck is required for persistent filesystem inspection"
+  command -v debugfs >/dev/null || fail "debugfs is required for userspace persistent filesystem extraction"
 
-  local loop mount_root mount_root_b mount_persistent system_a system_b persistent
-  loop="$(losetup --show --find --partscan "${image}")"
-  mount_root="$(mktemp -d)"
-  mount_root_b="$(mktemp -d)"
-  mount_persistent="$(mktemp -d)"
-  cleanup_image() {
-    mountpoint -q "${mount_root}" && umount "${mount_root}" || true
-    mountpoint -q "${mount_root_b}" && umount "${mount_root_b}" || true
-    mountpoint -q "${mount_persistent}" && umount "${mount_persistent}" || true
-    losetup -d "${loop}" || true
-    rmdir "${mount_root}" "${mount_root_b}" "${mount_persistent}" 2>/dev/null || true
-  }
+  local root_a root_b persistent_root system_a system_b persistent
+  IMAGE_VALIDATION_LOOP="$(losetup --show --find --partscan "${image}")"
+  root_a="$(mktemp -d)"
+  root_b="$(mktemp -d)"
+  persistent_root="$(mktemp -d)"
+  IMAGE_VALIDATION_DIRS=("${root_a}" "${root_b}" "${persistent_root}")
   trap cleanup_image EXIT
   udevadm settle || true
 
-  system_a="$(lsblk -nrpo NAME,PARTLABEL "${loop}" | awk '$2 == "system_a" { print $1; exit }')"
-  system_b="$(lsblk -nrpo NAME,PARTLABEL "${loop}" | awk '$2 == "system_b" { print $1; exit }')"
-  persistent="$(lsblk -nrpo NAME,PARTLABEL "${loop}" | awk '$2 == "persistent" { print $1; exit }')"
+  system_a="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "system_a" { print $1; exit }')"
+  system_b="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "system_b" { print $1; exit }')"
+  persistent="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "persistent" { print $1; exit }')"
   [[ -n "${system_a}" && -n "${system_b}" && -n "${persistent}" ]] || fail "A/B or persistent partitions are missing"
 
-  if command -v fsck.erofs >/dev/null 2>&1; then
-    fsck.erofs "${system_a}" >/dev/null
-    fsck.erofs "${system_b}" >/dev/null
-  fi
-  mount -o ro "${system_a}" "${mount_root}"
-  mount -o ro "${system_b}" "${mount_root_b}"
-  mount -o ro "${persistent}" "${mount_persistent}"
+  # Pi 5 images use 16 KiB filesystem blocks. GitHub's ARM runner can have a
+  # 4 KiB-page host kernel that cannot mount them, so inspect and extract both
+  # filesystems with userspace tools instead of weakening the Pi layout.
+  fsck.erofs --extract="${root_a}" --preserve "${system_a}" >/dev/null
+  fsck.erofs --extract="${root_b}" --preserve "${system_b}" >/dev/null
+  e2fsck -fn "${persistent}" >/dev/null
+  debugfs -R "rdump / ${persistent_root}" "${persistent}" >/dev/null
 
-  validate_rootfs "${mount_root}"
-  validate_rootfs "${mount_root_b}"
+  validate_rootfs "${root_a}"
+  validate_rootfs "${root_b}"
 
-  [[ -d "${mount_persistent}/home/pi" ]] || fail "persistent pi home is missing"
-  [[ -d "${mount_persistent}/home/${MAINTENANCE_USER}" ]] || fail "persistent maintenance home is missing"
-  [[ -d "${mount_persistent}/log/journal" ]] || fail "persistent journal directory is missing"
-  [[ -d "${mount_persistent}/shared/var/lib/showroom" ]] || fail "slot-shared Showroom state is missing"
-  validate_persistent_permissions "${mount_root}" "${mount_persistent}"
+  [[ -d "${persistent_root}/home/pi" ]] || fail "persistent pi home is missing"
+  [[ -d "${persistent_root}/home/${MAINTENANCE_USER}" ]] || fail "persistent maintenance home is missing"
+  [[ -d "${persistent_root}/log/journal" ]] || fail "persistent journal directory is missing"
+  [[ -d "${persistent_root}/shared/var/lib/showroom" ]] || fail "slot-shared Showroom state is missing"
+  validate_persistent_permissions "${root_a}" "${persistent_root}"
 
-  pass "raw image A/B slots and persistent data layout"
+  pass "raw image A/B slots and persistent data layout via userspace extraction"
   trap - EXIT
   cleanup_image
 }
