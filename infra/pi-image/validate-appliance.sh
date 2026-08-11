@@ -106,6 +106,7 @@ validate_source() {
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
   require_contains "${BASH_SOURCE[0]}" 'debugfs -R.*rdump' "image validator must inspect persistent ext4 in userspace"
   require_contains "${build}" 'SHOWROOM_FSCK_EROFS=' "image build must pass its 16 KiB-capable EROFS checker to validation"
+  require_contains "${build}" "-maxdepth 1 -type d -name '\*-linux-gnu'" "EROFS checker discovery must stay inside the generated toolchain"
 
   require_contains "${ssh}" '^PasswordAuthentication no$' "SSH password authentication must be disabled in the final rootfs"
   require_contains "${ssh}" "^DenyUsers ${MAINTENANCE_USER}$" "maintenance account must be physical-console only"
