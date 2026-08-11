@@ -22,7 +22,7 @@ on:
         options: [rpi4, rpi5, cm4, cm5]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   image:
@@ -44,6 +44,8 @@ jobs:
         with:
           go-version: "1.22.x"
           cache: false
+      - name: Set immutable image version
+        run: echo "SHOWROOM_IMAGE_VERSION=$(date -u +%Y.%m.%d).${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
       - run: npm ci
       - run: ./infra/pi-image/build-appliance-image.sh
       - uses: actions/upload-artifact@v4
@@ -54,6 +56,8 @@ jobs:
           path: |
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*.img.xz
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/SHA256SUMS.sha256
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/IMAGE_VERSION.txt
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/appliance-validation.txt
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/config.yaml.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/manifest.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*sbom*.zst
@@ -68,3 +72,20 @@ jobs:
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/config.yaml.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/manifest.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*sbom*.zst
+      - name: Publish permanent flash release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_dir="infra/pi-image/out/release-${SHOWROOM_DEVICE_LAYER}"
+          tag="showroom-${SHOWROOM_DEVICE_LAYER}-${SHOWROOM_IMAGE_VERSION}"
+          gh release create "${tag}" \
+            --title "Showroom ${SHOWROOM_DEVICE_LAYER} appliance ${SHOWROOM_IMAGE_VERSION}" \
+            --notes "Validated Raspberry Pi appliance flash image. This release does not initiate an OTA or alter deployed devices." \
+            "${release_dir}"/*.img.xz \
+            "${release_dir}/SHA256SUMS.sha256" \
+            "${release_dir}/IMAGE_VERSION.txt" \
+            "${release_dir}/appliance-validation.txt" \
+            "${release_dir}/config.yaml.zst" \
+            "${release_dir}/manifest.zst" \
+            "${release_dir}"/*sbom*.zst

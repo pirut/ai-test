@@ -28,10 +28,12 @@ esac
 
 mkdir -p "${OUT_DIR}"
 mkdir -p "${BUILD_DIR}"
+"${ROOT_DIR}/validate-appliance.sh" --source
 if [[ -z "${SHOWROOM_RELEASE_PUBLIC_KEY:-}" && -f "${PUBLIC_KEY_FILE}" ]]; then
   export SHOWROOM_RELEASE_PUBLIC_KEY="$(tr -d '\r\n' < "${PUBLIC_KEY_FILE}")"
 fi
 "${ROOT_DIR}/prepare-appliance-rootfs.sh"
+"${ROOT_DIR}/validate-appliance.sh" --overlay "${ROOT_DIR}/rpi-image-gen/rootfs-overlay"
 
 if [[ ! -d "${RIG_DIR}/.git" ]]; then
   git clone --depth 1 --branch "${RIG_VERSION}" https://github.com/raspberrypi/rpi-image-gen.git "${RIG_DIR}"
@@ -69,12 +71,20 @@ fi
 rm -rf "${RELEASE_DIR}"
 mkdir -p "${RELEASE_DIR}"
 RELEASE_IMAGE="${RELEASE_DIR}/showroom-${DEVICE_LAYER}-${IMAGE_VERSION}.img.xz"
+printf '%s\n' "${IMAGE_VERSION}" > "${RELEASE_DIR}/IMAGE_VERSION.txt"
+
+sudo "${ROOT_DIR}/validate-appliance.sh" --image "${RAW_IMAGE}" 2>&1 | tee "${RELEASE_DIR}/appliance-validation.txt"
 xz -T0 -3 -c "${RAW_IMAGE}" > "${RELEASE_IMAGE}"
+xz -t "${RELEASE_IMAGE}"
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "${RELEASE_DIR}" && sha256sum "$(basename "${RELEASE_IMAGE}")" > SHA256SUMS.sha256)
+  (cd "${RELEASE_DIR}" && sha256sum -c SHA256SUMS.sha256)
 else
   (cd "${RELEASE_DIR}" && shasum -a 256 "$(basename "${RELEASE_IMAGE}")" > SHA256SUMS.sha256)
+  expected_checksum="$(awk '{ print $1 }' "${RELEASE_DIR}/SHA256SUMS.sha256")"
+  actual_checksum="$(shasum -a 256 "${RELEASE_IMAGE}" | awk '{ print $1 }')"
+  [[ "${expected_checksum}" == "${actual_checksum}" ]] || { echo "Compressed image checksum verification failed" >&2; exit 1; }
 fi
 
 DEPLOY_DIR="$(find "${BUILD_DIR}/work" -maxdepth 1 -type d -name 'deploy-*' -print | sort | tail -n 1)"

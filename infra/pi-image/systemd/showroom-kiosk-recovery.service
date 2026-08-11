@@ -1,0 +1,15 @@
+[Unit]
+Description=Showroom kiosk local recovery notifier
+After=getty@tty1.service
+Wants=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/showroom-kiosk-recovery
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run /dev/tty1
+PrivateTmp=yes

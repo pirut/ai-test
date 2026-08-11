@@ -1,0 +1,11 @@
+Cmnd_Alias SHOWROOM_SERVICE_STATUS = /usr/bin/systemctl status showroom-agent.service, /usr/bin/systemctl status showroom-kiosk.service, /usr/bin/systemctl status NetworkManager.service
+Cmnd_Alias SHOWROOM_SERVICE_REPAIR = /usr/bin/systemctl start showroom-agent.service, /usr/bin/systemctl start showroom-kiosk.service, /usr/bin/systemctl stop showroom-agent.service, /usr/bin/systemctl stop showroom-kiosk.service, /usr/bin/systemctl restart showroom-agent.service, /usr/bin/systemctl restart showroom-kiosk.service, /usr/bin/systemctl reset-failed showroom-agent.service, /usr/bin/systemctl reset-failed showroom-kiosk.service
+Cmnd_Alias SHOWROOM_LOGS = /usr/bin/journalctl -u showroom-agent.service *, /usr/bin/journalctl -u showroom-kiosk.service *, /usr/bin/journalctl -b *
+Cmnd_Alias SHOWROOM_NETWORK = /usr/bin/nmcli *, /usr/bin/nmtui
+Cmnd_Alias SHOWROOM_POWER = /usr/sbin/reboot, /usr/sbin/shutdown -r now, /usr/sbin/shutdown -h now
+Cmnd_Alias SHOWROOM_DIAGNOSTICS = /usr/local/bin/showroom-diagnostics
+Cmnd_Alias SHOWROOM_CONNECT = /usr/bin/rpi-connect status
+
+pi ALL=(root) NOPASSWD: SHOWROOM_SERVICE_STATUS, SHOWROOM_SERVICE_REPAIR, SHOWROOM_LOGS, SHOWROOM_NETWORK, SHOWROOM_POWER, SHOWROOM_DIAGNOSTICS
+showroom-maint ALL=(root) NOPASSWD: SHOWROOM_SERVICE_STATUS, SHOWROOM_SERVICE_REPAIR, SHOWROOM_LOGS, SHOWROOM_NETWORK, SHOWROOM_POWER, SHOWROOM_DIAGNOSTICS
+showroom-maint ALL=(pi) NOPASSWD: SHOWROOM_CONNECT

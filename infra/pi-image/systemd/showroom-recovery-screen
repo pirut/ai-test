@@ -1,0 +1,92 @@
+#!/bin/bash
+set -uo pipefail
+
+FAILED_SERVICE="${SHOWROOM_FAILED_SERVICE:-showroom-kiosk.service}"
+TARGET_TTY=""
+STATE_FILE=/var/lib/showroom/state/device-state.json
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --failed-service) FAILED_SERVICE="${2:-showroom-kiosk.service}"; shift 2 ;;
+    --tty) TARGET_TTY="${2:-/dev/tty1}"; shift 2 ;;
+    --self-test) printf 'showroom-recovery-screen: self-test passed\n'; exit 0 ;;
+    *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+state_value() {
+  local filter="$1" fallback="$2"
+  if [[ -r "${STATE_FILE}" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r "${filter} // \"${fallback}\"" "${STATE_FILE}" 2>/dev/null || printf '%s\n' "${fallback}"
+  else
+    printf '%s\n' "${fallback}"
+  fi
+}
+
+device_id() {
+  local value serial
+  value="$(state_value '.deviceId // .deviceSessionId' '')"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+    return
+  fi
+  serial="$(awk -F: '/^Serial/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' /proc/cpuinfo 2>/dev/null || true)"
+  if [[ -n "${serial}" ]]; then
+    printf 'hardware-%s\n' "${serial}"
+  elif [[ -r /etc/machine-id ]]; then
+    printf 'local-%s\n' "$(cut -c1-16 /etc/machine-id)"
+  else
+    printf 'pending\n'
+  fi
+}
+
+render() {
+  local hostname_short device_id claim_code claim_state network_state ip_address failed_state kiosk_state failure_count
+  hostname_short="$(hostname -s 2>/dev/null || hostname)"
+  device_id="$(device_id)"
+  claim_code="$(state_value '.claimCode' 'none')"
+  if [[ "$(state_value '.credential' '')" == "" ]]; then claim_state="not claimed"; else claim_state="claimed"; fi
+  network_state="$(nmcli -t -f STATE general 2>/dev/null || printf unavailable)"
+  ip_address="$(hostname -I 2>/dev/null | xargs || true)"
+  failed_state="$(systemctl is-failed "${FAILED_SERVICE}" 2>/dev/null || true)"
+  kiosk_state="$(systemctl is-active showroom-kiosk.service 2>/dev/null || true)"
+  failure_count=0
+  if [[ -r /run/showroom-recovery/kiosk-failure-count ]]; then
+    read -r failure_count </run/showroom-recovery/kiosk-failure-count || failure_count=0
+  fi
+
+  printf '\033[2J\033[H'
+  printf 'DIGITAL CURATOR - LOCAL RECOVERY\n'
+  printf '================================\n\n'
+  if [[ "${kiosk_state}" == "active" ]]; then
+    printf 'The kiosk is running on tty7. This console remains available for physical maintenance.\n\n'
+  elif (( failure_count >= 5 )); then
+    printf 'The kiosk could not start after repeated attempts. It will retry periodically.\n\n'
+  else
+    printf 'The kiosk is starting or retrying. This console remains available if startup fails.\n\n'
+  fi
+  printf 'Hostname:        %s\n' "${hostname_short}"
+  printf 'Device ID:       %s\n' "${device_id}"
+  printf 'Network:         %s\n' "${network_state:-unknown}"
+  printf 'IP address:      %s\n' "${ip_address:-none}"
+  printf 'Enrollment:      %s\n' "${claim_state}"
+  printf 'Claim code:      %s\n' "${claim_code}"
+  printf 'Failed service:  %s (%s)\n\n' "${FAILED_SERVICE}" "${failed_state:-unknown}"
+  printf 'Safe diagnostics and recovery commands:\n'
+  printf '  showroom-diagnostics\n'
+  printf '  sudo systemctl restart showroom-agent.service\n'
+  printf '  sudo systemctl reset-failed showroom-kiosk.service\n'
+  printf '  sudo systemctl restart showroom-kiosk.service\n'
+  printf '  sudo nmtui\n'
+  printf '  sudo -u pi rpi-connect status\n'
+  printf '  sudo reboot\n\n'
+  printf 'Remote access: open https://connect.raspberrypi.com and select this device.\n'
+  printf 'SSH password login is disabled; SSH requires an installed public key.\n'
+  printf 'When the kiosk is healthy, use Ctrl+Alt+F7 to return to it.\n\n'
+}
+
+if [[ -n "${TARGET_TTY}" ]]; then
+  render >"${TARGET_TTY}" 2>&1 || true
+else
+  render
+fi

@@ -24,3 +24,4 @@ jobs:
       - run: npm run test
       - run: npm run build
       - run: bash -n infra/pi-image/*.sh infra/pi-image/systemd/showroom-* scripts/*.sh
+      - run: ./infra/pi-image/validate-appliance.sh --source

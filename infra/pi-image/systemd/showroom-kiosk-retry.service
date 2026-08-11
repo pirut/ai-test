@@ -1,0 +1,14 @@
+[Unit]
+Description=Retry the Showroom kiosk after its restart limit cools down
+After=showroom-agent.service
+Wants=showroom-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/showroom-kiosk-retry
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes

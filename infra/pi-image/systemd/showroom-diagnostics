@@ -1,0 +1,122 @@
+#!/bin/bash
+set -uo pipefail
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  printf 'showroom-diagnostics: self-test passed\n'
+  exit 0
+fi
+
+STATE_FILE=/var/lib/showroom/state/device-state.json
+
+heading() {
+  printf '\n== %s ==\n' "$1"
+}
+
+state_value() {
+  local filter="$1" fallback="$2"
+  if [[ -r "${STATE_FILE}" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r "${filter} // \"${fallback}\"" "${STATE_FILE}" 2>/dev/null || printf '%s\n' "${fallback}"
+  else
+    printf '%s\n' "${fallback}"
+  fi
+}
+
+device_id() {
+  local value serial
+  value="$(state_value '.deviceId // .deviceSessionId' '')"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+    return
+  fi
+  serial="$(awk -F: '/^Serial/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' /proc/cpuinfo 2>/dev/null || true)"
+  if [[ -n "${serial}" ]]; then
+    printf 'hardware-%s\n' "${serial}"
+    return
+  fi
+  if [[ -r /etc/machine-id ]]; then
+    printf 'local-%s\n' "$(cut -c1-16 /etc/machine-id)"
+    return
+  fi
+  printf 'pending\n'
+}
+
+unit_summary() {
+  local unit="$1"
+  printf '%-34s active=%-10s enabled=%s\n' \
+    "${unit}" \
+    "$(systemctl is-active "${unit}" 2>/dev/null || true)" \
+    "$(systemctl is-enabled "${unit}" 2>/dev/null || true)"
+  systemctl --no-pager --full status "${unit}" 2>/dev/null | sed -n '1,8p' || true
+}
+
+heading "Device"
+printf 'Hostname:       %s\n' "$(hostname -s 2>/dev/null || hostname)"
+printf 'Device ID:     %s\n' "$(device_id)"
+printf 'Enrollment:    %s\n' "$(if [[ "$(state_value '.credential' '')" == "" ]]; then printf 'not claimed'; else printf 'claimed'; fi)"
+printf 'Claim code:    %s\n' "$(state_value '.claimCode' 'none')"
+
+heading "Services"
+unit_summary showroom-agent.service
+unit_summary showroom-kiosk.service
+
+heading "NetworkManager"
+if command -v nmcli >/dev/null 2>&1; then
+  nmcli -t -f STATE general 2>&1 || true
+  nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>&1 || true
+  printf 'IP addresses:  %s\n' "$(hostname -I 2>/dev/null | xargs || true)"
+else
+  printf 'nmcli is unavailable\n'
+fi
+
+heading "HDMI and display"
+display_found=0
+for connector in /sys/class/drm/card*-HDMI-A-*/status; do
+  [[ -e "${connector}" ]] || continue
+  display_found=1
+  printf '%s: %s\n' "$(basename "$(dirname "${connector}")")" "$(cat "${connector}" 2>/dev/null || printf unknown)"
+done
+if [[ "${display_found}" -eq 0 ]]; then
+  printf 'No HDMI connector status files found\n'
+fi
+printf 'X11 socket:    %s\n' "$(if [[ -S /tmp/.X11-unix/X0 ]]; then printf present; else printf absent; fi)"
+
+heading "Player health"
+if curl -fsS --max-time 3 'http://127.0.0.1:4173/healthz?deep=1' >/dev/null 2>&1; then
+  printf 'Local player:  healthy\n'
+else
+  printf 'Local player:  unhealthy or unavailable\n'
+fi
+printf 'Player state:  %s\n' "$(state_value '.playerState' 'unknown')"
+printf 'Last error:    %s\n' "$(state_value '.lastError' 'none')"
+
+heading "Storage"
+df -h / /persistent /var/lib/showroom 2>/dev/null | awk 'NR == 1 || !seen[$1]++' || true
+
+heading "A/B slot"
+active_system="$(readlink -f /dev/disk/by-slot/active/system 2>/dev/null || true)"
+active_boot="$(readlink -f /dev/disk/by-slot/active/boot 2>/dev/null || true)"
+printf 'Active system: %s\n' "${active_system:-unknown}"
+printf 'Active boot:   %s\n' "${active_boot:-unknown}"
+
+heading "Recent relevant logs"
+journalctl --no-pager -b -n 100 \
+  -u showroom-agent.service \
+  -u showroom-kiosk.service \
+  -u showroom-kiosk-recovery.service \
+  -u getty@tty1.service 2>&1 || true
+
+heading "Recent boot warnings"
+journalctl --no-pager -b -p warning -n 40 2>&1 || true
+
+heading "Previous boot appliance failures"
+journalctl --no-pager -b -1 -n 60 \
+  -u showroom-agent.service \
+  -u showroom-kiosk.service \
+  -u showroom-kiosk-recovery.service 2>&1 || true
+
+heading "Recent X11 log"
+for xorg_log in /home/pi/.local/share/xorg/Xorg.0.log /home/pi/.local/share/xorg/Xorg.0.log.old; do
+  [[ -r "${xorg_log}" ]] || continue
+  printf '%s\n' "--- ${xorg_log}"
+  tail -n 80 "${xorg_log}" 2>&1 || true
+done

@@ -15,6 +15,7 @@ mmdebstrap:
     - ffmpeg
     - iputils-ping
     - jq
+    - kbd
     - mpv
     - openbox
     - python3-xdg
@@ -23,13 +24,28 @@ mmdebstrap:
     - xinit
     - x11-xserver-utils
     - xserver-xorg
+    - xserver-xorg-legacy
+    - sudo
+    - util-linux
     - yt-dlp
   customize-hooks:
-    - $BDEBSTRAP_HOOKS/enable-units "$1" showroom-agent showroom-kiosk showroom-update-guard showroom-network-recovery
+    - $BDEBSTRAP_HOOKS/enable-units "$1" showroom-agent showroom-kiosk showroom-kiosk-retry.timer showroom-update-guard showroom-network-recovery getty@tty1
     - |-
       set -eu
-      mkdir -p "$1/var/lib/showroom/cache" "$1/var/lib/showroom/state" "$1/opt/showroom/player"
+      maintenance_user=showroom-maint
+      if ! chroot "$1" id -u "${maintenance_user}" >/dev/null 2>&1; then
+        chroot "$1" adduser --disabled-password --gecos "Showroom physical-console maintenance" "${maintenance_user}"
+      fi
+      for group in adm dialout audio users video plugdev input render; do
+        chroot "$1" groupadd -f -r "${group}"
+        chroot "$1" adduser "${maintenance_user}" "${group}"
+      done
+      chroot "$1" passwd -l "${maintenance_user}"
+      mkdir -p "$1/var/lib/showroom/cache" "$1/var/lib/showroom/state" "$1/var/lib/showroom/recovery" "$1/opt/showroom/player"
       chroot "$1" chown -R pi:pi /home/pi
+      chroot "$1" chown -R "${maintenance_user}:${maintenance_user}" "/home/${maintenance_user}"
+      chmod 0440 "$1/etc/sudoers.d/020-showroom-maintenance"
+      chroot "$1" visudo -cf /etc/sudoers.d/020-showroom-maintenance
       if ! grep -q '^kernel_watchdog_timeout=' "$1/boot/firmware/config.txt"; then
         printf '\nkernel_watchdog_timeout=20\n' >> "$1/boot/firmware/config.txt"
       fi
