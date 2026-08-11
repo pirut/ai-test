@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+root="${1:?generated rootfs path is required}"
+maintenance_user=showroom-maint
+
+# rpi-image-gen applies SRCROOT/rootfs-overlay immediately before this source
+# customize hook. Keep all operations that depend on overlay files here rather
+# than in YAML customize-hooks, which run before overlays are installed.
+if ! chroot "${root}" id -u "${maintenance_user}" >/dev/null 2>&1; then
+  chroot "${root}" adduser --disabled-password --gecos "Showroom physical-console maintenance" "${maintenance_user}"
+fi
+
+for group in adm dialout audio users video plugdev input render; do
+  chroot "${root}" groupadd -f -r "${group}"
+  if ! chroot "${root}" id -nG "${maintenance_user}" | tr ' ' '\n' | grep -qx "${group}"; then
+    chroot "${root}" adduser "${maintenance_user}" "${group}"
+  fi
+done
+
+chroot "${root}" passwd -l "${maintenance_user}"
+mkdir -p \
+  "${root}/var/lib/showroom/cache" \
+  "${root}/var/lib/showroom/state" \
+  "${root}/var/lib/showroom/recovery" \
+  "${root}/opt/showroom/player"
+chroot "${root}" chown -R pi:pi /home/pi
+chroot "${root}" chown -R "${maintenance_user}:${maintenance_user}" "/home/${maintenance_user}"
+
+chmod 0440 "${root}/etc/sudoers.d/020-showroom-maintenance"
+chroot "${root}" visudo -cf /etc/sudoers.d/020-showroom-maintenance
+
+"${BDEBSTRAP_HOOKS}/enable-units" "${root}" \
+  showroom-agent \
+  showroom-kiosk \
+  showroom-kiosk-retry.timer \
+  showroom-update-guard \
+  showroom-network-recovery \
+  getty@tty1
+
+if ! grep -q '^kernel_watchdog_timeout=' "${root}/boot/firmware/config.txt"; then
+  printf '\nkernel_watchdog_timeout=20\n' >> "${root}/boot/firmware/config.txt"
+fi

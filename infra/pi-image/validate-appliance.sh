@@ -60,6 +60,7 @@ validate_source() {
   local sudoers="${ROOT_DIR}/config/showroom-maintenance.sudoers"
   local ssh="${ROOT_DIR}/config/20-showroom-ssh.conf"
   local prepare="${ROOT_DIR}/prepare-appliance-rootfs.sh"
+  local customize="${ROOT_DIR}/rpi-image-gen/customize.sh"
 
   require_contains "${config}" '^  user1: pi$' "primary kiosk/Connect user must be explicit"
   require_not_contains "${config}" '^  user1pass(hash)?:' "fleet image must not contain a universal pi password"
@@ -78,6 +79,11 @@ validate_source() {
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- xserver-xorg-legacy$' "Xorg.wrap package must be an explicit image dependency"
+  require_not_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]*customize-hooks:' "YAML customize-hooks run before source overlays and cannot configure Showroom files"
+  require_executable "${customize}"
+  bash -n "${customize}"
+  require_contains "${customize}" 'enable-units.*root' "post-overlay customize hook must enable appliance units"
+  require_contains "${customize}" 'visudo -cf' "post-overlay customize hook must validate maintenance sudoers"
 
   require_contains "${ssh}" '^PasswordAuthentication no$' "SSH password authentication must be disabled in the final rootfs"
   require_contains "${ssh}" "^DenyUsers ${MAINTENANCE_USER}$" "maintenance account must be physical-console only"
