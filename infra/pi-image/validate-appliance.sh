@@ -103,6 +103,7 @@ validate_source() {
   require_executable "${customize}"
   bash -n "${customize}"
   require_contains "${customize}" 'enable-units.*root' "post-overlay customize hook must enable appliance units"
+  require_contains "${customize}" 'systemctl enable getty@tty1\.service' "post-overlay customize hook must explicitly enable tty1 auto-login"
   require_contains "${customize}" 'visudo -cf' "post-overlay customize hook must validate maintenance sudoers"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
@@ -187,6 +188,10 @@ validate_rootfs() {
     'test -x /usr/local/bin/showroom-start-kiosk && test -x /usr/lib/xorg/Xorg.wrap && test -r /opt/showroom/player/index.html' || \
     fail "pi cannot execute the kiosk/X wrapper or read built-in player assets"
 
+  # sshd expects its boot-created privilege-separation directory even for
+  # configuration-only validation. The extracted image intentionally has an
+  # empty /run, so create this ephemeral runtime path in the temporary root.
+  install -d -m 0755 "${root}/run/sshd"
   local effective_sshd
   effective_sshd="$(chroot "${root}" /usr/sbin/sshd -T -C user=pi,host=localhost,addr=127.0.0.1)"
   grep -Eq '^passwordauthentication no$' <<<"${effective_sshd}" || fail "effective SSH policy enables password authentication"

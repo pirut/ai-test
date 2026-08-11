@@ -35,8 +35,12 @@ chroot "${root}" visudo -cf /etc/sudoers.d/020-showroom-maintenance
   showroom-kiosk \
   showroom-kiosk-retry.timer \
   showroom-update-guard \
-  showroom-network-recovery \
-  getty@tty1
+  showroom-network-recovery
+
+# The bdebstrap enable-units helper only recognizes concrete unit files and
+# skips template instances. systemctl resolves getty@.service and creates the
+# tty1 instance link correctly inside the generated root.
+chroot "${root}" systemctl enable getty@tty1.service
 
 if ! grep -q '^kernel_watchdog_timeout=' "${root}/boot/firmware/config.txt"; then
   printf '\nkernel_watchdog_timeout=20\n' >> "${root}/boot/firmware/config.txt"
