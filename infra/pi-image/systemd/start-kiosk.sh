@@ -15,6 +15,7 @@ HOSTNAME_SHORT="$(hostname -s 2>/dev/null || hostname)"
 CHROMIUM_PROFILE_ROOT=/home/pi/.config/chromium-kiosk
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_ROOT}/${HOSTNAME_SHORT}"
 APP_PID=""
+X_PID=""
 APP_MODE=""
 APP_TOKEN=""
 CURRENT_ASSET_ID=""
@@ -37,6 +38,23 @@ fi
 
 if [[ -z "${CHROMIUM_BIN}" ]]; then
   echo "Chromium executable not found" >&2
+  exit 1
+fi
+
+if [[ ! -f /opt/showroom/player/index.html ]] && [[ ! -f /var/lib/showroom/releases/player/current/index.html ]]; then
+  echo "Player assets are missing; expected index.html in the built-in or active player release" >&2
+  exit 1
+fi
+
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 1 http://127.0.0.1:4173/healthz >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+if ! curl -fsS --max-time 2 http://127.0.0.1:4173/healthz >/dev/null; then
+  echo "showroom-agent local player endpoint did not become ready within 60 seconds" >&2
   exit 1
 fi
 
@@ -63,20 +81,27 @@ set_display_mode() {
     rate_args=(--rate "${DISPLAY_RATE}")
   fi
 
-  if xrandr --output "${DISPLAY_OUTPUT}" --mode "${DISPLAY_MODE_PRIMARY}" "${rate_args[@]}" >/tmp/showroom-xrandr.log 2>&1; then
+  if xrandr --output "${DISPLAY_OUTPUT}" --mode "${DISPLAY_MODE_PRIMARY}" "${rate_args[@]}"; then
     return
   fi
 
-  xrandr --output "${DISPLAY_OUTPUT}" --mode "${DISPLAY_MODE_FALLBACK}" "${rate_args[@]}" >>/tmp/showroom-xrandr.log 2>&1 || true
+  echo "Display mode ${DISPLAY_MODE_PRIMARY} unavailable on ${DISPLAY_OUTPUT}; trying ${DISPLAY_MODE_FALLBACK}" >&2
+  xrandr --output "${DISPLAY_OUTPUT}" --mode "${DISPLAY_MODE_FALLBACK}" "${rate_args[@]}" || true
 }
 
 cleanup() {
   stop_app
+  if [[ -n "${X_PID}" ]]; then
+    kill "${X_PID}" 2>/dev/null || true
+    wait "${X_PID}" 2>/dev/null || true
+  fi
 }
 
 trap cleanup EXIT INT TERM
 
-startx /usr/bin/openbox-session -- :0 vt1 &
+echo "Starting X11/Openbox on tty7" >&2
+startx /usr/bin/openbox-session -- :0 vt7 -nolisten tcp &
+X_PID=$!
 
 for _ in $(seq 1 20); do
   if [[ -S /tmp/.X11-unix/X0 ]]; then
@@ -87,6 +112,12 @@ done
 
 if [[ ! -S /tmp/.X11-unix/X0 ]]; then
   echo "X server failed to start on ${DISPLAY}" >&2
+  exit 1
+fi
+
+if ! kill -0 "${X_PID}" 2>/dev/null; then
+  echo "X server exited during startup" >&2
+  wait "${X_PID}" || true
   exit 1
 fi
 
@@ -212,13 +243,16 @@ launch_browser() {
     --noerrdialogs \
     --disable-infobars \
     --disable-extensions \
+    --disable-session-crashed-bubble \
+    --disable-features=TranslateUI \
+    --password-store=basic \
     --user-data-dir="${CHROMIUM_PROFILE_DIR}" \
     --autoplay-policy=no-user-gesture-required \
     --check-for-update-interval=31536000 \
     --use-gl=egl \
     --ignore-gpu-blocklist \
     --enable-gpu-rasterization \
-    "${browser_url}" >/tmp/showroom-chromium.log 2>&1 &
+    "${browser_url}" &
   APP_PID=$!
   APP_MODE="browser"
 }
@@ -236,7 +270,7 @@ launch_mpv() {
   local args=(
     --fs
     --no-terminal
-    --really-quiet
+    --msg-level=all=warn
     --keep-open=no
     --osc=no
     --input-default-bindings=no
@@ -258,12 +292,18 @@ launch_mpv() {
   fi
 
   rm -f "${MPV_SOCKET}"
-  setsid mpv "${args[@]}" >/tmp/showroom-mpv.log 2>&1 &
+  setsid mpv "${args[@]}" &
   APP_PID=$!
   APP_MODE="mpv"
 }
 
 while true; do
+  if ! kill -0 "${X_PID}" 2>/dev/null; then
+    echo "X server exited; returning control to systemd" >&2
+    wait "${X_PID}" || true
+    exit 1
+  fi
+
   fetch_runtime
   mapfile -t runtime_lines < <(read_runtime)
 

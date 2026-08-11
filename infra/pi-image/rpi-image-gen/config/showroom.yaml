@@ -5,7 +5,11 @@ device:
   layer: rpi5
   hostname: showroom
   user1: pi
-  user1sudo: none
+  user1sudo: passwd
+  user1groups: adm,dialout,cdrom,audio,users,video,games,plugdev,input,spi,i2c,gpio,render
+
+ssh:
+  pubkey_only: y
 
 artefact:
   version: 1.0.0

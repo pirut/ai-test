@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+RECOVERY_DIR=/run/showroom-recovery
+COUNT_FILE="${RECOVERY_DIR}/kiosk-failure-count"
+FAILED_FILE="${RECOVERY_DIR}/failed-service"
+
+mkdir -p "${RECOVERY_DIR}"
+exec 9>"${RECOVERY_DIR}/lock"
+flock 9
+
+count=0
+if [[ -r "${COUNT_FILE}" ]]; then
+  read -r count <"${COUNT_FILE}" || count=0
+fi
+count=$((count + 1))
+printf '%s\n' "${count}" >"${COUNT_FILE}"
+printf '%s\n' showroom-kiosk.service >"${FAILED_FILE}"
+logger -t showroom-kiosk-recovery "kiosk failure ${count}/5 during this boot"
+
+if (( count < 5 )); then
+  exit 0
+fi
+
+/usr/local/bin/showroom-recovery-screen --failed-service showroom-kiosk.service --tty /dev/tty1
+chvt 1 || true

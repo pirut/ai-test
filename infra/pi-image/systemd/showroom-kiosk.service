@@ -1,18 +1,26 @@
 [Unit]
 Description=Showroom Chromium kiosk
-After=showroom-agent.service systemd-user-sessions.service
-Wants=showroom-agent.service
-Conflicts=getty@tty1.service
-StartLimitIntervalSec=10min
-StartLimitBurst=6
+After=local-fs.target systemd-user-sessions.service getty@tty1.service showroom-agent.service
+Wants=getty@tty1.service showroom-agent.service
+RequiresMountsFor=/home/pi /var/lib/showroom
+OnFailure=showroom-kiosk-recovery.service
+StartLimitIntervalSec=5min
+StartLimitBurst=5
+StartLimitAction=none
 
 [Service]
 ExecStart=/usr/local/bin/showroom-start-kiosk
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartSec=10s
 User=pi
+Group=pi
+SupplementaryGroups=audio video render input tty
+PAMName=login
 Environment=DISPLAY=:0
-TTYPath=/dev/tty1
+Environment=XDG_RUNTIME_DIR=/run/showroom-kiosk
+RuntimeDirectory=showroom-kiosk
+RuntimeDirectoryMode=0700
+TTYPath=/dev/tty7
 StandardInput=tty
 StandardOutput=journal
 StandardError=journal
@@ -23,9 +31,13 @@ OOMScoreAdjust=-250
 Nice=-5
 TimeoutStopSec=15s
 KillMode=control-group
-NoNewPrivileges=yes
+# Xorg.wrap is configured with needs_root_rights=yes. NoNewPrivileges would
+# block that narrowly scoped setuid transition and make X fail on first boot.
 ProtectSystem=strict
-ReadWritePaths=/home/pi /tmp /run
+ReadWritePaths=/home/pi /var/lib/showroom /tmp /run
+PrivateTmp=no
+LockPersonality=yes
+RestrictSUIDSGID=no
 
 [Install]
 WantedBy=multi-user.target

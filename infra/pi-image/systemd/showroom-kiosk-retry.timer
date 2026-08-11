@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodic Showroom kiosk recovery attempt
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+RandomizedDelaySec=30s
+AccuracySec=1min
+Persistent=false
+Unit=showroom-kiosk-retry.service
+
+[Install]
+WantedBy=timers.target

@@ -34,6 +34,13 @@ directory contains a Raspberry Pi Imager-ready `.img.xz`, its SHA-256 checksum,
 the separately checksummed A/B OTA archive, the package manifest, build
 configuration, and SBOM when the upstream build completes.
 
+Every build runs source-contract checks, validates the prepared overlay, mounts
+and inspects both generated EROFS system slots plus the persistent partition,
+verifies systemd units and account/device permissions, tests the compressed XZ
+stream, and verifies the published SHA-256 digest. The permanent GitHub Release
+also includes `appliance-validation.txt`; creating a release does not enqueue an
+OTA or contact deployed devices.
+
 The Linux builder needs at least 2 GB RAM and roughly 30 GB free disk for this
 partition layout. Set `SHOWROOM_INSTALL_BUILD_DEPS=1` on a disposable CI runner
 to let the official upstream dependency installer use `sudo`; provision stable
@@ -67,7 +74,9 @@ active symlink.
 `/var/lib/showroom` and the kiosk Chromium profile are slot-shared. Device
 identity, credentials, cached media, the last two content generations, app slots,
 and rollback markers survive OS slot changes. Journals are bounded to protect
-flash endurance.
+flash endurance. The persistent journal retains agent, kiosk, X11 startup, and
+boot failure context across reboot and A/B rollback, with a 256 MB ceiling and
+14-day retention policy.
 
 ## OS OTA
 
@@ -83,3 +92,27 @@ If no network is available, the local player presents Wi-Fi setup. The dashboard
 can later stage replacement credentials; NetworkManager retains old profiles as
 fallbacks. Connect provides break-glass remote shell access without exposing SSH
 to the public internet.
+
+The kiosk runs on tty7. Tty1 automatically logs into the locked, non-root
+`showroom-maint` physical-console account, so a failed kiosk never leaves a
+technician at an unusable password prompt. No maintenance password is embedded
+in the fleet image, the account is denied SSH access, and SSH password and root
+login remain disabled. Its passwordless sudo policy is limited to service
+recovery, relevant logs, NetworkManager, diagnostics, Connect status, and safe
+power operations; it does not grant `NOPASSWD: ALL`.
+
+After the kiosk reaches its bounded restart limit, the appliance switches to a
+recovery screen with identity, enrollment, network, failure, and Raspberry Pi
+Connect information. It retries the kiosk every 15 minutes without creating a
+tight permanent restart loop. At any physical-console shell, run:
+
+```bash
+showroom-diagnostics
+sudo systemctl restart showroom-agent.service
+sudo systemctl reset-failed showroom-kiosk.service
+sudo systemctl restart showroom-kiosk.service
+sudo nmtui
+sudo -u pi rpi-connect status
+```
+
+Use Ctrl+Alt+F1 for recovery and Ctrl+Alt+F7 for a healthy kiosk.

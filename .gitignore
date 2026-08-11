@@ -26,6 +26,11 @@ infra/pi-image/rpi-image-gen/rootfs-overlay/var/lib/showroom/releases/
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/showroom-agent/config.env
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/X11/
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/systemd/system/*.service
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/systemd/system/*.timer
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/systemd/system/getty@tty1.service.d/
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/profile.d/20-showroom-console.sh
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/ssh/sshd_config.d/20-showroom.conf
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/sudoers.d/020-showroom-maintenance
 infra/pi-image/out/appliance-source/
 infra/pi-image/out/rpi-image-gen-*/
 infra/pi-image/secrets/
