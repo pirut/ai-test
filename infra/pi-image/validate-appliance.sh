@@ -78,7 +78,7 @@ validate_source() {
   local ssh="${ROOT_DIR}/config/20-showroom-ssh.conf"
   local prepare="${ROOT_DIR}/prepare-appliance-rootfs.sh"
   local build="${ROOT_DIR}/build-appliance-image.sh"
-  local customize="${ROOT_DIR}/rpi-image-gen/customize.sh"
+  local customize="${ROOT_DIR}/rpi-image-gen/bdebstrap/customize90-showroom"
 
   require_contains "${config}" '^  user1: pi$' "primary kiosk/Connect user must be explicit"
   require_not_contains "${config}" '^  user1pass(hash)?:' "fleet image must not contain a universal pi password"

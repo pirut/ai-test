@@ -4,8 +4,8 @@ set -euo pipefail
 root="${1:?generated rootfs path is required}"
 maintenance_user=showroom-maint
 
-# rpi-image-gen applies SRCROOT/rootfs-overlay immediately before this source
-# customize hook. Keep all operations that depend on overlay files here rather
+# rpi-image-gen applies SRCROOT/rootfs-overlay before source-tree bdebstrap
+# customize hooks. Keep all operations that depend on overlay files here rather
 # than in YAML customize-hooks, which run before overlays are installed.
 if ! chroot "${root}" id -u "${maintenance_user}" >/dev/null 2>&1; then
   chroot "${root}" adduser --disabled-password --gecos "Showroom physical-console maintenance" "${maintenance_user}"
