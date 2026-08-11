@@ -8,6 +8,7 @@ import {
 } from "@showroom/contracts";
 
 import type { Doc, Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
 import {
@@ -1815,6 +1816,52 @@ export const updateScreen = mutation({
       volume: updated.volume,
       defaultPlaylistId: updated.defaultPlaylistId ?? defaultPlaylist?._id ?? null,
     };
+  },
+});
+
+export const removeScreen = mutation({
+  args: { deviceId: v.id("devices") },
+  returns: v.object({
+    removedDeviceId: v.id("devices"),
+    removedDeviceName: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await requireAdmin(ctx);
+    const device = await ctx.db.get(args.deviceId);
+    if (!device || device.organizationId !== identity.orgId) {
+      throw new ConvexError("Screen not found");
+    }
+
+    // Revoke access synchronously. Historical telemetry can be much larger than a
+    // single Convex transaction, so maintenance removes it in bounded batches.
+    const [credentials, registrations] = await Promise.all([
+      ctx.db.query("deviceCredentials").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(100),
+      ctx.db.query("deviceRegistrations").withIndex("by_claimed_device", (q) => q.eq("claimedDeviceId", args.deviceId)).take(100),
+    ]);
+    for (const credential of credentials) await ctx.db.delete(credential._id);
+    for (const registration of registrations) await ctx.db.delete(registration._id);
+
+    const removedDeviceName = device.name ?? "Unnamed screen";
+    await ctx.db.insert("activityLogs", {
+      organizationId: identity.orgId,
+      actorUserId: identity.userId,
+      action: "screen.removed",
+      subjectType: "device",
+      subjectId: args.deviceId,
+      metadata: {
+        name: removedDeviceName,
+        siteName: device.siteName ?? null,
+        applianceGeneration: device.applianceGeneration ?? null,
+        connectDeviceId: device.connectDeviceId ?? null,
+      },
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.delete(args.deviceId);
+    await ctx.scheduler.runAfter(0, internal.maintenance.purgeRemovedScreenData, {
+      deviceId: args.deviceId,
+    });
+    return { removedDeviceId: args.deviceId, removedDeviceName };
   },
 });
 

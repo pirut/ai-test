@@ -96,8 +96,8 @@ export function ScreenSettingsPanel({
   }
 
   return (
-    <Card className="border border-white/5 bg-card/95">
-      <CardHeader className="border-b border-white/5">
+    <Card className="dashboard-surface bg-card/95">
+      <CardHeader className="border-b border-border">
         <CardTitle className="font-heading text-xl font-bold">System settings</CardTitle>
         <p className="text-sm text-muted-foreground">
           Update the device identity, playback defaults, rotation, and audio ceiling.
@@ -184,7 +184,7 @@ export function ScreenSettingsPanel({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/6 bg-[var(--surface-low)] p-4">
+        <div className="rounded-md border border-border bg-[var(--surface-low)] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="space-y-1">
               <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Volume</Label>
@@ -192,7 +192,7 @@ export function ScreenSettingsPanel({
                 Use the slider to set the playback ceiling for this screen.
               </p>
             </div>
-            <span className="rounded-full border border-white/6 px-2 py-0.5 font-mono text-[0.78rem] text-foreground">
+            <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[0.78rem] text-foreground">
               {form.volume}%
             </span>
           </div>

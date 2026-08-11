@@ -150,7 +150,8 @@ export default defineSchema({
     credentialExpiresAt: v.optional(v.number()),
   })
     .index("by_session", ["deviceSessionId"])
-    .index("by_claim_code", ["claimCode"]),
+    .index("by_claim_code", ["claimCode"])
+    .index("by_claimed_device", ["claimedDeviceId"]),
 
   deviceHeartbeats: defineTable({
     organizationId: v.optional(v.string()),
@@ -314,7 +315,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_schedule", ["scheduleId"])
-    .index("by_org", ["organizationId"]),
+    .index("by_org", ["organizationId"])
+    .index("by_device", ["deviceId"]),
 
   compiledManifests: defineTable({
     organizationId: v.optional(v.string()),

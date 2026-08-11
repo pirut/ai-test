@@ -48,6 +48,47 @@
   --font-app-mono:         "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
+.dashboard-theme {
+  color-scheme: light;
+  --background: #f4f6f8;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #295dff;
+  --primary-foreground: #ffffff;
+  --secondary: #e9edf2;
+  --secondary-foreground: #1f2937;
+  --muted: #eef1f4;
+  --muted-foreground: #697386;
+  --accent: #eef2ff;
+  --accent-foreground: #1f3fb8;
+  --destructive: #d94a5a;
+  --destructive-foreground: #ffffff;
+  --border: #dce2e9;
+  --input: #cfd6df;
+  --ring: #295dff;
+  --radius: 0.5rem;
+
+  --sidebar: #111827;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-accent: #243047;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-ring: #7ea5ff;
+  --surface-low: #f8fafc;
+  --surface-high: #eef1f4;
+  --surface-highest: #e4e9ef;
+  --outline-soft: #dce2e9;
+
+  --signal: #17875d;
+  --warning: #b86b0c;
+  --danger: #d94a5a;
+  --queue: #7857c5;
+  --unclaimed: #295dff;
+}
+
 @theme inline {
   --font-sans: var(--font-app-sans);
   --font-mono: var(--font-app-mono);
@@ -146,5 +187,9 @@
 @layer components {
   .font-heading {
     font-family: var(--font-app-heading);
+  }
+
+  .dashboard-surface {
+    @apply border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.035)];
   }
 }

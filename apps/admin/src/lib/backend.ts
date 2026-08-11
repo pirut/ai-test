@@ -585,6 +585,19 @@ export async function updateScreen(input: {
   return deviceDetailSchema.parse(await convexMutation(api.admin.updateScreen, input));
 }
 
+export async function removeScreen(deviceId: string, orgId = "org-demo") {
+  if (!hasConvexBackend()) {
+    return mock.removeScreen(orgId, deviceId);
+  }
+
+  return z
+    .object({
+      removedDeviceId: z.string(),
+      removedDeviceName: z.string(),
+    })
+    .parse(await convexMutation(api.admin.removeScreen, { deviceId }));
+}
+
 export async function registerTemporaryDevice() {
   if (!hasConvexBackend()) {
     return mock.registerTemporaryDevice();

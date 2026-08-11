@@ -272,6 +272,27 @@ export function getDevice(orgId: string, deviceId: string) {
   return listDevices(orgId).find((device) => device.id === deviceId) ?? null;
 }
 
+export function removeScreen(orgId: string, deviceId: string) {
+  const device = getDevice(orgId, deviceId);
+  if (!device) {
+    throw new Error("Screen not found");
+  }
+
+  const mockState = state();
+  mockState.devices = mockState.devices.filter((entry) => entry.id !== deviceId);
+  mockState.screenshots = mockState.screenshots.filter((entry) => entry.deviceId !== deviceId);
+  mockState.commands = mockState.commands.filter((entry) => entry.deviceId !== deviceId);
+  mockState.registrations = mockState.registrations.filter(
+    (entry) => entry.claimedDeviceId !== deviceId,
+  );
+  delete mockState.manifests[deviceId];
+
+  return {
+    removedDeviceId: device.id,
+    removedDeviceName: device.name,
+  };
+}
+
 export function listLibraryFolders(kind: FolderKind) {
   return state().folders
     .filter((folder) => folder.kind === kind)

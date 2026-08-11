@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
-import { updateScreen } from "@/lib/backend";
+import { removeScreen, updateScreen } from "@/lib/backend";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -34,4 +34,27 @@ export async function PATCH(
       ...payload,
     }),
   });
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ deviceId: string }> },
+) {
+  const session = await getAuthSession();
+  if (!session.userId || !session.orgId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!session.has({ role: "org:admin" })) {
+    return NextResponse.json({ error: "Admin role required" }, { status: 403 });
+  }
+
+  const { deviceId } = await params;
+  try {
+    return NextResponse.json(await removeScreen(deviceId, session.orgId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not remove screen";
+    const status = /not found/i.test(message) ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
 }
