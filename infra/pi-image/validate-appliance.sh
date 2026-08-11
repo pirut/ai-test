@@ -97,6 +97,8 @@ validate_source() {
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- xserver-xorg-legacy$' "Xorg.wrap package must be an explicit image dependency"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- unclutter$' "cursor-hiding package must be an explicit image dependency"
+  require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^unclutter-classic -idle 0\.1 -root &$' "kiosk must invoke Debian's installed unclutter binary"
   require_not_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]*customize-hooks:' "YAML customize-hooks run before source overlays and cannot configure Showroom files"
   require_executable "${customize}"
   bash -n "${customize}"
@@ -147,7 +149,7 @@ validate_rootfs() {
 
   local executable
   for executable in \
-    usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter \
+    usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter-classic \
     usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt \
     usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/journalctl usr/bin/sudo \
     usr/bin/rpi-connect usr/sbin/runuser usr/sbin/sshd sbin/agetty; do

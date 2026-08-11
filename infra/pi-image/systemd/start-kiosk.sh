@@ -121,7 +121,9 @@ if ! kill -0 "${X_PID}" 2>/dev/null; then
   exit 1
 fi
 
-unclutter -idle 0.1 -root &
+# Debian trixie installs the classic implementation under this explicit name;
+# the historical /usr/bin/unclutter alias is no longer provided.
+unclutter-classic -idle 0.1 -root &
 set_display_mode
 
 fetch_runtime() {
