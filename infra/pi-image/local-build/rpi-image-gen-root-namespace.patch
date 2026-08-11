@@ -1,0 +1,13 @@
+diff --git a/bin/ns b/bin/ns
+index 95281bb..ce5f1dc 100755
+--- a/bin/ns
++++ b/bin/ns
+@@ -1 +1 @@
+-#!/bin/sh
++#!/bin/bash
+diff --git a/rpi-image-gen b/rpi-image-gen
+index 56d579d..9d2a39b 100755
+--- a/rpi-image-gen
++++ b/rpi-image-gen
+@@ -33,0 +34 @@ _ns_setup() {
++   return 0

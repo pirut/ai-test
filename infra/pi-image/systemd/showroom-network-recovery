@@ -2,7 +2,7 @@
 set -euo pipefail
 
 FAILURES=0
-. /etc/showroom-agent/config.env
+: "${SHOWROOM_API_BASE_URL:?SHOWROOM_API_BASE_URL is required}"
 while true; do
   if curl -fsSI --max-time 8 "${SHOWROOM_API_BASE_URL}/" >/dev/null 2>&1 \
     || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then

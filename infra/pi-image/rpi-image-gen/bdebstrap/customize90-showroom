@@ -19,6 +19,9 @@ for group in adm dialout audio users video plugdev input render; do
 done
 
 chroot "${root}" passwd -l "${maintenance_user}"
+chroot "${root}" install -d -o pi -g pi -m 0755 /home/pi/.config/chromium-kiosk
+chroot "${root}" install -d -o pi -g pi -m 0755 /persistent/shared/home/pi/.config/chromium-kiosk
+chroot "${root}" install -d -o root -g root -m 0700 /persistent/shared/etc/NetworkManager/system-connections
 mkdir -p \
   "${root}/var/lib/showroom/cache" \
   "${root}/var/lib/showroom/state" \
