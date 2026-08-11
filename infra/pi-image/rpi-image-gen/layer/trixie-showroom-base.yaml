@@ -1,7 +1,7 @@
 # METABEGIN
 # X-Env-Layer-Name: trixie-showroom-base
 # X-Env-Layer-Desc: Debian Trixie minimal Raspberry Pi base with NetworkManager
-#  and iwd for resilient wired and wireless fleet networking.
+#  and wpa_supplicant for Raspberry Pi-supported wired and wireless networking.
 # X-Env-Layer-Category: suite
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: debian-trixie-arm64-multi,
@@ -9,7 +9,7 @@
 #  rpi-misc-utils,
 #  rpi-essential-base,
 #  rpi-misc-skel,
-#  network-manager-iwd,
+#  network-manager,
 #  openssh-server,
 #  systemd-resolved,
 #  systemd-timesyncd,

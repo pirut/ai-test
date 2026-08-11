@@ -131,10 +131,27 @@ release center.
 
 ## First boot
 
-If no network is available, the local player presents Wi-Fi setup. The dashboard
-can later stage replacement credentials; NetworkManager retains old profiles as
-fallbacks. Connect provides break-glass remote shell access without exposing SSH
-to the public internet.
+Before the agent or player can start on a fresh flash, tty1 presents a full-screen
+NetworkManager Wi-Fi selector. A technician chooses the SSID and enters its
+password locally; no site or fleet Wi-Fi password is embedded in the image. The
+appliance verifies a default route and the Digital Curator control plane before
+continuing into enrollment. Ethernet or an already provisioned connection passes
+the same check automatically. The completion marker and root-only NetworkManager
+profiles live on the persistent partition, so the prompt does not recur after an
+A/B update or a temporary outage.
+
+The Pi 5 image uses NetworkManager with `wpa_supplicant`, not `iwd`. Raspberry
+Pi's BCM43455 firmware delegates WPA3/SAE authentication in a way that is known
+to fail with `iwd`; `wpa_supplicant` uses the supported path. To intentionally
+replace a deployed screen's Wi-Fi connection from the physical console, run:
+
+```bash
+sudo showroom-network-setup
+```
+
+The dashboard can later stage replacement credentials; NetworkManager retains
+old profiles as fallbacks. Connect provides break-glass remote shell access
+without exposing SSH to the public internet.
 
 The kiosk runs on tty7. Tty1 automatically logs into the locked, non-root
 `showroom-maint` physical-console account, so a failed kiosk never leaves a
@@ -154,7 +171,7 @@ showroom-diagnostics
 sudo systemctl restart showroom-agent.service
 sudo systemctl reset-failed showroom-kiosk.service
 sudo systemctl restart showroom-kiosk.service
-sudo nmtui
+sudo showroom-network-setup
 sudo -u pi rpi-connect status
 ```
 
