@@ -1,17 +1,6 @@
 name: Raspberry Pi appliance image
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/appliance-image.yml"
-      - "apps/agent/**"
-      - "apps/player/**"
-      - "infra/pi-image/**"
-      - "package.json"
-      - "package-lock.json"
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       device_layer:
@@ -29,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     env:
-      # Main-branch releases produce the standard Pi 5 image automatically.
-      # Pi 4 and Compute Module profiles remain available through workflow dispatch.
+      # Emergency-only manual fallback. Production images are built and
+      # validated locally; pushes and schedules never invoke this workflow.
       SHOWROOM_DEVICE_LAYER: ${{ inputs.device_layer || 'rpi5' }}
       SHOWROOM_RPI_IMAGE_GEN_VERSION: v2.7.0
       SHOWROOM_INSTALL_BUILD_DEPS: "1"

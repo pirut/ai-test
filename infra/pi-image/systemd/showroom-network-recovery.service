@@ -5,6 +5,7 @@ Wants=NetworkManager.service
 
 [Service]
 Type=simple
+EnvironmentFile=/etc/showroom-agent/config.env
 ExecStart=/usr/local/bin/showroom-network-recovery
 Restart=always
 RestartSec=15s

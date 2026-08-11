@@ -16,13 +16,50 @@ excluded from network rotation, new telemetry retention, and release rollouts.
 
 ## Build
 
-Run on a supported Debian/Ubuntu arm64 builder (a Pi 5, arm64 CI runner, or arm64
-Linux VM):
+Run on a supported Debian/Ubuntu arm64 builder (a Pi 5 or arm64 Linux VM):
 
 ```bash
 export SHOWROOM_DEVICE_LAYER=rpi5
 ./infra/pi-image/build-appliance-image.sh
 ```
+
+Production image builds are intentionally local/manual. The GitHub workflow is
+available only through `workflow_dispatch` for emergency use; pushes and
+schedules do not build or publish appliance images.
+
+On an Apple silicon development Mac, build the pinned local ARM64 toolchain and
+run the image build in a privileged container so loop devices and filesystem
+creation work normally:
+
+```bash
+colima start --cpu 6 --memory 8 --disk 40 --arch aarch64 --vm-type vz --mount-type virtiofs
+
+docker build \
+  --file infra/pi-image/local-build/Dockerfile \
+  --tag showroom-pi-builder:local \
+  .
+
+docker run --rm --privileged \
+  --volume "$PWD:/source:ro" \
+  showroom-pi-builder:local \
+  bash -lc 'set -euo pipefail
+    rsync -a --exclude .git --exclude node_modules --exclude infra/pi-image/out /source/ /build/ai-test/
+    cd /build/ai-test
+    npm ci
+    SHOWROOM_IMAGE_VERSION=YYYY.MM.DD.N \
+    SHOWROOM_DEVICE_LAYER=rpi5 \
+    SHOWROOM_RPI_IMAGE_GEN_DIR=/opt/rpi-image-gen \
+    SHOWROOM_INSTALL_BUILD_DEPS=0 \
+    ./infra/pi-image/build-appliance-image.sh'
+```
+
+Keep at least 40 GiB allocated to the local Linux VM and 5 GiB free on the Mac.
+The raw image is sparse, but rpi-image-gen temporarily creates compressed flash,
+provisioning, manifest, and A/B update assets before the final XZ is written.
+
+Copy `infra/pi-image/out/release-rpi5` out of the container before removing it,
+then independently run `xz -t` and compare the artifact's SHA-256 digest with
+`SHA256SUMS.sha256` before publishing it.
 
 The production public verification key is committed at
 `release-public.base64`. Override `SHOWROOM_RELEASE_PUBLIC_KEY` only when
@@ -33,6 +70,12 @@ The builder pins `rpi-image-gen` to v2.7.0 by default. Set
 directory contains a Raspberry Pi Imager-ready `.img.xz`, its SHA-256 checksum,
 the separately checksummed A/B OTA archive, the package manifest, build
 configuration, and SBOM when the upstream build completes.
+
+The image overlay currently replaces v2.7.0's `slot-shared-generator`. Upstream
+v2.7.0 creates mount units for every shared path but activates only the last
+one. The replacement activates every generated unit and is covered by the
+source and generated-root validation. Re-audit and remove the override only
+after a pinned upstream release contains the equivalent fix.
 
 Every build runs source-contract checks, validates the prepared overlay, mounts
 and inspects both generated EROFS system slots plus the persistent partition,

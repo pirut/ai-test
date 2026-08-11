@@ -6,6 +6,7 @@ MODE="${1:---source}"
 TARGET="${2:-}"
 MAINTENANCE_USER=showroom-maint
 IMAGE_VALIDATION_LOOP=""
+IMAGE_VALIDATION_IMAGE=""
 IMAGE_VALIDATION_DIRS=()
 
 cleanup_image() {
@@ -16,10 +17,16 @@ cleanup_image() {
       rmdir "${directory}" 2>/dev/null || true
     fi
   done
+  if [[ -n "${IMAGE_VALIDATION_IMAGE}" ]]; then
+    while IFS=: read -r loop_device _; do
+      [[ -n "${loop_device}" ]] && losetup -d "${loop_device}" 2>/dev/null || true
+    done < <(losetup -j "${IMAGE_VALIDATION_IMAGE}" 2>/dev/null || true)
+  fi
   if [[ -n "${IMAGE_VALIDATION_LOOP}" ]]; then
     losetup -d "${IMAGE_VALIDATION_LOOP}" 2>/dev/null || true
   fi
   IMAGE_VALIDATION_LOOP=""
+  IMAGE_VALIDATION_IMAGE=""
   IMAGE_VALIDATION_DIRS=()
 }
 
@@ -52,6 +59,48 @@ require_not_contains() {
   fi
 }
 
+validate_slot_shared_generator() {
+  local generator="$1"
+  require_executable "${generator}"
+
+  local fixture
+  fixture="$(mktemp -d)"
+  mkdir -p "${fixture}/conf" "${fixture}/out" "${fixture}/bin"
+  cat >"${fixture}/conf/network.conf" <<'EOF'
+Version=1
+Path=/etc/NetworkManager/system-connections
+EOF
+  cat >"${fixture}/conf/showroom.conf" <<'EOF'
+Version=1
+Path=/var/lib/showroom
+Path=/home/pi/.config/chromium-kiosk
+EOF
+  cat >"${fixture}/bin/systemd-escape" <<'EOF'
+#!/bin/sh
+path="${2:-${1}}"
+printf '%s' "${path#/}" | tr '/.' '--'
+EOF
+  chmod 0755 "${fixture}/bin/systemd-escape"
+
+  SHOWROOM_SLOT_SHARED_CONF_DIR="${fixture}/conf" \
+    SHOWROOM_SLOT_SHARED_OUT_DIR="${fixture}/out" \
+    SYSTEMD_ESCAPE="${fixture}/bin/systemd-escape" \
+    "${generator}"
+
+  local path unit
+  for path in \
+    /etc/NetworkManager/system-connections \
+    /var/lib/showroom \
+    /home/pi/.config/chromium-kiosk; do
+    unit="$("${fixture}/bin/systemd-escape" --path "${path}").mount"
+    [[ -f "${fixture}/out/${unit}" ]] || fail "slot-shared generator omitted ${path} mount unit"
+    [[ -L "${fixture}/out/local-fs.target.wants/${unit}" ]] || fail "slot-shared generator did not activate ${path} mount unit"
+  done
+
+  find "${fixture}" -depth -mindepth 1 -delete
+  rmdir "${fixture}"
+}
+
 validate_scripts() {
   local root="$1"
   local scripts=(
@@ -60,6 +109,7 @@ validate_scripts() {
     showroom-recovery-screen
     showroom-kiosk-recovery
     showroom-kiosk-retry
+    showroom-network-recovery
   )
   local script
   for script in "${scripts[@]}"; do
@@ -79,6 +129,10 @@ validate_source() {
   local prepare="${ROOT_DIR}/prepare-appliance-rootfs.sh"
   local build="${ROOT_DIR}/build-appliance-image.sh"
   local customize="${ROOT_DIR}/rpi-image-gen/bdebstrap/customize90-showroom"
+  local slot_shared_generator="${ROOT_DIR}/rpi-image-gen/rootfs-overlay/usr/lib/systemd/system-generators/slot-shared-generator"
+  local network_recovery="${ROOT_DIR}/systemd/showroom-network-recovery"
+  local network_recovery_unit="${ROOT_DIR}/systemd/showroom-network-recovery.service"
+  local workflow="${ROOT_DIR}/../../.github/workflows/appliance-image.yml"
 
   require_contains "${config}" '^  user1: pi$' "primary kiosk/Connect user must be explicit"
   require_not_contains "${config}" '^  user1pass(hash)?:' "fleet image must not contain a universal pi password"
@@ -105,6 +159,13 @@ validate_source() {
   require_contains "${customize}" 'enable-units.*root' "post-overlay customize hook must enable appliance units"
   require_contains "${customize}" 'systemctl enable getty@tty1\.service' "post-overlay customize hook must explicitly enable tty1 auto-login"
   require_contains "${customize}" 'visudo -cf' "post-overlay customize hook must validate maintenance sudoers"
+  require_contains "${customize}" 'install -d -o pi -g pi .*/persistent/shared/home/pi/\.config/chromium-kiosk' "post-overlay hook must seed the persistent Chromium profile with pi ownership"
+  require_contains "${customize}" 'install -d -o root -g root .*/persistent/shared/etc/NetworkManager/system-connections' "post-overlay hook must seed the persistent NetworkManager profile store"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/trixie-showroom-base.yaml" 'systemd-resolved,?$' "image must install and enable the resolver used by its stub resolv.conf"
+  validate_slot_shared_generator "${slot_shared_generator}"
+  require_not_contains "${network_recovery}" '^[[:space:]]*\.[[:space:]]+/etc/showroom-agent/config\.env' "network recovery must not source a systemd EnvironmentFile as shell code"
+  require_contains "${network_recovery_unit}" '^EnvironmentFile=/etc/showroom-agent/config\.env$' "network recovery must receive configuration through systemd"
+  require_not_contains "${workflow}" '^[[:space:]]+push:$' "appliance image builds must be local/manual, not automatic GitHub push builds"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
   require_contains "${BASH_SOURCE[0]}" 'debugfs -R.*rdump' "image validator must inspect persistent ext4 in userspace"
@@ -118,7 +179,7 @@ validate_source() {
 
   for source_script in \
     start-kiosk.sh showroom-diagnostics showroom-recovery-screen \
-    showroom-kiosk-recovery showroom-kiosk-retry; do
+    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
@@ -140,6 +201,9 @@ validate_rootfs() {
   validate_scripts "${root}"
   require_executable "${root}/usr/local/libexec/showroom-agent"
   require_executable "${root}/usr/lib/xorg/Xorg.wrap"
+  validate_slot_shared_generator "${root}/usr/lib/systemd/system-generators/slot-shared-generator"
+  require_file "${root}/etc/rpi-image-gen/slot-shared.d/network-manager.conf"
+  require_file "${root}/etc/rpi-image-gen/slot-shared.d/showroom.conf"
   local xorg_wrap_mode
   xorg_wrap_mode="$(stat -c '%a' "${root}/usr/lib/xorg/Xorg.wrap")"
   (( (8#${xorg_wrap_mode} & 04000) != 0 )) || fail "Xorg.wrap is not setuid in the generated image (mode ${xorg_wrap_mode})"
@@ -152,7 +216,7 @@ validate_rootfs() {
   for executable in \
     usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter-classic \
     usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt \
-    usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/journalctl usr/bin/sudo \
+    usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/systemd-analyze usr/bin/journalctl usr/bin/sudo \
     usr/bin/rpi-connect usr/sbin/runuser usr/sbin/sshd sbin/agetty; do
     require_executable "${root}/${executable}"
   done
@@ -165,6 +229,8 @@ validate_rootfs() {
   require_contains "${root}/etc/ssh/sshd_config.d/20-showroom.conf" "^DenyUsers ${MAINTENANCE_USER}$" "generated SSH policy exposes maintenance account"
   require_contains "${root}/etc/systemd/journald.conf.d/20-showroom-limits.conf" '^Storage=persistent$' "persistent journal is not enabled"
   require_contains "${root}/etc/systemd/journald.conf.d/20-showroom-limits.conf" '^SystemMaxUse=256M$' "persistent journal is not bounded"
+  [[ -L "${root}/etc/resolv.conf" ]] || fail "generated resolv.conf is not managed by systemd-resolved"
+  [[ "$(readlink "${root}/etc/resolv.conf")" == */run/systemd/resolve/*resolv.conf ]] || fail "generated resolv.conf does not target systemd-resolved"
 
   local pi_shadow maintenance_shadow getty_exec
   pi_shadow="$(awk -F: '$1 == "pi" { print $2 }' "${root}/etc/shadow")"
@@ -208,13 +274,14 @@ validate_rootfs() {
     visudo -cf "${root}/etc/sudoers.d/020-showroom-maintenance" >/dev/null
   fi
 
-  if command -v systemd-analyze >/dev/null 2>&1; then
-    SYSTEMD_LOG_LEVEL=warning systemd-analyze --root="${root}" verify \
+  if [[ -x "${root}/usr/bin/systemd-analyze" ]]; then
+    SYSTEMD_LOG_LEVEL=warning chroot "${root}" /usr/bin/systemd-analyze verify \
       showroom-agent.service showroom-kiosk.service showroom-kiosk-recovery.service \
-      showroom-kiosk-retry.service showroom-kiosk-retry.timer getty@tty1.service
+      showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-recovery.service || \
+      fail "Showroom systemd units are invalid under the image's systemd version"
     local enabled_unit
-    for enabled_unit in showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer getty@tty1.service; do
-      systemctl --root="${root}" is-enabled --quiet "${enabled_unit}" || fail "${enabled_unit} is not enabled in the generated image"
+    for enabled_unit in NetworkManager.service systemd-resolved.service showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer getty@tty1.service; do
+      chroot "${root}" /usr/bin/systemctl is-enabled --quiet "${enabled_unit}" || fail "${enabled_unit} is not enabled in the generated image"
     done
   fi
 
@@ -238,11 +305,61 @@ validate_persistent_permissions() {
   [[ "$(stat -c '%a' "${persistent}/home/${MAINTENANCE_USER}")" =~ ^7[057][057]$ ]] || \
     fail "persistent maintenance home is not writable by the maintenance user"
 
+  local chromium_profile="${persistent}/shared/home/pi/.config/chromium-kiosk"
+  [[ -d "${chromium_profile}" ]] || fail "slot-shared Chromium profile is missing"
+  [[ "$(stat -c '%u:%g' "${chromium_profile}")" == "${pi_uid}:${pi_gid}" ]] || \
+    fail "slot-shared Chromium profile is not owned by pi"
+  [[ "$(stat -c '%a' "${chromium_profile}")" =~ ^7[057][057]$ ]] || \
+    fail "slot-shared Chromium profile is not writable by pi"
+
+  local nm_profiles="${persistent}/shared/etc/NetworkManager/system-connections"
+  [[ -d "${nm_profiles}" ]] || fail "persistent NetworkManager profile store is missing"
+  [[ "$(stat -c '%u:%g' "${nm_profiles}")" == "0:0" ]] || fail "NetworkManager profile store must be root-owned"
+  local nm_mode
+  nm_mode="$(stat -c '%a' "${nm_profiles}")"
+  (( (8#${nm_mode} & 0200) != 0 )) || fail "NetworkManager profile store is not writable by NetworkManager"
+
   require_file "${persistent}/shared/var/lib/showroom/releases/player/1.0.0/index.html"
   require_executable "${persistent}/shared/var/lib/showroom/releases/agent/1.0.0/showroom-agent"
   [[ -r "${persistent}/shared/var/lib/showroom/releases/player/1.0.0/index.html" ]] || \
     fail "seeded player assets are not readable"
   pass "persistent homes and slot-shared player/agent permissions"
+}
+
+partition_device_by_label() {
+  local image="$1" loop="$2" label="$3" device partition_number start size
+
+  device="$(lsblk -nrpo NAME,PARTLABEL "${loop}" | awk -v label="${label}" '$2 == label { print $1; exit }')"
+  if [[ -n "${device}" ]]; then
+    printf '%s\n' "${device}"
+    return 0
+  fi
+
+  # Nested privileged builders can expose loop partitions before udev has
+  # populated PARTLABEL. Read the GPT directly rather than weakening the check.
+  read -r partition_number start size < <(sfdisk --json "${image}" | python3 -c '
+import json
+import sys
+
+label = sys.argv[1]
+partitions = json.load(sys.stdin)["partitiontable"]["partitions"]
+for number, partition in enumerate(partitions, start=1):
+    if partition.get("name") == label:
+        print(number, partition["start"], partition["size"])
+        break
+' "${label}")
+  [[ "${partition_number}" =~ ^[0-9]+$ && "${start}" =~ ^[0-9]+$ && "${size}" =~ ^[0-9]+$ ]] || return 1
+
+  if [[ "${loop}" =~ [0-9]$ ]]; then
+    device="${loop}p${partition_number}"
+  else
+    device="${loop}${partition_number}"
+  fi
+  if [[ ! -b "${device}" ]]; then
+    device="$(losetup --show --find --offset "$((start * 512))" --sizelimit "$((size * 512))" "${image}")"
+  fi
+  [[ -b "${device}" ]] || return 1
+  printf '%s\n' "${device}"
 }
 
 validate_image() {
@@ -252,6 +369,8 @@ validate_image() {
   require_file "${image}"
   command -v losetup >/dev/null || fail "losetup is required for image inspection"
   command -v lsblk >/dev/null || fail "lsblk is required for image inspection"
+  command -v sfdisk >/dev/null || fail "sfdisk is required for GPT inspection"
+  command -v python3 >/dev/null || fail "python3 is required for GPT inspection"
   if [[ -z "${erofs_fsck}" ]]; then
     erofs_fsck="$(command -v fsck.erofs || true)"
   fi
@@ -260,6 +379,7 @@ validate_image() {
   command -v debugfs >/dev/null || fail "debugfs is required for userspace persistent filesystem extraction"
 
   local root_a root_b persistent_root system_a system_b persistent
+  IMAGE_VALIDATION_IMAGE="${image}"
   IMAGE_VALIDATION_LOOP="$(losetup --show --find --partscan "${image}")"
   root_a="$(mktemp -d)"
   root_b="$(mktemp -d)"
@@ -268,9 +388,9 @@ validate_image() {
   trap cleanup_image EXIT
   udevadm settle || true
 
-  system_a="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "system_a" { print $1; exit }')"
-  system_b="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "system_b" { print $1; exit }')"
-  persistent="$(lsblk -nrpo NAME,PARTLABEL "${IMAGE_VALIDATION_LOOP}" | awk '$2 == "persistent" { print $1; exit }')"
+  system_a="$(partition_device_by_label "${image}" "${IMAGE_VALIDATION_LOOP}" system_a || true)"
+  system_b="$(partition_device_by_label "${image}" "${IMAGE_VALIDATION_LOOP}" system_b || true)"
+  persistent="$(partition_device_by_label "${image}" "${IMAGE_VALIDATION_LOOP}" persistent || true)"
   [[ -n "${system_a}" && -n "${system_b}" && -n "${persistent}" ]] || fail "A/B or persistent partitions are missing"
 
   # Pi 5 images use 16 KiB filesystem blocks. GitHub's ARM runner can have a
@@ -303,6 +423,7 @@ case "${MODE}" in
     [[ -n "${TARGET}" ]] || fail "--overlay requires a rootfs overlay path"
     validate_scripts "${TARGET}"
     require_executable "${TARGET}/usr/local/libexec/showroom-agent"
+    validate_slot_shared_generator "${TARGET}/usr/lib/systemd/system-generators/slot-shared-generator"
     require_file "${TARGET}/opt/showroom/player/index.html"
     pass "prepared rootfs overlay"
     ;;

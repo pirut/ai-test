@@ -11,6 +11,7 @@
 #  rpi-misc-skel,
 #  network-manager-iwd,
 #  openssh-server,
+#  systemd-resolved,
 #  systemd-timesyncd,
 #  wireless-regulatory
 # METAEND
