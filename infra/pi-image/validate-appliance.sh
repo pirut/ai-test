@@ -139,7 +139,7 @@ validate_rootfs() {
   require_executable "${root}/usr/lib/xorg/Xorg.wrap"
   local xorg_wrap_mode
   xorg_wrap_mode="$(stat -c '%a' "${root}/usr/lib/xorg/Xorg.wrap")"
-  [[ "${xorg_wrap_mode}" == 4* ]] || fail "Xorg.wrap is not setuid in the generated image (mode ${xorg_wrap_mode})"
+  (( (8#${xorg_wrap_mode} & 04000) != 0 )) || fail "Xorg.wrap is not setuid in the generated image (mode ${xorg_wrap_mode})"
   [[ "$(stat -c '%u:%g' "${root}/usr/lib/xorg/Xorg.wrap")" == "0:0" ]] || fail "Xorg.wrap must be owned by root"
   require_file "${root}/opt/showroom/player/index.html"
   require_file "${root}/var/lib/showroom/releases/player/1.0.0/index.html"
