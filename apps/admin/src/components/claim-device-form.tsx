@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-export function ClaimDeviceForm() {
+export function ClaimDeviceForm({ embedded = false, onClaimed }: { embedded?: boolean; onClaimed?: () => void }) {
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   async function handleSubmit(formData: FormData) {
@@ -26,11 +26,14 @@ export function ClaimDeviceForm() {
       ok: response.ok,
       msg: response.ok ? `Claimed ${payload.deviceId}` : (payload.error ?? "Claim failed"),
     });
+    if (response.ok) {
+      onClaimed?.();
+    }
   }
 
   return (
-    <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="mb-4">
+    <div className={cn(!embedded && "dashboard-surface rounded-lg p-5")}>
+      {!embedded ? <div className="mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Provisioning
         </p>
@@ -38,7 +41,7 @@ export function ClaimDeviceForm() {
         <p className="mt-1 text-sm text-muted-foreground">
           Attach a new screen to this workspace as soon as the Pi reports a claim code.
         </p>
-      </div>
+      </div> : null}
       <form
         className="flex flex-col gap-3"
         action={(fd) => startTransition(() => void handleSubmit(fd))}

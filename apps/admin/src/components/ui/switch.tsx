@@ -32,7 +32,7 @@ const Switch = React.forwardRef<
         onCheckedChange?.(nextChecked);
       }}
       className={cn(
-        "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-white/8 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
+        "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
         resolvedChecked ? "bg-primary" : "bg-[var(--surface-highest)]",
         className,
       )}

@@ -67,7 +67,7 @@ export function CommandPanel({
   }
 
   return (
-    <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+    <div className="dashboard-surface rounded-lg p-5">
       <div className="mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Controls</p>
         <h2 className="font-heading mt-2 text-xl font-bold text-foreground">Remote control</h2>
@@ -106,7 +106,7 @@ export function CommandPanel({
       </div>
 
       {canAdmin ? (
-        <div className="mt-4 space-y-3 rounded-lg border border-white/6 bg-[var(--surface-low)] px-4 py-3">
+        <div className="mt-4 space-y-3 rounded-md border border-border bg-[var(--surface-low)] px-4 py-3">
           <div>
             <p className="text-sm font-medium text-foreground">Stage replacement Wi-Fi</p>
             <p className="mt-1 text-[0.8rem] leading-5 text-muted-foreground">
@@ -139,7 +139,7 @@ export function CommandPanel({
           >
             {sending === "update_network" ? "Staging…" : "Stage network"}
           </Button>
-          <div className="border-t border-white/6 pt-3">
+          <div className="border-t border-border pt-3">
           <p className="text-sm font-medium text-foreground">Software releases</p>
           <p className="mt-1 text-[0.8rem] leading-5 text-muted-foreground">
             {isManaged

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { CommandPanel } from "@/components/command-panel";
 import { PageHeader } from "@/components/page-header";
+import { RemoveScreenButton } from "@/components/remove-screen-dialog";
 import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
@@ -37,13 +38,18 @@ export default async function ScreenDetailPage({
       <PageHeader
         title={device.name}
         description={`${device.siteName} · configure playback defaults, device identity, and remote commands.`}
-        action={<StatusPill status={device.status} label={device.status} />}
+        action={
+          <div className="flex items-center gap-3">
+            <StatusPill status={device.status} label={device.status} />
+            {canAdmin ? <RemoveScreenButton screen={{ id: device.id, name: device.name }} /> : null}
+          </div>
+        }
       />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
         <div className="space-y-5">
-          <div className="overflow-hidden rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="border-b border-white/5 px-5 py-4">
+          <div className="dashboard-surface overflow-hidden rounded-lg">
+            <div className="border-b border-border px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Live preview
               </p>
@@ -78,7 +84,7 @@ export default async function ScreenDetailPage({
                 playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
               />
             ) : (
-              <div className="rounded-xl border border-white/5 bg-card p-5 text-sm text-muted-foreground">
+              <div className="dashboard-surface rounded-lg p-5 text-sm text-muted-foreground">
                 Device settings are read-only for members. Ask an organization admin to change playback defaults.
               </div>
             )}
@@ -91,7 +97,7 @@ export default async function ScreenDetailPage({
         </div>
 
         <aside className="space-y-5">
-          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="dashboard-surface rounded-lg p-5">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Appliance health
@@ -123,13 +129,13 @@ export default async function ScreenDetailPage({
                 { label: "Boot slot", value: device.health?.bootSlot ?? "—" },
                 { label: "Rollback", value: String(device.health?.rollbackCount ?? 0) },
               ].map((item) => (
-                <div key={item.label} className="rounded-lg border border-white/6 bg-[var(--surface-low)] px-3 py-2.5">
+                <div key={item.label} className="rounded-md border border-border bg-[var(--surface-low)] px-3 py-2.5">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
                   <p className="mt-1 font-mono text-[0.78rem] text-foreground">{item.value}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-3 rounded-lg border border-white/6 bg-[var(--surface-low)] px-3 py-2.5 text-[0.75rem] text-muted-foreground">
+            <div className="mt-3 rounded-md border border-border bg-[var(--surface-low)] px-3 py-2.5 text-[0.75rem] text-muted-foreground">
               Agent {device.agentVersion ?? "unknown"} / desired {device.desiredAgentVersion ?? "current"}<br />
               Player {device.appVersion ?? "unknown"} / desired {device.desiredPlayerVersion ?? "current"}
               <br />Fleet {device.fleetManagementState === "managed"
@@ -138,7 +144,7 @@ export default async function ScreenDetailPage({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/5 bg-card p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="dashboard-surface rounded-lg p-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               Device profile
             </p>
@@ -163,7 +169,7 @@ export default async function ScreenDetailPage({
               ].map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-lg border border-white/6 bg-[var(--surface-low)] px-4 py-3"
+                  className="rounded-md border border-border bg-[var(--surface-low)] px-4 py-3"
                 >
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     {item.label}
@@ -174,8 +180,8 @@ export default async function ScreenDetailPage({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/5 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="border-b border-white/5 px-5 py-4">
+          <div className="dashboard-surface rounded-lg">
+            <div className="border-b border-border px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 Command log
               </p>
@@ -185,7 +191,7 @@ export default async function ScreenDetailPage({
                 No commands have been issued for this device yet.
               </p>
             ) : (
-              <div className="divide-y divide-white/5">
+              <div className="divide-y divide-border">
                 {commands.map((command) => (
                   <div key={command.id} className="px-5 py-4">
                     <div className="flex items-start justify-between gap-3">
