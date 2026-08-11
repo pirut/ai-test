@@ -73,7 +73,11 @@ mkdir -p "${RELEASE_DIR}"
 RELEASE_IMAGE="${RELEASE_DIR}/showroom-${DEVICE_LAYER}-${IMAGE_VERSION}.img.xz"
 printf '%s\n' "${IMAGE_VERSION}" > "${RELEASE_DIR}/IMAGE_VERSION.txt"
 
-EROFS_FSCK="$(find "${BUILD_DIR}/work" -type f -name fsck.erofs -perm -u+x -print -quit)"
+TOOLCHAIN_ROOT="$(find "${BUILD_DIR}/work" -maxdepth 1 -type d -name '*-linux-gnu' -print -quit)"
+EROFS_FSCK=""
+if [[ -n "${TOOLCHAIN_ROOT}" ]]; then
+  EROFS_FSCK="$(find "${TOOLCHAIN_ROOT}" -type f -name fsck.erofs -perm -u+x -print -quit)"
+fi
 if [[ -z "${EROFS_FSCK}" ]]; then
   echo "The rpi-image-gen 16 KiB-capable fsck.erofs binary is missing" >&2
   exit 1
