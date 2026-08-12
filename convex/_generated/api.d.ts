@@ -15,6 +15,7 @@ import type * as device from "../device.js";
 import type * as fleet from "../fleet.js";
 import type * as lib from "../lib.js";
 import type * as maintenance from "../maintenance.js";
+import type * as screenSerialization from "../screenSerialization.js";
 import type * as showroom from "../showroom.js";
 import type * as sync from "../sync.js";
 
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   fleet: typeof fleet;
   lib: typeof lib;
   maintenance: typeof maintenance;
+  screenSerialization: typeof screenSerialization;
   showroom: typeof showroom;
   sync: typeof sync;
 }>;
