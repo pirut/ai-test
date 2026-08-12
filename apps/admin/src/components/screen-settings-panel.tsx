@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { readApiPayload } from "@/lib/api-response";
 import { cn } from "@/lib/utils";
 
 type ScreenSettings = {
@@ -78,9 +79,13 @@ export function ScreenSettingsPanel({
         }),
       });
 
-      const payload = await response.json();
+      const payload = await readApiPayload<{ device: ScreenSettings }>(response);
       if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to update device");
+        throw new Error(payload.error ?? `Unable to update device (${response.status})`);
+      }
+
+      if (!payload.device) {
+        throw new Error("The device was updated but the server did not confirm its settings.");
       }
 
       setStatus({ ok: true, text: `Saved ${payload.device.name}` });
