@@ -1,10 +1,43 @@
-import Link from "next/link";
 import type { DeviceSummary } from "@showroom/contracts";
-import { ArrowRight, CircleAlert, Monitor, Play } from "lucide-react";
+import {
+  ArrowRight,
+  CircleAlert,
+  CircleCheck,
+  Monitor,
+  Play,
+  TerminalSquare,
+} from "lucide-react";
+import Link from "next/link";
 
 import { AddScreenDialog } from "@/components/add-screen-dialog";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import { getDashboardStats, listDevices } from "@/lib/backend";
 import { formatRelativeTimestamp } from "@/lib/utils";
@@ -42,118 +75,219 @@ export default async function DashboardPage() {
     .sort((a, b) => new Date(b.lastHeartbeatAt).getTime() - new Date(a.lastHeartbeatAt).getTime())
     .slice(0, 5);
 
+  const summary = [
+    { label: "Online", value: stats.online, copy: "Reporting normally" },
+    { label: "Needs attention", value: attention.length, copy: "Review playback risks" },
+    { label: "Commands queued", value: stats.pendingCommands, copy: "Waiting for delivery" },
+    { label: "Total screens", value: devices.length, copy: "Enrolled in this fleet" },
+  ];
+
   return (
-    <div className="space-y-7">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Fleet overview"
-        description="See what is playing, what needs attention, and where your screens stand right now."
+        description="Playback proof, fleet health, and urgent work in one place."
         action={session.has({ role: "org:admin" }) ? <AddScreenDialog /> : undefined}
       />
 
-      <section className="dashboard-surface grid grid-cols-2 overflow-hidden rounded-lg lg:grid-cols-4">
-        {[
-          { label: "Online", value: stats.online, status: "online" as const, copy: "Reporting normally" },
-          { label: "Stale", value: stats.stale, status: "stale" as const, copy: "Heartbeat delayed" },
-          { label: "Offline", value: stats.offline, status: "offline" as const, copy: "Not reporting" },
-          { label: "Total screens", value: devices.length, status: "unclaimed" as const, copy: `${stats.pendingCommands} command${stats.pendingCommands === 1 ? "" : "s"} queued` },
-        ].map((item, index) => (
-          <div key={item.label} className={`px-4 py-4 sm:px-5 sm:py-5 ${index === 1 ? "border-l border-border" : ""} ${index === 2 ? "border-t border-border lg:border-l lg:border-t-0" : ""} ${index === 3 ? "border-l border-t border-border lg:border-t-0" : ""}`}>
-            <div className="flex items-center justify-between">
-              <StatusPill label={item.label} status={item.status} />
-              <span className="font-heading text-3xl font-bold tracking-[-0.04em] text-foreground">{item.value}</span>
-            </div>
-            <p className="mt-3 text-xs text-muted-foreground">{item.copy}</p>
-          </div>
+      <section aria-label="Fleet summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summary.map((item) => (
+          <Card key={item.label} size="sm">
+            <CardHeader>
+              <CardDescription>{item.label}</CardDescription>
+              <CardAction>
+                <span className="text-2xl font-semibold tabular-nums">{item.value}</span>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">{item.copy}</p>
+            </CardContent>
+          </Card>
         ))}
       </section>
 
-      <section className="dashboard-surface overflow-hidden rounded-lg">
-        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <CircleAlert className="size-4 text-warning" />
-              <h2 className="font-heading text-lg font-bold text-foreground">Needs attention</h2>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">Issues most likely to interrupt playback.</p>
-          </div>
-          <Link href="/screens" className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-            View all screens <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-        {attention.length ? (
-          <div className="divide-y divide-border">
-            {attention.slice(0, 4).map((device) => (
-              <Link key={device.id} href={`/screens/${device.id}`} className="grid gap-3 px-5 py-4 transition-colors hover:bg-[var(--surface-low)] sm:grid-cols-[minmax(0,1fr)_180px_130px_auto] sm:items-center">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{device.name}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{device.siteName}</p>
-                </div>
-                <StatusPill label={device.status} status={device.status} />
-                <p className="text-sm font-medium text-warning">{issuesFor(device).slice(0, 2).join(" · ")}</p>
-                <ArrowRight className="hidden size-4 text-muted-foreground sm:block" />
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="px-5 py-10 text-center">
-            <p className="text-sm font-medium text-signal">Every screen is healthy</p>
-            <p className="mt-1 text-xs text-muted-foreground">There are no playback or connectivity issues to review.</p>
-          </div>
-        )}
-      </section>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle className="flex items-center gap-2">
+            <CircleAlert className="text-warning" />
+            Needs attention
+          </CardTitle>
+          <CardDescription>Issues most likely to interrupt playback.</CardDescription>
+          <CardAction>
+            <Button variant="ghost" size="sm" render={<Link href="/screens" />}>
+              View all screens
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="px-0">
+          {attention.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Screen</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Issue</TableHead>
+                  <TableHead className="w-10"><span className="sr-only">Open</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {attention.slice(0, 4).map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell className="pl-4">
+                      <Link href={`/screens/${device.id}`} className="font-medium hover:underline">
+                        {device.name}
+                      </Link>
+                      <span className="ml-2 text-xs text-muted-foreground">{device.siteName}</span>
+                    </TableCell>
+                    <TableCell><StatusPill label={device.status} status={device.status} /></TableCell>
+                    <TableCell>
+                      <Badge variant="warning">{issuesFor(device).slice(0, 2).join(" · ")}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        aria-label={`Open ${device.name}`}
+                        size="icon-sm"
+                        variant="ghost"
+                        render={<Link href={`/screens/${device.id}`} />}
+                      >
+                        <ArrowRight />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><CircleCheck /></EmptyMedia>
+                <EmptyTitle>Every screen is healthy</EmptyTitle>
+                <EmptyDescription>There are no playback or connectivity issues to review.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
+      </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.75fr)]">
-        <section className="dashboard-surface overflow-hidden rounded-lg">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <div>
-              <h2 className="font-heading text-lg font-bold text-foreground">Now playing</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Latest proof of playback from the fleet.</p>
-            </div>
-            <Play className="size-4 text-primary" />
-          </div>
-          <div className="grid gap-px bg-border sm:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.7fr)]">
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Now playing</CardTitle>
+            <CardDescription>Latest proof of playback from the fleet.</CardDescription>
+            <CardAction><Play className="text-primary" /></CardAction>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
             {playing.length ? playing.map((device) => (
-              <Link key={device.id} href={`/screens/${device.id}`} className="bg-card p-4 transition-colors hover:bg-[var(--surface-low)]">
-                <div className="relative aspect-video overflow-hidden rounded-md bg-[var(--surface-high)]">
+              <Link key={device.id} href={`/screens/${device.id}`} className="group flex min-w-0 flex-col gap-3">
+                <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
                   {device.screenshotUrl ? (
-                    <img src={device.screenshotUrl} alt={`${device.name} screen preview`} className="h-full w-full object-cover" />
+                    <img
+                      src={device.screenshotUrl}
+                      alt={`${device.name} screen preview`}
+                      className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                    />
                   ) : (
-                    <div className="flex h-full items-center justify-center"><Monitor className="size-7 text-muted-foreground" /></div>
+                    <div className="flex size-full items-center justify-center"><Monitor className="text-muted-foreground" /></div>
                   )}
-                  <div className="absolute left-3 top-3 rounded-md bg-slate-950/75 px-2 py-1 text-[10px] font-semibold text-white">LIVE PROOF</div>
+                  <Badge className="absolute left-3 top-3" variant="secondary">Live proof</Badge>
                 </div>
-                <div className="mt-3 flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground">{device.name}</p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{device.currentPlaylistName ?? "No playlist"}</p>
+                    <p className="truncate font-medium">{device.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{device.currentPlaylistName ?? "No playlist"}</p>
                   </div>
                   <StatusPill label={device.status} status={device.status} />
                 </div>
               </Link>
             )) : (
-              <div className="col-span-full px-5 py-12 text-center text-sm text-muted-foreground">Playback proof will appear after a screen reports in.</div>
+              <Empty className="col-span-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><Monitor /></EmptyMedia>
+                  <EmptyTitle>No playback proof yet</EmptyTitle>
+                  <EmptyDescription>Proof appears after a screen reports in.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             )}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <section className="dashboard-surface overflow-hidden rounded-lg">
-          <div className="border-b border-border px-5 py-4">
-            <h2 className="font-heading text-lg font-bold text-foreground">Recent activity</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Latest fleet check-ins.</p>
-          </div>
-          <div className="divide-y divide-border">
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Recent activity</CardTitle>
+            <CardDescription>Latest fleet check-ins.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1">
             {recent.map((device) => (
-              <Link key={device.id} href={`/screens/${device.id}`} className="flex items-start gap-3 px-5 py-4 transition-colors hover:bg-[var(--surface-low)]">
-                <span className={`mt-1 size-2 shrink-0 rounded-full ${device.status === "online" ? "bg-signal" : device.status === "stale" ? "bg-warning" : "bg-danger"}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{device.name}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Checked in {formatRelativeTimestamp(device.lastHeartbeatAt)}</p>
-                </div>
-              </Link>
+              <Button
+                key={device.id}
+                variant="ghost"
+                render={<Link href={`/screens/${device.id}`} />}
+                className="h-auto justify-start py-2"
+              >
+                <CircleCheck data-icon="inline-start" className="text-signal" />
+                <span className="grid min-w-0 flex-1 text-left">
+                  <span className="truncate">{device.name}</span>
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    Checked in {formatRelativeTimestamp(device.lastHeartbeatAt)}
+                  </span>
+                </span>
+              </Button>
             ))}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Screens</CardTitle>
+          <CardDescription>Current fleet state at a glance.</CardDescription>
+          <CardAction>
+            <Button variant="outline" size="sm" render={<Link href="/screens" />}>
+              Manage fleet
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-4">Screen</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last check-in</TableHead>
+                <TableHead>Issue</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.slice(0, 8).map((device) => {
+                const issue = issuesFor(device)[0];
+                return (
+                  <TableRow key={device.id}>
+                    <TableCell className="pl-4 font-medium">
+                      <Link href={`/screens/${device.id}`} className="inline-flex items-center gap-2 hover:underline">
+                        <Monitor />
+                        {device.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{device.siteName}</TableCell>
+                    <TableCell><StatusPill label={device.status} status={device.status} /></TableCell>
+                    <TableCell className="text-muted-foreground">{formatRelativeTimestamp(device.lastHeartbeatAt)}</TableCell>
+                    <TableCell>
+                      {issue ? <Badge variant="warning">{issue}</Badge> : <Badge variant="success">Healthy</Badge>}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+        <CardFooter className="justify-between text-xs text-muted-foreground">
+          <span>{devices.length} screen{devices.length === 1 ? "" : "s"} enrolled</span>
+          <span className="inline-flex items-center gap-1"><TerminalSquare /> {stats.pendingCommands} commands queued</span>
+        </CardFooter>
+      </Card>
     </div>
   );
 }

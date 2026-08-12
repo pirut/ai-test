@@ -97,12 +97,30 @@ func (s *Service) Run(ctx context.Context) error {
 	go s.runHeartbeatLoop(ctx)
 	go s.runScreenshotLoop(ctx)
 	go s.runHealthLoop(ctx)
+	go s.runWatchdogLoop(ctx)
 	_ = systemdnotify.Ready()
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+func (s *Service) runWatchdogLoop(ctx context.Context) {
+	// Keep watchdog liveness independent from network calls, media downloads,
+	// screenshot capture, and player recovery. Any of those can legitimately
+	// outlive WatchdogSec on a slow connection.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	_ = systemdnotify.Watchdog()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = systemdnotify.Watchdog()
+		}
+	}
 }
 
 func (s *Service) runHealthLoop(ctx context.Context) {
@@ -124,7 +142,9 @@ func (s *Service) runHealthLoop(ctx context.Context) {
 			PlayerRestarts:        current.Health.PlayerRestarts,
 			RollbackCount:         current.Health.RollbackCount,
 		})
-		if current.Credential == "" && current.LastPlayerHeartbeatAt == "" {
+		if current.LastPlayerHeartbeatAt == "" {
+			// systemd owns first-start recovery. Do not create a restart storm
+			// while a newly claimed screen is still downloading its first asset.
 			snapshot.PlayerHealthy = true
 		}
 		if !snapshot.PlayerHealthy && current.Credential != "" && time.Since(lastRecovery) > 2*time.Minute {
@@ -136,7 +156,6 @@ func (s *Service) runHealthLoop(ctx context.Context) {
 			}
 		}
 		_ = s.store.Update(func(next *state.DeviceState) { next.Health = snapshot })
-		_ = systemdnotify.Watchdog()
 	}
 
 	collect()
@@ -463,8 +482,9 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		return fmt.Errorf("youtube source url is required")
 	}
 
-	if _, err := exec.LookPath(s.config.YouTubeDLBinary); err != nil {
-		return fmt.Errorf("yt-dlp binary %q not found in PATH", s.config.YouTubeDLBinary)
+	youTubeDLBinary, err := s.resolveYouTubeDLBinary(ctx)
+	if err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
@@ -480,7 +500,8 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 	downloadCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	cmd := exec.CommandContext(
 		downloadCtx,
-		s.config.YouTubeDLBinary,
+		youTubeDLBinary,
+		"--no-cache-dir",
 		"--no-progress",
 		"--no-part",
 		"--no-playlist",
@@ -504,6 +525,12 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 		"--output",
 		outputTemplate,
 		sourceURL,
+	)
+	toolCacheRoot := filepath.Join(s.config.StorageRoot, ".tool-cache")
+	cmd.Env = append(os.Environ(),
+		"HOME="+toolCacheRoot,
+		"XDG_CACHE_HOME="+toolCacheRoot,
+		"PYTHONPYCACHEPREFIX="+filepath.Join(toolCacheRoot, "python"),
 	)
 	defer cancel()
 
@@ -537,6 +564,48 @@ func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, de
 	}
 
 	return fmt.Errorf("yt-dlp completed without producing %s", filepath.Base(destPath))
+}
+
+func (s *Service) resolveYouTubeDLBinary(ctx context.Context) (string, error) {
+	version := strings.TrimSpace(s.config.YouTubeDLManagedVersion)
+	url := strings.TrimSpace(s.config.YouTubeDLManagedURL)
+	checksum := normalizeSHA256(s.config.YouTubeDLManagedSHA256)
+	if version == "" || url == "" || checksum == "" {
+		binary, err := exec.LookPath(s.config.YouTubeDLBinary)
+		if err != nil {
+			return "", fmt.Errorf("yt-dlp binary %q not found in PATH", s.config.YouTubeDLBinary)
+		}
+		return binary, nil
+	}
+
+	toolsRoot := filepath.Clean(filepath.Join(s.config.StateRoot, "..", "tools"))
+	binaryPath := filepath.Join(toolsRoot, "yt-dlp-"+version)
+	if verifySHA256(binaryPath, checksum) == nil {
+		if err := os.Chmod(binaryPath, 0o755); err != nil {
+			return "", err
+		}
+		return binaryPath, nil
+	}
+
+	if err := os.MkdirAll(toolsRoot, 0o755); err != nil {
+		return "", err
+	}
+	tempPath := binaryPath + ".download"
+	_ = os.Remove(tempPath)
+	if err := s.client.DownloadFile(ctx, url, tempPath); err != nil {
+		return "", fmt.Errorf("download managed yt-dlp %s: %w", version, err)
+	}
+	defer os.Remove(tempPath)
+	if err := verifySHA256(tempPath, checksum); err != nil {
+		return "", fmt.Errorf("verify managed yt-dlp %s: %w", version, err)
+	}
+	if err := os.Chmod(tempPath, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, binaryPath); err != nil {
+		return "", err
+	}
+	return binaryPath, nil
 }
 
 func (s *Service) processCommands(ctx context.Context, credential string) error {
@@ -724,9 +793,23 @@ func (s *Service) recordError(err error) {
 		return
 	}
 
+	message := userFacingError(err)
 	_ = s.store.Update(func(next *state.DeviceState) {
-		next.LastError = err.Error()
+		next.LastError = message
 	})
+}
+
+func userFacingError(err error) string {
+	message := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "yt-dlp") || strings.Contains(lower, "youtube") {
+		return "YouTube content could not be prepared. The player will retry automatically."
+	}
+	const maxLength = 240
+	if len(message) > maxLength {
+		return strings.TrimSpace(message[:maxLength-1]) + "…"
+	}
+	return message
 }
 
 func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylistItem {

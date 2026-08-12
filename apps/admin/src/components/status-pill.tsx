@@ -1,20 +1,19 @@
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 type Status = "online" | "stale" | "offline" | "unclaimed";
 
-const config: Record<Status, { dot: string; text: string; pulse?: boolean }> = {
-  online:    { dot: "bg-signal",    text: "text-signal",    pulse: true },
-  stale:     { dot: "bg-warning",   text: "text-warning" },
-  offline:   { dot: "bg-danger",    text: "text-danger" },
-  unclaimed: { dot: "bg-unclaimed", text: "text-unclaimed" },
+const config: Record<Status, { variant: "success" | "warning" | "danger" | "info" }> = {
+  online: { variant: "success" },
+  stale: { variant: "warning" },
+  offline: { variant: "danger" },
+  unclaimed: { variant: "info" },
 };
 
 export function StatusPill({ label, status }: { label: string; status: Status }) {
-  const c = config[status];
   return (
-    <span className={cn("inline-flex items-center gap-2 text-xs font-medium capitalize", c.text)}>
-      <span className={cn("size-2 shrink-0 rounded-full", c.dot, c.pulse && "animate-[pulse-dot_2s_ease-in-out_infinite]")} />
+    <Badge variant={config[status].variant}>
+      <span className="size-1.5 rounded-full bg-current" />
       {label}
-    </span>
+    </Badge>
   );
 }
