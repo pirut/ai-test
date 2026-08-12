@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
 )
 
 func TestResolveYouTubeDLBinaryDownloadsAndReusesVerifiedRelease(t *testing.T) {
@@ -92,5 +93,18 @@ func TestKioskRuntimeCompatibilityIsNoopOffAppliance(t *testing.T) {
 	}
 	if applied {
 		t.Fatal("compatibility repair unexpectedly applied off appliance")
+	}
+}
+
+func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]state.AssetRecord{
+		"asset-1": {FileName: "asset-1.mp4", Checksum: "youtube:test"},
+	}
+	cloned := cloneAssetRecords(original)
+	original["asset-2"] = state.AssetRecord{FileName: "asset-2.mp4", Checksum: "youtube:test-2"}
+	if _, exists := cloned["asset-2"]; exists {
+		t.Fatal("cloned asset records changed with the source map")
 	}
 }

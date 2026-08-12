@@ -436,6 +436,31 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	localManifest := *manifest
 	localManifest.DefaultPlaylist = clonePlaylist(manifest.DefaultPlaylist)
 	localManifest.ScheduleWindows = make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
+	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
+	bootstrapPublished := fileExists(manifestPath)
+	publishBootstrap := func(item remote.ManifestPlaylistItem) error {
+		if bootstrapPublished {
+			return nil
+		}
+		bootstrap := *manifest
+		bootstrap.DefaultPlaylist = []remote.ManifestPlaylistItem{item}
+		bootstrap.ScheduleWindows = []remote.ScheduleWindow{}
+		if err := writeJSONFile(manifestPath, &bootstrap); err != nil {
+			return err
+		}
+		if err := s.store.Update(func(next *state.DeviceState) {
+			next.DeviceID = manifest.DeviceID
+			next.ManifestVersion = manifest.ManifestVersion
+			next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
+			next.CachedAssets = cloneAssetRecords(cachedAssets)
+			next.LastError = ""
+		}); err != nil {
+			return err
+		}
+		bootstrapPublished = true
+		log.Printf("activated first verified asset while the remaining playlist hydrates")
+		return nil
+	}
 
 	rewrite := func(item remote.ManifestPlaylistItem) (remote.ManifestPlaylistItem, error) {
 		fileName := remote.AssetFileName(item)
@@ -485,6 +510,9 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 			return nil, nil, err
 		}
 		localManifest.DefaultPlaylist[index] = nextItem
+		if err := publishBootstrap(nextItem); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	for _, window := range manifest.ScheduleWindows {
@@ -496,6 +524,9 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 				return nil, nil, err
 			}
 			nextWindow.Playlist[index] = nextItem
+			if err := publishBootstrap(nextItem); err != nil {
+				return nil, nil, err
+			}
 		}
 		localManifest.ScheduleWindows = append(localManifest.ScheduleWindows, nextWindow)
 	}
@@ -866,6 +897,14 @@ func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylis
 	copyItems := make([]remote.ManifestPlaylistItem, len(items))
 	copy(copyItems, items)
 	return copyItems
+}
+
+func cloneAssetRecords(records map[string]state.AssetRecord) map[string]state.AssetRecord {
+	copyRecords := make(map[string]state.AssetRecord, len(records))
+	for assetID, record := range records {
+		copyRecords[assetID] = record
+	}
+	return copyRecords
 }
 
 func fileExists(path string) bool {
