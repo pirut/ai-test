@@ -163,6 +163,7 @@ validate_source() {
   require_contains "${unit}" '^Type=notify$' "kiosk must report X11 readiness before tty7 is activated"
   require_contains "${unit}" '^NotifyAccess=all$' "kiosk readiness notifications from the launcher must be accepted"
   require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^systemd-notify --ready --pid="\$\$"$' "kiosk launcher must report readiness only after X11 starts"
+  require_contains "${unit}" '^ReadWritePaths=.* /var/log( |$)' "Xorg must be able to create its root-owned log inside the kiosk sandbox"
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- xserver-xorg-legacy$' "Xorg.wrap package must be an explicit image dependency"
