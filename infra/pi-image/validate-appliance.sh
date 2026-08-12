@@ -120,7 +120,9 @@ validate_scripts() {
   done
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
-  bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
+  env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${root}/etc/showroom-agent/config.env" \
+    bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
 }
 
 validate_source() {
@@ -161,6 +163,7 @@ validate_source() {
   require_contains "${unit}" '^Type=notify$' "kiosk must report X11 readiness before tty7 is activated"
   require_contains "${unit}" '^NotifyAccess=all$' "kiosk readiness notifications from the launcher must be accepted"
   require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^systemd-notify --ready --pid="\$\$"$' "kiosk launcher must report readiness only after X11 starts"
+  require_contains "${unit}" '^ReadWritePaths=.* /var/log( |$)' "Xorg must be able to create its root-owned log inside the kiosk sandbox"
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
   require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- xserver-xorg-legacy$' "Xorg.wrap package must be an explicit image dependency"
@@ -187,9 +190,18 @@ validate_source() {
   require_contains "${network_onboarding_unit}" '^TimeoutStartSec=infinity$' "first-boot network setup must wait for technician input without timing out"
   require_contains "${network_onboarding}" '^ *nmtui connect \|\| true$' "first-boot setup must provide an interactive SSID and password selector"
   require_contains "${network_onboarding}" 'curl -fsS .*SHOWROOM_API_BASE_URL' "first-boot setup must verify the real control plane before continuing"
+  require_not_contains "${network_onboarding}" '(^|[[:space:]])(source|\.)[[:space:]]+.*config\.env' "physical network setup must not execute its systemd EnvironmentFile as shell code"
+  local resolved_api_url
+  resolved_api_url="$(env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
+    bash "${network_onboarding}" --self-test)"
+  [[ "${resolved_api_url}" == *'https://screen.jrbussard.com'* ]] || fail "physical network setup cannot read the API URL without systemd"
+  require_contains "${network_onboarding}" 'systemctl restart showroom-agent\.service showroom-kiosk\.service' "manual network setup must resume enrollment and playback"
   require_contains "${ROOT_DIR}/systemd/showroom-agent.service" '^Requires=showroom-network-onboarding\.service$' "agent must wait for first-boot networking"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Requires=showroom-network-onboarding\.service$' "kiosk must wait for first-boot networking"
   require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
+  require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" '/var/log/Xorg\.0\.log' "diagnostics must inspect root-owned Xorg wrapper logs"
+  require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" "grep -Ei 'xorg\|startx\|xf86\|tty7\|vt7" "diagnostics must retain Xorg and virtual-console journal failures"
   require_not_contains "${workflow}" '^[[:space:]]+push:$' "appliance image builds must be local/manual, not automatic GitHub push builds"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
@@ -210,7 +222,9 @@ validate_source() {
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
-  bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
+  env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
+    bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
 
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry \

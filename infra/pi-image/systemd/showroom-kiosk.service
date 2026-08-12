@@ -42,7 +42,10 @@ KillMode=control-group
 # Xorg.wrap is configured with needs_root_rights=yes. NoNewPrivileges would
 # block that narrowly scoped setuid transition and make X fail on first boot.
 ProtectSystem=strict
-ReadWritePaths=/home/pi /var/lib/showroom /tmp /run
+# Xorg.wrap elevates only the X server, which always opens its root-owned log
+# below /var/log. The directory remains protected by normal Unix permissions
+# from the pi process; this bind makes it writable inside the service namespace.
+ReadWritePaths=/home/pi /var/lib/showroom /var/log /tmp /run
 PrivateTmp=no
 LockPersonality=yes
 RestrictSUIDSGID=no
