@@ -123,3 +123,31 @@ func TestManifestHydrationErrorIsHiddenAfterFirstPlayableManifest(t *testing.T) 
 		t.Fatal("background hydration failure should not replace a healthy playback state")
 	}
 }
+
+func TestManifestHydrationBuildsAPlayablePairBeforeLargerBatches(t *testing.T) {
+	t.Parallel()
+
+	if got := manifestHydrationDownloadLimit(0); got != 2 {
+		t.Fatalf("empty cache download limit = %d, want 2", got)
+	}
+	if got := manifestHydrationDownloadLimit(1); got != 1 {
+		t.Fatalf("single asset download limit = %d, want 1", got)
+	}
+	if got := manifestHydrationDownloadLimit(2); got != hydrationBatchSize {
+		t.Fatalf("playable cache download limit = %d, want %d", got, hydrationBatchSize)
+	}
+}
+
+func TestManifestPlaylistSizeIncludesScheduledAssets(t *testing.T) {
+	t.Parallel()
+
+	manifest := &remote.DeviceManifest{
+		DefaultPlaylist: []remote.ManifestPlaylistItem{{AssetID: "default"}},
+		ScheduleWindows: []remote.ScheduleWindow{{
+			Playlist: []remote.ManifestPlaylistItem{{AssetID: "scheduled-1"}, {AssetID: "scheduled-2"}},
+		}},
+	}
+	if got := manifestPlaylistSize(manifest); got != 3 {
+		t.Fatalf("manifest playlist size = %d, want 3", got)
+	}
+}

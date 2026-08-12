@@ -24,6 +24,8 @@ import (
 
 const screenshotPath = "/tmp/showroom-screenshot.jpg"
 const credentialRefreshWindow = time.Hour
+const initialPlayableAssetTarget = 2
+const hydrationBatchSize = 1
 
 func applianceDescriptor() map[string]interface{} {
 	return map[string]interface{}{
@@ -445,18 +447,16 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	cachedAssets := map[string]state.AssetRecord{}
 
 	localManifest := *manifest
-	localManifest.DefaultPlaylist = clonePlaylist(manifest.DefaultPlaylist)
+	localManifest.DefaultPlaylist = []remote.ManifestPlaylistItem{}
 	localManifest.ScheduleWindows = make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
 	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
-	bootstrapPublished := fileExists(manifestPath)
-	publishBootstrap := func(item remote.ManifestPlaylistItem) error {
-		if bootstrapPublished {
+	visiblePlayableAssets := localManifestPlaylistSize(manifestPath)
+	progressPublished := visiblePlayableAssets >= initialPlayableAssetTarget
+	publishProgress := func() error {
+		if progressPublished || manifestPlaylistSize(&localManifest) < initialPlayableAssetTarget {
 			return nil
 		}
-		bootstrap := *manifest
-		bootstrap.DefaultPlaylist = []remote.ManifestPlaylistItem{item}
-		bootstrap.ScheduleWindows = []remote.ScheduleWindow{}
-		if err := writeJSONFile(manifestPath, &bootstrap); err != nil {
+		if err := writeJSONFile(manifestPath, &localManifest); err != nil {
 			return err
 		}
 		if err := s.store.Update(func(next *state.DeviceState) {
@@ -468,19 +468,25 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		}); err != nil {
 			return err
 		}
-		bootstrapPublished = true
-		log.Printf("activated first verified asset while the remaining playlist hydrates")
+		progressPublished = true
+		log.Printf("activated %d verified assets while the remaining playlist hydrates", manifestPlaylistSize(&localManifest))
 		return nil
 	}
 
-	rewrite := func(item remote.ManifestPlaylistItem) (remote.ManifestPlaylistItem, error) {
+	newDownloads := 0
+	downloadLimit := manifestHydrationDownloadLimit(len(availableAssets))
+	rewrite := func(item remote.ManifestPlaylistItem) (remote.ManifestPlaylistItem, bool, error) {
 		fileName := remote.AssetFileName(item)
 		destPath := filepath.Join(s.config.StorageRoot, fileName)
 		expectedChecksum := manifest.AssetChecksums[item.AssetID]
 		existing, ok := availableAssets[item.AssetID]
-		if !ok || existing.Checksum != expectedChecksum || !fileExists(filepath.Join(s.config.StorageRoot, existing.FileName)) {
+		cached := ok && existing.Checksum == expectedChecksum && fileExists(filepath.Join(s.config.StorageRoot, existing.FileName))
+		if !cached {
+			if newDownloads >= downloadLimit {
+				return item, false, nil
+			}
 			if err := s.ensureCacheBudget(); err != nil {
-				return item, err
+				return item, false, err
 			}
 			var err error
 			if item.SourceType == "youtube" || remote.IsYouTubeURL(item.URL) {
@@ -489,15 +495,16 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 				err = s.client.DownloadFile(ctx, item.URL, destPath)
 			}
 			if err != nil {
-				return item, err
+				return item, false, err
 			}
+			newDownloads++
 		} else {
 			fileName = existing.FileName
 			destPath = filepath.Join(s.config.StorageRoot, fileName)
 		}
 
 		if err := validateCachedAsset(destPath, expectedChecksum); err != nil {
-			return item, fmt.Errorf("validate cached asset %s: %w", item.AssetID, err)
+			return item, false, fmt.Errorf("validate cached asset %s: %w", item.AssetID, err)
 		}
 		cachedAssets[item.AssetID] = state.AssetRecord{
 			FileName: fileName,
@@ -508,20 +515,26 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		if item.AssetType == "video" {
 			duration, err := probeMediaDuration(ctx, destPath)
 			if err != nil {
-				return item, fmt.Errorf("probe video %s: %w", item.AssetID, err)
+				return item, false, fmt.Errorf("probe video %s: %w", item.AssetID, err)
 			}
 			item.DurationSeconds = duration
 		}
-		return item, nil
+		return item, true, nil
 	}
 
-	for index, item := range localManifest.DefaultPlaylist {
-		nextItem, err := rewrite(item)
+	failures := 0
+	for _, item := range manifest.DefaultPlaylist {
+		nextItem, ready, err := rewrite(item)
 		if err != nil {
-			return nil, nil, err
+			failures++
+			log.Printf("media asset %s was skipped during hydration: %v", item.AssetID, err)
+			continue
 		}
-		localManifest.DefaultPlaylist[index] = nextItem
-		if err := publishBootstrap(nextItem); err != nil {
+		if !ready {
+			continue
+		}
+		localManifest.DefaultPlaylist = append(localManifest.DefaultPlaylist, nextItem)
+		if err := publishProgress(); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -529,20 +542,64 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	for _, window := range manifest.ScheduleWindows {
 		nextWindow := window
 		nextWindow.Playlist = clonePlaylist(window.Playlist)
-		for index, item := range nextWindow.Playlist {
-			nextItem, err := rewrite(item)
+		nextWindow.Playlist = []remote.ManifestPlaylistItem{}
+		for _, item := range window.Playlist {
+			nextItem, ready, err := rewrite(item)
 			if err != nil {
-				return nil, nil, err
+				failures++
+				log.Printf("scheduled media asset %s was skipped during hydration: %v", item.AssetID, err)
+				continue
 			}
-			nextWindow.Playlist[index] = nextItem
-			if err := publishBootstrap(nextItem); err != nil {
+			if !ready {
+				continue
+			}
+			nextWindow.Playlist = append(nextWindow.Playlist, nextItem)
+			if err := publishProgress(); err != nil {
 				return nil, nil, err
 			}
 		}
-		localManifest.ScheduleWindows = append(localManifest.ScheduleWindows, nextWindow)
+		if len(nextWindow.Playlist) > 0 {
+			localManifest.ScheduleWindows = append(localManifest.ScheduleWindows, nextWindow)
+		}
 	}
 
+	if manifestPlaylistSize(&localManifest) == 0 {
+		return nil, nil, fmt.Errorf("no playable media assets were available after %d hydration failures", failures)
+	}
+	if failures > 0 {
+		log.Printf("manifest hydration retained playback after skipping %d unavailable assets", failures)
+	}
 	return cachedAssets, &localManifest, nil
+}
+
+func manifestHydrationDownloadLimit(cachedAssetCount int) int {
+	if cachedAssetCount < initialPlayableAssetTarget {
+		return initialPlayableAssetTarget - cachedAssetCount
+	}
+	return hydrationBatchSize
+}
+
+func manifestPlaylistSize(manifest *remote.DeviceManifest) int {
+	if manifest == nil {
+		return 0
+	}
+	total := len(manifest.DefaultPlaylist)
+	for _, window := range manifest.ScheduleWindows {
+		total += len(window.Playlist)
+	}
+	return total
+}
+
+func localManifestPlaylistSize(path string) int {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var manifest remote.DeviceManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return 0
+	}
+	return manifestPlaylistSize(&manifest)
 }
 
 func (s *Service) ensureCacheBudget() error {
