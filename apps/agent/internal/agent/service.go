@@ -122,7 +122,7 @@ func (s *Service) Run(ctx context.Context) error {
 func ensureKioskRuntimeCompatibility() (bool, error) {
 	const sourcePath = "/usr/local/bin/showroom-start-kiosk"
 	const notifyLine = "systemd-notify --ready --pid=\"$$\""
-	const compatibilityPath = "/run/showroom-start-kiosk-compat"
+	const compatibilityPath = "/var/lib/showroom/tools/showroom-start-kiosk-compat"
 	const dropInDirectory = "/run/systemd/system/showroom-kiosk.service.d"
 	const dropInPath = dropInDirectory + "/10-showroom-readiness.conf"
 
@@ -134,6 +134,9 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 		return false, nil
 	}
 
+	if err := os.MkdirAll(filepath.Dir(compatibilityPath), 0o755); err != nil {
+		return false, err
+	}
 	compatibility := strings.ReplaceAll(string(source), notifyLine, ": # readiness is managed by systemd Type=simple")
 	if err := os.WriteFile(compatibilityPath, []byte(compatibility), 0o755); err != nil {
 		return false, err
