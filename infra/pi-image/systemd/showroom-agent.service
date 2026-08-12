@@ -9,6 +9,9 @@ StartLimitBurst=8
 [Service]
 Type=notify
 EnvironmentFile=/etc/showroom-agent/config.env
+Environment=HOME=/var/lib/showroom
+Environment=XDG_CACHE_HOME=/var/lib/showroom/cache/.tool-cache
+Environment=PYTHONPYCACHEPREFIX=/var/lib/showroom/cache/.tool-cache/python
 ExecStart=/usr/local/bin/showroom-agent-launch
 Restart=on-failure
 RestartSec=3
