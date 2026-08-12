@@ -20,6 +20,7 @@ type kioskRuntime struct {
 	PlaylistID      string              `json:"playlistId,omitempty"`
 	Volume          int                 `json:"volume,omitempty"`
 	Orientation     int                 `json:"orientation"`
+	StartIndex      int                 `json:"startIndex,omitempty"`
 	Playlist        []kioskRuntimeAsset `json:"playlist,omitempty"`
 }
 
@@ -64,6 +65,15 @@ func (s *Server) kioskRuntime() kioskRuntime {
 	runtime.PlaylistID = playlistID
 	runtime.Volume = manifest.Volume
 	runtime.Orientation = manifest.Orientation
+	current := s.store.Snapshot()
+	if current.CurrentPlaylistID == playlistID {
+		for index, item := range playlist {
+			if item.AssetID == current.CurrentAssetID {
+				runtime.StartIndex = index
+				break
+			}
+		}
+	}
 
 	assets := make([]kioskRuntimeAsset, 0, len(playlist))
 	for _, item := range playlist {

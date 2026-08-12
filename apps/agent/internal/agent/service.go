@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +27,14 @@ const screenshotPath = "/tmp/showroom-screenshot.jpg"
 const credentialRefreshWindow = time.Hour
 const initialPlayableAssetTarget = 2
 const hydrationBatchSize = 1
+const transientAssetRetryBaseDelay = 5 * time.Minute
+const transientAssetRetryMaxDelay = time.Hour
+const unavailableAssetRetryDelay = 24 * time.Hour
+
+type hydrationFailure struct {
+	attempts    int
+	nextAttempt time.Time
+}
 
 func applianceDescriptor() map[string]interface{} {
 	return map[string]interface{}{
@@ -44,10 +53,13 @@ func applianceDescriptor() map[string]interface{} {
 }
 
 type Service struct {
-	config config.Config
-	client *remote.Client
-	store  *state.Store
-	start  time.Time
+	config            config.Config
+	client            *remote.Client
+	store             *state.Store
+	start             time.Time
+	hydrationMu       sync.Mutex
+	hydrationFailures map[string]hydrationFailure
+	now               func() time.Time
 }
 
 func New(cfg config.Config) (*Service, error) {
@@ -73,11 +85,59 @@ func New(cfg config.Config) (*Service, error) {
 	})
 
 	return &Service{
-		config: cfg,
-		client: remote.New(cfg.APIBaseURL),
-		store:  store,
-		start:  time.Now(),
+		config:            cfg,
+		client:            remote.New(cfg.APIBaseURL),
+		store:             store,
+		start:             time.Now(),
+		hydrationFailures: make(map[string]hydrationFailure),
+		now:               time.Now,
 	}, nil
+}
+
+func (s *Service) currentTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+func (s *Service) canAttemptHydration(key string) bool {
+	s.hydrationMu.Lock()
+	defer s.hydrationMu.Unlock()
+	failure, exists := s.hydrationFailures[key]
+	return !exists || !s.currentTime().Before(failure.nextAttempt)
+}
+
+func (s *Service) recordHydrationFailure(key string, err error) {
+	s.hydrationMu.Lock()
+	defer s.hydrationMu.Unlock()
+	if s.hydrationFailures == nil {
+		s.hydrationFailures = make(map[string]hydrationFailure)
+	}
+	failure := s.hydrationFailures[key]
+	failure.attempts++
+	delay := transientAssetRetryBaseDelay
+	for attempt := 1; attempt < failure.attempts && delay < transientAssetRetryMaxDelay; attempt++ {
+		delay *= 2
+	}
+	if delay > transientAssetRetryMaxDelay {
+		delay = transientAssetRetryMaxDelay
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "video is not available") ||
+		strings.Contains(message, "private video") ||
+		strings.Contains(message, "video has been removed") ||
+		strings.Contains(message, "copyright") {
+		delay = unavailableAssetRetryDelay
+	}
+	failure.nextAttempt = s.currentTime().Add(delay)
+	s.hydrationFailures[key] = failure
+}
+
+func (s *Service) clearHydrationFailure(key string) {
+	s.hydrationMu.Lock()
+	defer s.hydrationMu.Unlock()
+	delete(s.hydrationFailures, key)
 }
 
 func (s *Service) Run(ctx context.Context) error {
@@ -162,6 +222,37 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 }
 
 func applyKioskPlaylistCompatibility(script string) string {
+	if strings.Contains(script, "trap cleanup EXIT INT TERM") {
+		script = strings.Replace(script,
+			"trap cleanup EXIT INT TERM",
+			"trap cleanup EXIT\ntrap 'exit 0' INT TERM",
+			1,
+		)
+	}
+	if !strings.Contains(script, `pkill -TERM -P "${X_PID}"`) {
+		script = strings.Replace(script,
+			"  if [[ -n \"${X_PID}\" ]]; then\n    kill \"${X_PID}\" 2>/dev/null || true\n",
+			"  if [[ -n \"${X_PID}\" ]]; then\n    pkill -TERM -P \"${X_PID}\" 2>/dev/null || true\n    kill \"${X_PID}\" 2>/dev/null || true\n",
+			1,
+		)
+	}
+	if !strings.Contains(script, "APP_AUDIO_DEVICE=\"\"") {
+		if strings.Contains(script, "APP_TOKEN=\"\"\n") {
+			script = strings.Replace(script,
+				"APP_TOKEN=\"\"\n",
+				"APP_TOKEN=\"\"\nAPP_AUDIO_DEVICE=\"\"\n",
+				1,
+			)
+		} else if strings.Contains(script, "APP_MODE=\"\"\n") {
+			script = strings.Replace(script,
+				"APP_MODE=\"\"\n",
+				"APP_MODE=\"\"\nAPP_AUDIO_DEVICE=\"\"\n",
+				1,
+			)
+		} else {
+			script = "APP_AUDIO_DEVICE=\"\"\n" + script
+		}
+	}
 	if !strings.Contains(script, "MPV_LOADED_PLAYLIST=") {
 		script = strings.Replace(script,
 			"MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json\n",
@@ -174,6 +265,13 @@ func applyKioskPlaylistCompatibility(script string) string {
 		`    "playlistId": payload.get("playlistId", ""),`,
 		1,
 	)
+	if !strings.Contains(script, `print(int(payload.get("startIndex", 0) or 0))`) {
+		script = strings.Replace(script,
+			`print(payload.get("playlistId", ""))`,
+			"print(payload.get(\"playlistId\", \"\"))\nprint(int(payload.get(\"startIndex\", 0) or 0))",
+			1,
+		)
+	}
 	if !strings.Contains(script, "sync_mpv_playlist()") {
 		const syncFunction = `sync_mpv_playlist() {
   [[ "${APP_MODE}" == "mpv" && -S "${MPV_SOCKET}" && -f "${MPV_LOADED_PLAYLIST}" ]] || return 0
@@ -211,10 +309,74 @@ PY
 `
 		script = strings.Replace(script, "launch_browser() {\n", syncFunction+"launch_browser() {\n", 1)
 	}
-	if !strings.Contains(script, "MPV_PLAYLIST_PATH=\"${playlist_path}\"") {
+	if !strings.Contains(script, "detect_mpv_audio_device()") {
+		const audioFunction = `detect_mpv_audio_device() {
+  if [[ -n "${SHOWROOM_AUDIO_DEVICE:-}" ]]; then
+    printf '%s\n' "${SHOWROOM_AUDIO_DEVICE}"
+    return
+  fi
+
+  local card_path card_index eld_path card_name
+  for card_path in /proc/asound/card*; do
+    [[ -d "${card_path}" ]] || continue
+    card_index="${card_path##*card}"
+    for eld_path in "${card_path}"/eld*; do
+      [[ -r "${eld_path}" ]] || continue
+      grep -q $'^monitor_name[[:space:]]\+[^[:space:]]' "${eld_path}" || continue
+      card_name="$(cat "${card_path}/id" 2>/dev/null)"
+      [[ -n "${card_name}" ]] || continue
+      printf 'alsa/hdmi:CARD=%s,DEV=0\n' "${card_name}"
+      return
+    done
+  done
+}
+
+`
+		script = strings.Replace(script, "launch_browser() {\n", audioFunction+"launch_browser() {\n", 1)
+	}
+	if !strings.Contains(script, `audio_device="$(detect_mpv_audio_device)"`) {
 		script = strings.Replace(script,
-			"  APP_MODE=\"mpv\"\n}",
-			"  APP_MODE=\"mpv\"\n  MPV_PLAYLIST_PATH=\"${playlist_path}\"\n  tail -n +2 \"${playlist_path}\" > \"${MPV_LOADED_PLAYLIST}\"\n}",
+			"  local playlist_path=\"$3\"\n",
+			"  local playlist_path=\"$3\"\n  local audio_device\n  audio_device=\"$(detect_mpv_audio_device)\"\n",
+			1,
+		)
+	}
+	if !strings.Contains(script, `local start_index="$4"`) {
+		script = strings.Replace(script,
+			"  local playlist_path=\"$3\"\n",
+			"  local playlist_path=\"$3\"\n  local start_index=\"$4\"\n",
+			1,
+		)
+	}
+	if !strings.Contains(script, `"--playlist-start=${start_index}"`) {
+		script = strings.Replace(script,
+			`    "--playlist=${playlist_path}"`,
+			"    \"--playlist=${playlist_path}\"\n    \"--playlist-start=${start_index}\"",
+			1,
+		)
+	}
+	if !strings.Contains(script, `"--audio-device=${audio_device}"`) {
+		script = strings.Replace(script,
+			"  rm -f \"${MPV_SOCKET}\"\n",
+			"  if [[ -n \"${audio_device}\" ]]; then\n    args+=(\"--audio-device=${audio_device}\")\n    echo \"Routing audio to ${audio_device}\" >&2\n  fi\n\n  rm -f \"${MPV_SOCKET}\"\n",
+			1,
+		)
+	}
+	if !strings.Contains(script, "APP_AUDIO_DEVICE=\"${audio_device}\"") {
+		script = strings.Replace(script,
+			"  APP_MODE=\"mpv\"\n",
+			"  APP_MODE=\"mpv\"\n  APP_AUDIO_DEVICE=\"${audio_device}\"\n",
+			1,
+		)
+	}
+	if !strings.Contains(script, "MPV_PLAYLIST_PATH=\"${playlist_path}\"") {
+		marker := "  APP_AUDIO_DEVICE=\"${audio_device}\"\n"
+		if !strings.Contains(script, marker) {
+			marker = "  APP_MODE=\"mpv\"\n"
+		}
+		script = strings.Replace(script,
+			marker,
+			marker+"  MPV_PLAYLIST_PATH=\"${playlist_path}\"\n  tail -n +2 \"${playlist_path}\" > \"${MPV_LOADED_PLAYLIST}\"\n",
 			1,
 		)
 	}
@@ -229,6 +391,20 @@ PY
 		script = strings.Replace(script,
 			"\n  if [[ \"${DESIRED_MODE}\" != \"${APP_MODE}\"",
 			syncCall+"\n  if [[ \"${DESIRED_MODE}\" != \"${APP_MODE}\"",
+			1,
+		)
+	}
+	if !strings.Contains(script, `START_INDEX="${runtime_lines[9]:-0}"`) {
+		script = strings.Replace(script,
+			`  CURRENT_PLAYLIST_ID="${runtime_lines[8]:-${CURRENT_MANIFEST_VERSION}}"`,
+			"  CURRENT_PLAYLIST_ID=\"${runtime_lines[8]:-${CURRENT_MANIFEST_VERSION}}\"\n  START_INDEX=\"${runtime_lines[9]:-0}\"",
+			1,
+		)
+	}
+	if !strings.Contains(script, `"${PLAYLIST_PATH}" "${START_INDEX}"`) {
+		script = strings.Replace(script,
+			`launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}"`,
+			`launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}" "${START_INDEX}"`,
 			1,
 		)
 	}
@@ -554,9 +730,13 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		fileName := remote.AssetFileName(item)
 		destPath := filepath.Join(s.config.StorageRoot, fileName)
 		expectedChecksum := manifest.AssetChecksums[item.AssetID]
+		hydrationKey := item.AssetID + ":" + expectedChecksum
 		existing, ok := availableAssets[item.AssetID]
 		cached := ok && existing.Checksum == expectedChecksum && fileExists(filepath.Join(s.config.StorageRoot, existing.FileName))
 		if !cached {
+			if !s.canAttemptHydration(hydrationKey) {
+				return item, false, nil
+			}
 			if newDownloads >= downloadLimit {
 				return item, false, nil
 			}
@@ -570,6 +750,7 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 				err = s.client.DownloadFile(ctx, item.URL, destPath)
 			}
 			if err != nil {
+				s.recordHydrationFailure(hydrationKey, err)
 				return item, false, err
 			}
 			newDownloads++
@@ -579,8 +760,10 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		}
 
 		if err := validateCachedAsset(destPath, expectedChecksum); err != nil {
+			s.recordHydrationFailure(hydrationKey, err)
 			return item, false, fmt.Errorf("validate cached asset %s: %w", item.AssetID, err)
 		}
+		s.clearHydrationFailure(hydrationKey)
 		cachedAssets[item.AssetID] = state.AssetRecord{
 			FileName: fileName,
 			Checksum: expectedChecksum,
