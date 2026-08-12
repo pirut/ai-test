@@ -1,8 +1,34 @@
 #!/bin/bash
 set -uo pipefail
 
+CONFIG_FILE="${SHOWROOM_CONFIG_FILE:-/etc/showroom-agent/config.env}"
+
+read_config_value() {
+  local wanted_key="$1" config_key config_value
+  [[ -r "${CONFIG_FILE}" ]] || return 1
+
+  while IFS='=' read -r config_key config_value; do
+    [[ "${config_key}" == "${wanted_key}" ]] || continue
+    case "${config_value}" in
+      \"*\") config_value="${config_value:1:${#config_value}-2}" ;;
+      \'*\') config_value="${config_value:1:${#config_value}-2}" ;;
+    esac
+    printf '%s\n' "${config_value}"
+    return 0
+  done <"${CONFIG_FILE}"
+  return 1
+}
+
+if [[ -z "${SHOWROOM_API_BASE_URL:-}" ]]; then
+  SHOWROOM_API_BASE_URL="$(read_config_value SHOWROOM_API_BASE_URL || true)"
+fi
+if [[ ! "${SHOWROOM_API_BASE_URL:-}" =~ ^https?://[^[:space:]]+$ ]]; then
+  printf 'showroom-network-setup: SHOWROOM_API_BASE_URL is missing or invalid in %s\n' "${CONFIG_FILE}" >&2
+  exit 1
+fi
+
 if [[ "${1:-}" == "--self-test" ]]; then
-  printf 'showroom-network-onboarding: self-test passed\n'
+  printf 'showroom-network-onboarding: self-test passed (%s)\n' "${SHOWROOM_API_BASE_URL}"
   exit 0
 fi
 
@@ -13,7 +39,6 @@ fi
 
 STATE_DIR=/var/lib/showroom/state
 COMPLETE_MARKER="${STATE_DIR}/network-onboarding-complete"
-: "${SHOWROOM_API_BASE_URL:?SHOWROOM_API_BASE_URL is required}"
 
 clear_screen() {
   printf '\033[2J\033[H'
@@ -40,6 +65,16 @@ mark_complete() {
     "$(nmcli -t -f NAME connection show --active 2>/dev/null | paste -sd, -)" \
     >"${COMPLETE_MARKER}"
   chmod 0600 "${COMPLETE_MARKER}"
+}
+
+resume_appliance_after_manual_setup() {
+  (( FORCE_SETUP == 1 )) || return 0
+  systemctl reset-failed showroom-agent.service showroom-kiosk.service >/dev/null 2>&1 || true
+  if ! systemctl restart showroom-agent.service showroom-kiosk.service; then
+    printf '\nThe network is saved, but playback did not restart automatically.\n' >&2
+    printf 'Run showroom-diagnostics from Ctrl+Alt+F1 for details.\n' >&2
+    return 1
+  fi
 }
 
 show_header() {
@@ -109,6 +144,7 @@ while true; do
     printf '\nConnection verified. Your Wi-Fi settings have been saved securely.\n'
     printf 'Starting enrollment and playback...\n'
     sleep 3
+    resume_appliance_after_manual_setup
     exit 0
   fi
   show_failure_help

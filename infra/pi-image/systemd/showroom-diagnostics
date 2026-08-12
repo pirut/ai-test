@@ -120,14 +120,18 @@ active_boot="$(readlink -f /dev/disk/by-slot/active/boot 2>/dev/null || true)"
 printf 'Active system: %s\n' "${active_system:-unknown}"
 printf 'Active boot:   %s\n' "${active_boot:-unknown}"
 
-heading "Recent relevant logs"
-journalctl --no-pager -b -n 100 \
-  -u showroom-agent.service \
+heading "Recent kiosk and X11 startup logs"
+journalctl --no-pager -b -n 120 \
   -u showroom-kiosk.service \
-  -u showroom-network-onboarding.service \
-  -u NetworkManager.service \
-  -u showroom-kiosk-recovery.service \
-  -u getty@tty1.service 2>&1 || true
+  -u showroom-kiosk-recovery.service 2>&1 || true
+
+heading "Recent agent and onboarding logs"
+journalctl --no-pager -b -n 80 \
+  -u showroom-agent.service \
+  -u showroom-network-onboarding.service 2>&1 || true
+
+heading "Recent NetworkManager logs"
+journalctl --no-pager -b -n 80 -u NetworkManager.service 2>&1 || true
 
 heading "Recent boot warnings"
 journalctl --no-pager -b -p warning -n 40 2>&1 || true

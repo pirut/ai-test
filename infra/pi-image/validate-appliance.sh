@@ -120,7 +120,9 @@ validate_scripts() {
   done
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
-  bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
+  env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${root}/etc/showroom-agent/config.env" \
+    bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
 }
 
 validate_source() {
@@ -187,6 +189,13 @@ validate_source() {
   require_contains "${network_onboarding_unit}" '^TimeoutStartSec=infinity$' "first-boot network setup must wait for technician input without timing out"
   require_contains "${network_onboarding}" '^ *nmtui connect \|\| true$' "first-boot setup must provide an interactive SSID and password selector"
   require_contains "${network_onboarding}" 'curl -fsS .*SHOWROOM_API_BASE_URL' "first-boot setup must verify the real control plane before continuing"
+  require_not_contains "${network_onboarding}" '(^|[[:space:]])(source|\.)[[:space:]]+.*config\.env' "physical network setup must not execute its systemd EnvironmentFile as shell code"
+  local resolved_api_url
+  resolved_api_url="$(env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
+    bash "${network_onboarding}" --self-test)"
+  [[ "${resolved_api_url}" == *'https://screen.jrbussard.com'* ]] || fail "physical network setup cannot read the API URL without systemd"
+  require_contains "${network_onboarding}" 'systemctl restart showroom-agent\.service showroom-kiosk\.service' "manual network setup must resume enrollment and playback"
   require_contains "${ROOT_DIR}/systemd/showroom-agent.service" '^Requires=showroom-network-onboarding\.service$' "agent must wait for first-boot networking"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Requires=showroom-network-onboarding\.service$' "kiosk must wait for first-boot networking"
   require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
@@ -210,7 +219,9 @@ validate_source() {
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
-  bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
+  env -u SHOWROOM_API_BASE_URL \
+    SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
+    bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
 
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry \
