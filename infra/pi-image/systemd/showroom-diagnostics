@@ -145,8 +145,17 @@ journalctl --no-pager -b -1 -n 60 \
   -u showroom-kiosk-recovery.service 2>&1 || true
 
 heading "Recent X11 log"
-for xorg_log in /home/pi/.local/share/xorg/Xorg.0.log /home/pi/.local/share/xorg/Xorg.0.log.old; do
+for xorg_log in \
+  /home/pi/.local/share/xorg/Xorg.0.log \
+  /home/pi/.local/share/xorg/Xorg.0.log.old \
+  /var/log/Xorg.0.log \
+  /var/log/Xorg.0.log.old; do
   [[ -r "${xorg_log}" ]] || continue
   printf '%s\n' "--- ${xorg_log}"
   tail -n 80 "${xorg_log}" 2>&1 || true
 done
+
+heading "X11 and virtual-console journal"
+journalctl --no-pager -b -o cat 2>/dev/null | \
+  grep -Ei 'xorg|startx|xf86|tty7|vt7|cannot open|server failed|showroom-start' | \
+  tail -n 120 || true

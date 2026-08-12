@@ -199,6 +199,8 @@ validate_source() {
   require_contains "${ROOT_DIR}/systemd/showroom-agent.service" '^Requires=showroom-network-onboarding\.service$' "agent must wait for first-boot networking"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Requires=showroom-network-onboarding\.service$' "kiosk must wait for first-boot networking"
   require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
+  require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" '/var/log/Xorg\.0\.log' "diagnostics must inspect root-owned Xorg wrapper logs"
+  require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" "grep -Ei 'xorg\|startx\|xf86\|tty7\|vt7" "diagnostics must retain Xorg and virtual-console journal failures"
   require_not_contains "${workflow}" '^[[:space:]]+push:$' "appliance image builds must be local/manual, not automatic GitHub push builds"
   require_not_contains "${BASH_SOURCE[0]}" '^[[:space:]]*mount -o ro' "Pi 5 16 KiB filesystems must not depend on a 4 KiB host kernel mount"
   require_contains "${BASH_SOURCE[0]}" 'erofs_fsck.*--extract=' "image validator must inspect EROFS in userspace"
