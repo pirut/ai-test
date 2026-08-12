@@ -10,13 +10,10 @@ StartLimitBurst=5
 StartLimitAction=none
 
 [Service]
-Type=notify
-NotifyAccess=all
+Type=simple
 ExecStart=/usr/local/bin/showroom-start-kiosk
-# The launcher reports READY only after X11 is accepting connections. Run this
-# one narrowly scoped post-start command as root so the non-root kiosk does not
-# retain CAP_SYS_TTY_CONFIG for its lifetime.
-ExecStartPost=+/usr/bin/chvt 7
+# Verify X11 is accepting connections before switching the physical display.
+ExecStartPost=+/usr/local/bin/showroom-kiosk-ready
 Restart=on-failure
 RestartSec=10s
 User=pi

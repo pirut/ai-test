@@ -80,6 +80,10 @@ func New(cfg config.Config) (*Service, error) {
 
 func (s *Service) Run(ctx context.Context) error {
 	_ = s.store.Update(func(next *state.DeviceState) { next.Health.AgentRestarts++ })
+	kioskCompatibilityApplied, kioskCompatibilityErr := ensureKioskRuntimeCompatibility()
+	if kioskCompatibilityErr != nil {
+		log.Printf("kiosk runtime compatibility failed: %v", kioskCompatibilityErr)
+	}
 	server := local.NewServer(s.config, s.store)
 	httpServer := &http.Server{
 		Addr:    s.config.ListenAddr,
@@ -99,11 +103,57 @@ func (s *Service) Run(ctx context.Context) error {
 	go s.runHealthLoop(ctx)
 	go s.runWatchdogLoop(ctx)
 	_ = systemdnotify.Ready()
+	if kioskCompatibilityApplied {
+		go func() {
+			time.Sleep(time.Second)
+			_ = s.runShell(ctx, "systemctl reset-failed showroom-kiosk.service")
+			if err := s.runShell(ctx, "systemctl restart showroom-kiosk.service"); err != nil {
+				log.Printf("kiosk compatibility restart failed: %v", err)
+			}
+		}()
+	}
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+func ensureKioskRuntimeCompatibility() (bool, error) {
+	const sourcePath = "/usr/local/bin/showroom-start-kiosk"
+	const notifyLine = "systemd-notify --ready --pid=\"$$\""
+	const compatibilityPath = "/var/lib/showroom/tools/showroom-start-kiosk-compat"
+	const dropInDirectory = "/run/systemd/system/showroom-kiosk.service.d"
+	const dropInPath = dropInDirectory + "/10-showroom-readiness.conf"
+
+	source, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return false, nil
+	}
+	if !strings.Contains(string(source), notifyLine) {
+		return false, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(compatibilityPath), 0o755); err != nil {
+		return false, err
+	}
+	compatibility := strings.ReplaceAll(string(source), notifyLine, ": # readiness is managed by systemd Type=simple")
+	if err := os.WriteFile(compatibilityPath, []byte(compatibility), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(dropInDirectory, 0o755); err != nil {
+		return false, err
+	}
+	dropIn := "[Service]\nType=simple\nNotifyAccess=none\nExecStart=\nExecStart=" + compatibilityPath + "\n"
+	if err := os.WriteFile(dropInPath, []byte(dropIn), 0o644); err != nil {
+		return false, err
+	}
+	command := exec.Command("systemctl", "daemon-reload")
+	if output, err := command.CombinedOutput(); err != nil {
+		return false, fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	log.Printf("installed runtime compatibility for legacy kiosk readiness handshake")
+	return true, nil
 }
 
 func (s *Service) runWatchdogLoop(ctx context.Context) {
@@ -386,6 +436,31 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	localManifest := *manifest
 	localManifest.DefaultPlaylist = clonePlaylist(manifest.DefaultPlaylist)
 	localManifest.ScheduleWindows = make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
+	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
+	bootstrapPublished := fileExists(manifestPath)
+	publishBootstrap := func(item remote.ManifestPlaylistItem) error {
+		if bootstrapPublished {
+			return nil
+		}
+		bootstrap := *manifest
+		bootstrap.DefaultPlaylist = []remote.ManifestPlaylistItem{item}
+		bootstrap.ScheduleWindows = []remote.ScheduleWindow{}
+		if err := writeJSONFile(manifestPath, &bootstrap); err != nil {
+			return err
+		}
+		if err := s.store.Update(func(next *state.DeviceState) {
+			next.DeviceID = manifest.DeviceID
+			next.ManifestVersion = manifest.ManifestVersion
+			next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
+			next.CachedAssets = cloneAssetRecords(cachedAssets)
+			next.LastError = ""
+		}); err != nil {
+			return err
+		}
+		bootstrapPublished = true
+		log.Printf("activated first verified asset while the remaining playlist hydrates")
+		return nil
+	}
 
 	rewrite := func(item remote.ManifestPlaylistItem) (remote.ManifestPlaylistItem, error) {
 		fileName := remote.AssetFileName(item)
@@ -435,6 +510,9 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 			return nil, nil, err
 		}
 		localManifest.DefaultPlaylist[index] = nextItem
+		if err := publishBootstrap(nextItem); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	for _, window := range manifest.ScheduleWindows {
@@ -446,6 +524,9 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 				return nil, nil, err
 			}
 			nextWindow.Playlist[index] = nextItem
+			if err := publishBootstrap(nextItem); err != nil {
+				return nil, nil, err
+			}
 		}
 		localManifest.ScheduleWindows = append(localManifest.ScheduleWindows, nextWindow)
 	}
@@ -816,6 +897,14 @@ func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylis
 	copyItems := make([]remote.ManifestPlaylistItem, len(items))
 	copy(copyItems, items)
 	return copyItems
+}
+
+func cloneAssetRecords(records map[string]state.AssetRecord) map[string]state.AssetRecord {
+	copyRecords := make(map[string]state.AssetRecord, len(records))
+	for assetID, record := range records {
+		copyRecords[assetID] = record
+	}
+	return copyRecords
 }
 
 func fileExists(path string) bool {

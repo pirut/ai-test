@@ -109,6 +109,7 @@ validate_scripts() {
     showroom-recovery-screen
     showroom-kiosk-recovery
     showroom-kiosk-retry
+    showroom-kiosk-ready
     showroom-network-recovery
     showroom-network-onboarding
     showroom-network-setup
@@ -159,10 +160,9 @@ validate_source() {
   require_contains "${unit}" '^Restart=on-failure$' "kiosk restart policy must be failure-only"
   require_contains "${unit}" '^StartLimitBurst=5$' "kiosk restart rate limit is missing"
   require_contains "${unit}" '^OnFailure=showroom-kiosk-recovery\.service$' "kiosk recovery screen hook is missing"
-  require_contains "${unit}" '^ExecStartPost=\+/usr/bin/chvt 7$' "a healthy kiosk must switch the physical display from tty1 to tty7"
-  require_contains "${unit}" '^Type=notify$' "kiosk must report X11 readiness before tty7 is activated"
-  require_contains "${unit}" '^NotifyAccess=all$' "kiosk readiness notifications from the launcher must be accepted"
-  require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^systemd-notify --ready --pid="\$\$"$' "kiosk launcher must report readiness only after X11 starts"
+  require_contains "${unit}" '^ExecStartPost=\+/usr/local/bin/showroom-kiosk-ready$' "a healthy kiosk must switch the physical display from tty1 to tty7"
+  require_contains "${unit}" '^Type=simple$' "kiosk readiness must use a deterministic post-start gate"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-ready" '^    /usr/bin/chvt 7$' "kiosk readiness gate must switch the physical display only after X11 starts"
   require_contains "${unit}" '^ReadWritePaths=.* /var/log( |$)' "Xorg must be able to create its root-owned log inside the kiosk sandbox"
   require_not_contains "${unit}" '^NoNewPrivileges=yes$' "NoNewPrivileges blocks configured Xorg.wrap elevation"
   require_contains "${ROOT_DIR}/config/Xwrapper.config" '^needs_root_rights=yes$' "Xorg privilege contract changed unexpectedly"
@@ -204,6 +204,9 @@ validate_source() {
   require_contains "${ROOT_DIR}/config/config.env" '^SHOWROOM_YTDLP_MANAGED_URL=https://github\.com/yt-dlp/yt-dlp/releases/download/' "managed yt-dlp must use the official release channel"
   require_contains "${ROOT_DIR}/config/config.env" '^SHOWROOM_YTDLP_MANAGED_SHA256=[0-9a-f]{64}$' "managed yt-dlp must have a pinned SHA-256 digest"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Requires=showroom-network-onboarding\.service$' "kiosk must wait for first-boot networking"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Type=simple$' "kiosk readiness must not depend on a lossy notify handshake"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^ExecStartPost=\+/usr/local/bin/showroom-kiosk-ready$' "kiosk must validate X11 before switching displays"
+  require_not_contains "${ROOT_DIR}/systemd/start-kiosk.sh" 'systemd-notify' "kiosk launcher must not use the legacy notify handshake"
   require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
   require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" '/var/log/Xorg\.0\.log' "diagnostics must inspect root-owned Xorg wrapper logs"
   require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" "grep -Ei 'xorg\|startx\|xf86\|tty7\|vt7" "diagnostics must retain Xorg and virtual-console journal failures"
@@ -221,7 +224,7 @@ validate_source() {
   require_contains "${sudoers}" '/usr/local/bin/showroom-network-setup' "maintenance account cannot safely reopen network setup"
 
   for source_script in \
-    start-kiosk.sh showroom-diagnostics showroom-recovery-screen \
+    start-kiosk.sh showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
     showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
@@ -232,7 +235,7 @@ validate_source() {
     bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
 
   for installed in \
-    showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry \
+    showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry showroom-kiosk-ready \
     showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
     showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
