@@ -96,6 +96,38 @@ func TestKioskRuntimeCompatibilityIsNoopOffAppliance(t *testing.T) {
 	}
 }
 
+func TestKioskPlaylistCompatibilityAppendsWithoutRestarting(t *testing.T) {
+	t.Parallel()
+
+	legacy := `MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json
+token_payload = {
+    "playlist": playlist_paths,
+}
+launch_browser() {
+}
+launch_mpv() {
+  APP_MODE="mpv"
+}
+  if [[ "${DESIRED_MODE}" != "${APP_MODE}" ]]; then
+  fi
+`
+	patched := applyKioskPlaylistCompatibility(legacy)
+	for _, expected := range []string{
+		"MPV_LOADED_PLAYLIST=/tmp/showroom-mpv-loaded.m3u",
+		`"playlistId": payload.get("playlistId", "")`,
+		"sync_mpv_playlist()",
+		`MPV_PLAYLIST_PATH="${playlist_path}"`,
+		"if ! sync_mpv_playlist; then",
+	} {
+		if !strings.Contains(patched, expected) {
+			t.Fatalf("patched kiosk script is missing %q", expected)
+		}
+	}
+	if strings.Contains(patched, `"playlist": playlist_paths`) {
+		t.Fatal("playlist contents still force a player restart")
+	}
+}
+
 func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
 	t.Parallel()
 

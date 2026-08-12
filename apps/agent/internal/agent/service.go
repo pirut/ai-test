@@ -135,13 +135,14 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 	if !strings.Contains(string(source), notifyLine) {
 		return false, nil
 	}
-	execStartOutput, _ := exec.Command("systemctl", "show", "showroom-kiosk.service", "--property=ExecStart", "--value").Output()
-	restartNeeded := !strings.Contains(string(execStartOutput), compatibilityPath)
-
 	if err := os.MkdirAll(filepath.Dir(compatibilityPath), 0o755); err != nil {
 		return false, err
 	}
 	compatibility := strings.ReplaceAll(string(source), notifyLine, ": # readiness is managed by systemd Type=simple")
+	compatibility = applyKioskPlaylistCompatibility(compatibility)
+	execStartOutput, _ := exec.Command("systemctl", "show", "showroom-kiosk.service", "--property=ExecStart", "--value").Output()
+	existingCompatibility, _ := os.ReadFile(compatibilityPath)
+	restartNeeded := !strings.Contains(string(execStartOutput), compatibilityPath) || string(existingCompatibility) != compatibility
 	if err := os.WriteFile(compatibilityPath, []byte(compatibility), 0o755); err != nil {
 		return false, err
 	}
@@ -158,6 +159,80 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 	}
 	log.Printf("installed runtime compatibility for legacy kiosk readiness handshake")
 	return restartNeeded, nil
+}
+
+func applyKioskPlaylistCompatibility(script string) string {
+	if !strings.Contains(script, "MPV_LOADED_PLAYLIST=") {
+		script = strings.Replace(script,
+			"MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json\n",
+			"MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json\nMPV_LOADED_PLAYLIST=/tmp/showroom-mpv-loaded.m3u\n",
+			1,
+		)
+	}
+	script = strings.Replace(script,
+		`    "playlist": playlist_paths,`,
+		`    "playlistId": payload.get("playlistId", ""),`,
+		1,
+	)
+	if !strings.Contains(script, "sync_mpv_playlist()") {
+		const syncFunction = `sync_mpv_playlist() {
+  [[ "${APP_MODE}" == "mpv" && -S "${MPV_SOCKET}" && -f "${MPV_LOADED_PLAYLIST}" ]] || return 0
+
+  python3 - "${MPV_PLAYLIST_PATH:-/tmp/showroom-mpv-playlist.m3u}" "${MPV_LOADED_PLAYLIST}" "${MPV_SOCKET}" <<'PY'
+import json
+import os
+import socket
+import sys
+
+def read_playlist(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return [line.strip() for line in handle if line.strip() and not line.startswith("#")]
+
+desired = read_playlist(sys.argv[1])
+loaded = read_playlist(sys.argv[2])
+if desired[:len(loaded)] != loaded:
+    raise SystemExit(2)
+
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect(sys.argv[3])
+    for path in desired[len(loaded):]:
+        client.sendall((json.dumps({"command": ["loadfile", path, "append"]}) + "\n").encode("utf-8"))
+        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+        if response.get("error") != "success":
+            raise SystemExit(3)
+
+with open(sys.argv[2] + ".next", "w", encoding="utf-8") as handle:
+    handle.write("\n".join(desired) + ("\n" if desired else ""))
+os.replace(sys.argv[2] + ".next", sys.argv[2])
+PY
+}
+
+`
+		script = strings.Replace(script, "launch_browser() {\n", syncFunction+"launch_browser() {\n", 1)
+	}
+	if !strings.Contains(script, "MPV_PLAYLIST_PATH=\"${playlist_path}\"") {
+		script = strings.Replace(script,
+			"  APP_MODE=\"mpv\"\n}",
+			"  APP_MODE=\"mpv\"\n  MPV_PLAYLIST_PATH=\"${playlist_path}\"\n  tail -n +2 \"${playlist_path}\" > \"${MPV_LOADED_PLAYLIST}\"\n}",
+			1,
+		)
+	}
+	if !strings.Contains(script, "if ! sync_mpv_playlist; then") {
+		const syncCall = `
+  if [[ "${DESIRED_MODE}" == "mpv" && "${APP_MODE}" == "mpv" && "${DESIRED_TOKEN}" == "${APP_TOKEN}" && -n "${APP_PID}" ]]; then
+    if ! sync_mpv_playlist; then
+      APP_TOKEN=""
+    fi
+  fi
+`
+		script = strings.Replace(script,
+			"\n  if [[ \"${DESIRED_MODE}\" != \"${APP_MODE}\"",
+			syncCall+"\n  if [[ \"${DESIRED_MODE}\" != \"${APP_MODE}\"",
+			1,
+		)
+	}
+	return script
 }
 
 func (s *Service) runWatchdogLoop(ctx context.Context) {
