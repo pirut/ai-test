@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+for _ in $(seq 1 30); do
+  if [[ -S /tmp/.X11-unix/X0 ]]; then
+    /usr/bin/chvt 7
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "X11 did not become ready within 30 seconds" >&2
+exit 1

@@ -82,3 +82,15 @@ func TestUserFacingErrorBoundsUnexpectedErrors(t *testing.T) {
 		t.Fatalf("expected truncated error, got %q", message)
 	}
 }
+
+func TestKioskRuntimeCompatibilityIsNoopOffAppliance(t *testing.T) {
+	t.Parallel()
+
+	applied, err := ensureKioskRuntimeCompatibility()
+	if err != nil {
+		t.Fatalf("compatibility check: %v", err)
+	}
+	if applied {
+		t.Fatal("compatibility repair unexpectedly applied off appliance")
+	}
+}

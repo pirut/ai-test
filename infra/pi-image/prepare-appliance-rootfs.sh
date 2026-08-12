@@ -24,6 +24,7 @@ install_file 0755 "${ROOT_DIR}/systemd/showroom-diagnostics" "${OVERLAY_DIR}/usr
 install_file 0755 "${ROOT_DIR}/systemd/showroom-recovery-screen" "${OVERLAY_DIR}/usr/local/bin/showroom-recovery-screen"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-kiosk-recovery" "${OVERLAY_DIR}/usr/local/bin/showroom-kiosk-recovery"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-kiosk-retry" "${OVERLAY_DIR}/usr/local/bin/showroom-kiosk-retry"
+install_file 0755 "${ROOT_DIR}/systemd/showroom-kiosk-ready" "${OVERLAY_DIR}/usr/local/bin/showroom-kiosk-ready"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-update-guard" "${OVERLAY_DIR}/usr/local/bin/showroom-update-guard"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-network-recovery" "${OVERLAY_DIR}/usr/local/bin/showroom-network-recovery"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-network-onboarding" "${OVERLAY_DIR}/usr/local/bin/showroom-network-onboarding"

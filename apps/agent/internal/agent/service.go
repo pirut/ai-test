@@ -80,6 +80,10 @@ func New(cfg config.Config) (*Service, error) {
 
 func (s *Service) Run(ctx context.Context) error {
 	_ = s.store.Update(func(next *state.DeviceState) { next.Health.AgentRestarts++ })
+	kioskCompatibilityApplied, kioskCompatibilityErr := ensureKioskRuntimeCompatibility()
+	if kioskCompatibilityErr != nil {
+		log.Printf("kiosk runtime compatibility failed: %v", kioskCompatibilityErr)
+	}
 	server := local.NewServer(s.config, s.store)
 	httpServer := &http.Server{
 		Addr:    s.config.ListenAddr,
@@ -99,11 +103,54 @@ func (s *Service) Run(ctx context.Context) error {
 	go s.runHealthLoop(ctx)
 	go s.runWatchdogLoop(ctx)
 	_ = systemdnotify.Ready()
+	if kioskCompatibilityApplied {
+		go func() {
+			time.Sleep(time.Second)
+			_ = s.runShell(ctx, "systemctl reset-failed showroom-kiosk.service")
+			if err := s.runShell(ctx, "systemctl restart showroom-kiosk.service"); err != nil {
+				log.Printf("kiosk compatibility restart failed: %v", err)
+			}
+		}()
+	}
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+func ensureKioskRuntimeCompatibility() (bool, error) {
+	const sourcePath = "/usr/local/bin/showroom-start-kiosk"
+	const notifyLine = "systemd-notify --ready --pid=\"$$\""
+	const compatibilityPath = "/run/showroom-start-kiosk-compat"
+	const dropInDirectory = "/run/systemd/system/showroom-kiosk.service.d"
+	const dropInPath = dropInDirectory + "/10-showroom-readiness.conf"
+
+	source, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return false, nil
+	}
+	if !strings.Contains(string(source), notifyLine) {
+		return false, nil
+	}
+
+	compatibility := strings.ReplaceAll(string(source), notifyLine, ": # readiness is managed by systemd Type=simple")
+	if err := os.WriteFile(compatibilityPath, []byte(compatibility), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(dropInDirectory, 0o755); err != nil {
+		return false, err
+	}
+	dropIn := "[Service]\nType=simple\nNotifyAccess=none\nExecStart=\nExecStart=" + compatibilityPath + "\n"
+	if err := os.WriteFile(dropInPath, []byte(dropIn), 0o644); err != nil {
+		return false, err
+	}
+	command := exec.Command("systemctl", "daemon-reload")
+	if output, err := command.CombinedOutput(); err != nil {
+		return false, fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	log.Printf("installed runtime compatibility for legacy kiosk readiness handshake")
+	return true, nil
 }
 
 func (s *Service) runWatchdogLoop(ctx context.Context) {

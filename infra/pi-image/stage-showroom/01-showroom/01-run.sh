@@ -26,6 +26,7 @@ install -D -m 0644 "${SHOWROOM_DIR}/config/config.env" "${ROOTFS_DIR}/etc/showro
 install -D -m 0644 "${SHOWROOM_DIR}/config/Xwrapper.config" "${ROOTFS_DIR}/etc/X11/Xwrapper.config"
 install -D -m 0644 "${SHOWROOM_DIR}/config/99-modesetting.conf" "${ROOTFS_DIR}/etc/X11/xorg.conf.d/99-modesetting.conf"
 install -D -m 0755 "${SHOWROOM_DIR}/systemd/start-kiosk.sh" "${ROOTFS_DIR}/usr/local/bin/showroom-start-kiosk"
+install -D -m 0755 "${SHOWROOM_DIR}/systemd/showroom-kiosk-ready" "${ROOTFS_DIR}/usr/local/bin/showroom-kiosk-ready"
 install -D -m 0755 "${ARTIFACTS_DIR}/showroom-agent" "${ROOTFS_DIR}/usr/local/bin/showroom-agent"
 install -D -m 0644 "${SHOWROOM_DIR}/boot/network.env.example" "${ROOTFS_DIR}/boot/network.env.example"
 mkdir -p "${ROOTFS_DIR}/opt/showroom/player"
