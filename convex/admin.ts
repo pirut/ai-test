@@ -11,6 +11,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
+import { serializeScreenDetail } from "./screenSerialization";
 import {
   hashValue,
   randomToken,
@@ -605,36 +606,7 @@ export const getScreenDetail = query({
       ? await ctx.db.get(device.defaultPlaylistId)
       : await showroom.getDefaultPlaylist(ctx, orgId, device);
 
-    return {
-      id: device._id,
-      name: device.name ?? "Unnamed screen",
-      siteName: device.siteName ?? "Unassigned",
-      status: showroom.deriveDeviceStatus(device),
-      lastHeartbeatAt: new Date(device.lastHeartbeatAt ?? device._creationTime).toISOString(),
-      screenshotUrl: device.screenshotUrl ?? null,
-      currentPlaylistName:
-        device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
-      manifestVersion: device.manifestVersion ?? null,
-      desiredAgentVersion: device.desiredAgentVersion ?? null,
-      desiredPlayerVersion: device.desiredPlayerVersion ?? null,
-      agentVersion: device.agentVersion ?? null,
-      appVersion: device.appVersion ?? null,
-      releaseChannel: device.releaseChannel ?? null,
-      hardwareProfile: device.hardwareProfile ?? null,
-      currentAssetId: device.currentAssetId ?? null,
-      fleetManagementState: isFleetManagedDevice(device) ? "managed" : "legacy",
-      applianceGeneration: device.applianceGeneration ?? null,
-      agentProtocolVersion: device.agentProtocolVersion ?? null,
-      capabilities: device.capabilities ?? [],
-      applianceActivatedAt: device.applianceActivatedAt
-        ? new Date(device.applianceActivatedAt).toISOString()
-        : null,
-      health: device.health ?? null,
-      timezone: device.timezone,
-      orientation: device.orientation,
-      volume: device.volume,
-      defaultPlaylistId: device.defaultPlaylistId ?? defaultPlaylist?._id ?? null,
-    };
+    return serializeScreenDetail(device, defaultPlaylist);
   },
 });
 
@@ -1801,21 +1773,7 @@ export const updateScreen = mutation({
       ? await ctx.db.get(updated.defaultPlaylistId)
       : await showroom.getDefaultPlaylist(ctx, orgId, updated);
 
-    return {
-      id: updated._id,
-      name: updated.name ?? "Unnamed screen",
-      siteName: updated.siteName ?? "Unassigned",
-      status: showroom.deriveDeviceStatus(updated),
-      lastHeartbeatAt: new Date(updated.lastHeartbeatAt ?? updated._creationTime).toISOString(),
-      screenshotUrl: updated.screenshotUrl ?? null,
-      currentPlaylistName:
-        updated.currentPlaylistName ?? defaultPlaylist?.name ?? null,
-      manifestVersion: updated.manifestVersion ?? null,
-      timezone: updated.timezone,
-      orientation: updated.orientation,
-      volume: updated.volume,
-      defaultPlaylistId: updated.defaultPlaylistId ?? defaultPlaylist?._id ?? null,
-    };
+    return serializeScreenDetail(updated, defaultPlaylist);
   },
 });
 
