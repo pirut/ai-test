@@ -133,6 +133,8 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 	if !strings.Contains(string(source), notifyLine) {
 		return false, nil
 	}
+	execStartOutput, _ := exec.Command("systemctl", "show", "showroom-kiosk.service", "--property=ExecStart", "--value").Output()
+	restartNeeded := !strings.Contains(string(execStartOutput), compatibilityPath)
 
 	if err := os.MkdirAll(filepath.Dir(compatibilityPath), 0o755); err != nil {
 		return false, err
@@ -153,7 +155,7 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 		return false, fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	log.Printf("installed runtime compatibility for legacy kiosk readiness handshake")
-	return true, nil
+	return restartNeeded, nil
 }
 
 func (s *Service) runWatchdogLoop(ctx context.Context) {
@@ -297,7 +299,12 @@ func (s *Service) poll(ctx context.Context) error {
 	current = s.store.Snapshot()
 
 	if err := s.syncManifest(ctx, current.Credential); err != nil {
-		s.recordError(err)
+		if shouldExposeManifestSyncError(filepath.Join(s.config.StateRoot, "manifest.json")) {
+			s.recordError(err)
+		} else {
+			log.Printf("background manifest hydration failed: %v", err)
+			_ = s.store.Update(func(next *state.DeviceState) { next.LastError = "" })
+		}
 	} else {
 		_ = s.store.Update(func(next *state.DeviceState) {
 			next.LastError = ""
@@ -309,6 +316,10 @@ func (s *Service) poll(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func shouldExposeManifestSyncError(manifestPath string) bool {
+	return !fileExists(manifestPath)
 }
 
 func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState) error {

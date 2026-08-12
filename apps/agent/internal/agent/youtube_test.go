@@ -108,3 +108,18 @@ func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
 		t.Fatal("cloned asset records changed with the source map")
 	}
 }
+
+func TestManifestHydrationErrorIsHiddenAfterFirstPlayableManifest(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	if !shouldExposeManifestSyncError(manifestPath) {
+		t.Fatal("initial sync failure should remain visible before any playable content exists")
+	}
+	if err := os.WriteFile(manifestPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if shouldExposeManifestSyncError(manifestPath) {
+		t.Fatal("background hydration failure should not replace a healthy playback state")
+	}
+}
