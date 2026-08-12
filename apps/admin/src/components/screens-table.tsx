@@ -1,15 +1,66 @@
 "use client";
 
+import type { DeviceSummary } from "@showroom/contracts";
+import { ExternalLink, MoreHorizontal, Monitor, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { DeviceSummary } from "@showroom/contracts";
-import { ExternalLink, MoreHorizontal, Search, Trash2 } from "lucide-react";
 
 import { RemoveScreenDialog } from "@/components/remove-screen-dialog";
 import { StatusPill } from "@/components/status-pill";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatRelativeTimestamp } from "@/lib/utils";
+
+const statusItems = [
+  { label: "All screens", value: "all" },
+  { label: "Online", value: "online" },
+  { label: "Stale", value: "stale" },
+  { label: "Offline", value: "offline" },
+  { label: "Unclaimed", value: "unclaimed" },
+];
 
 function healthLabel(device: DeviceSummary) {
   if (device.fleetManagementState === "legacy") return "Waiting for appliance flash";
@@ -18,10 +69,6 @@ function healthLabel(device: DeviceSummary) {
   if ((device.health?.signalPercent ?? 100) < 25) return `Weak Wi-Fi · ${device.health?.signalPercent}%`;
   if ((device.health?.cpuTemperatureC ?? 0) >= 80) return `High temperature · ${device.health?.cpuTemperatureC?.toFixed(0)}°C`;
   return "Healthy";
-}
-
-function healthTone(device: DeviceSummary) {
-  return healthLabel(device) === "Healthy" ? "text-signal" : "text-warning";
 }
 
 export function ScreensTable({ initialDevices, canAdmin }: { initialDevices: DeviceSummary[]; canAdmin: boolean }) {
@@ -42,114 +89,130 @@ export function ScreensTable({ initialDevices, canAdmin }: { initialDevices: Dev
 
   return (
     <>
-      <section className="dashboard-surface overflow-hidden rounded-lg">
-        <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search screens or sites"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+      <Card>
+        <CardHeader className="border-b sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="w-full max-w-md">
+            <Field>
+              <FieldLabel className="sr-only" htmlFor="screen-search">Search screens</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="screen-search"
+                  placeholder="Search screens, sites, or playlists"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <InputGroupAddon><Search /></InputGroupAddon>
+              </InputGroup>
+            </Field>
           </div>
-          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            Status
-            <select
-              className="h-9 rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
-              <option value="all">All screens</option>
-              <option value="online">Online</option>
-              <option value="stale">Stale</option>
-              <option value="offline">Offline</option>
-              <option value="unclaimed">Unclaimed</option>
-            </select>
-          </label>
-        </div>
+          <div className="w-full sm:w-44">
+            <Field>
+              <FieldLabel className="sr-only" htmlFor="screen-status">Filter by status</FieldLabel>
+              <Select
+                items={statusItems}
+                value={status}
+                onValueChange={(nextStatus) => setStatus(nextStatus ?? "all")}
+              >
+                <SelectTrigger id="screen-status" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {statusItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </CardHeader>
 
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border bg-[var(--surface-low)] text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                <th className="px-5 py-3">Screen</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Now playing</th>
-                <th className="px-4 py-3">Health</th>
-                <th className="px-4 py-3">Last seen</th>
-                <th className="w-14 px-4 py-3"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((device) => (
-                <tr key={device.id} className="group transition-colors hover:bg-[var(--surface-low)]">
-                  <td className="px-5 py-4">
-                    <Link href={`/screens/${device.id}`} className="font-medium text-foreground hover:text-primary">
-                      {device.name}
-                    </Link>
-                    <p className="mt-1 text-xs text-muted-foreground">{device.siteName}</p>
-                  </td>
-                  <td className="px-4 py-4"><StatusPill label={device.status} status={device.status} /></td>
-                  <td className="max-w-56 px-4 py-4 text-sm text-foreground">
-                    <span className="block truncate">{device.currentPlaylistName ?? "No playlist"}</span>
-                  </td>
-                  <td className={`px-4 py-4 text-sm font-medium ${healthTone(device)}`}>{healthLabel(device)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-sm text-muted-foreground">
-                    {formatRelativeTimestamp(device.lastHeartbeatAt)}
-                  </td>
-                  <td className="relative px-4 py-4 text-right">
-                    <details className="relative inline-block">
-                      <summary className="flex size-8 cursor-pointer list-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${device.name}`}>
-                        <MoreHorizontal className="size-4" />
-                      </summary>
-                      <div className="absolute right-0 top-9 z-20 w-40 rounded-lg border border-border bg-popover p-1 text-left shadow-lg">
-                        <Link href={`/screens/${device.id}`} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted">
-                          <ExternalLink className="size-4" /> View details
+        <CardContent className="px-0">
+          {filtered.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Screen</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Now playing</TableHead>
+                  <TableHead className="hidden md:table-cell">Health</TableHead>
+                  <TableHead className="hidden sm:table-cell">Last seen</TableHead>
+                  <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((device) => {
+                  const health = healthLabel(device);
+                  return (
+                    <TableRow key={device.id}>
+                      <TableCell className="pl-4">
+                        <Link href={`/screens/${device.id}`} className="inline-flex items-center gap-2 font-medium hover:underline">
+                          <Monitor />
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate">{device.name}</span>
+                            <span className="truncate text-xs font-normal text-muted-foreground">{device.siteName}</span>
+                          </span>
                         </Link>
-                        {canAdmin ? (
-                          <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10" onClick={() => setRemoveTarget(device)}>
-                            <Trash2 className="size-4" /> Remove screen
-                          </button>
-                        ) : null}
-                      </div>
-                    </details>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      </TableCell>
+                      <TableCell><StatusPill label={device.status} status={device.status} /></TableCell>
+                      <TableCell className="hidden max-w-56 lg:table-cell">
+                        <span className="block truncate">{device.currentPlaylistName ?? "No playlist"}</span>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant={health === "Healthy" ? "success" : "warning"}>{health}</Badge>
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground sm:table-cell">
+                        {formatRelativeTimestamp(device.lastHeartbeatAt)}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={<Button aria-label={`Actions for ${device.name}`} size="icon-sm" variant="ghost" />}
+                          >
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem render={<Link href={`/screens/${device.id}`} />}>
+                                <ExternalLink />
+                                View details
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                            {canAdmin ? (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem variant="destructive" onClick={() => setRemoveTarget(device)}>
+                                    <Trash2 />
+                                    Remove screen
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                              </>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Monitor /></EmptyMedia>
+                <EmptyTitle>No matching screens</EmptyTitle>
+                <EmptyDescription>Try a different search term or status filter.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
 
-        <div className="divide-y divide-border md:hidden">
-          {filtered.map((device) => (
-            <article key={device.id} className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <Link href={`/screens/${device.id}`} className="font-semibold text-foreground">{device.name}</Link>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{device.siteName}</p>
-                </div>
-                <StatusPill label={device.status} status={device.status} />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                <div><p className="text-muted-foreground">Now playing</p><p className="mt-1 truncate font-medium text-foreground">{device.currentPlaylistName ?? "No playlist"}</p></div>
-                <div><p className="text-muted-foreground">Last seen</p><p className="mt-1 font-medium text-foreground">{formatRelativeTimestamp(device.lastHeartbeatAt)}</p></div>
-              </div>
-              <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                <p className={`text-xs font-medium ${healthTone(device)}`}>{healthLabel(device)}</p>
-                {canAdmin ? <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setRemoveTarget(device)}><Trash2 className="size-4" />Remove</Button> : null}
-              </div>
-            </article>
-          ))}
-        </div>
-
-        {filtered.length === 0 ? (
-          <div className="px-5 py-12 text-center text-sm text-muted-foreground">No screens match these filters.</div>
-        ) : null}
-        <div className="border-t border-border bg-[var(--surface-low)] px-5 py-3 text-xs text-muted-foreground">
+        <CardFooter className="text-xs text-muted-foreground">
           Showing {filtered.length} of {devices.length} screens
-        </div>
-      </section>
+        </CardFooter>
+      </Card>
 
       <RemoveScreenDialog
         screen={removeTarget}

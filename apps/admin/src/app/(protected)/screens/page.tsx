@@ -9,7 +9,7 @@ export default async function ScreensPage() {
   const [devices, session] = await Promise.all([listDevices(orgId), getAuthSession()]);
 
   return (
-    <div className="space-y-7">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Screens"
         description="Find a screen, inspect its playback and health, or safely remove it from the fleet."

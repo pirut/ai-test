@@ -1,31 +1,35 @@
 "use client";
 
-import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
   CalendarRange,
   CircleCheck,
   ImageIcon,
   LayoutDashboard,
-  Menu,
   MonitorSmartphone,
   Package2,
   PlaySquare,
-  Settings2,
   Users,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
@@ -59,77 +63,88 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
   const currentSection = navItems.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   ) ?? navItems[0];
-  const CurrentIcon = currentSection.icon;
 
   return (
-    <SidebarProvider className="dashboard-theme">
-      <Sidebar className="w-60">
-        <SidebarHeader className="px-5 py-5">
-          <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-xs font-bold text-white shadow-sm">
-              DC
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-sidebar-foreground">Digital Curator</div>
-              <div className="truncate text-[10px] uppercase tracking-[0.2em] text-sidebar-foreground/45">
-                Fleet operations
-              </div>
-            </div>
-          </Link>
-
+    <SidebarProvider
+      className="dashboard-theme"
+      style={
+        {
+          "--sidebar-width": "16rem",
+          "--sidebar-width-icon": "3.25rem",
+        } as React.CSSProperties
+      }
+    >
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive
+                size="lg"
+                tooltip="Digital Curator"
+                render={<Link href="/dashboard" />}
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground">
+                  DC
+                </span>
+                <span className="grid min-w-0 flex-1 text-left leading-tight">
+                  <span className="truncate font-semibold">Digital Curator</span>
+                  <span className="truncate text-xs text-sidebar-foreground/60">Fleet operations</span>
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarHeader>
 
         <SidebarContent>
-          <div>
-            <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">
-              Workspace
-            </div>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {navItems.map((item) => {
+                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const Icon = item.icon;
 
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      render={<Link href={item.href} />}
-                    >
-                      <Icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </div>
-
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        render={<Link href={item.href} />}
+                        tooltip={item.label}
+                      >
+                        <Icon />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="border-t border-sidebar-border p-4">
-          <div className="flex items-center gap-2 rounded-lg bg-white/[0.045] px-3 py-2.5">
-            <CircleCheck className="size-4 text-emerald-400" />
-            <div>
-              <p className="text-xs font-medium text-sidebar-foreground">Control plane online</p>
-              <p className="mt-0.5 text-[10px] text-sidebar-foreground/45">Monitoring fleet</p>
-            </div>
-          </div>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" tooltip="Control plane online">
+                <CircleCheck className="text-signal" />
+                <span className="grid min-w-0 flex-1 text-left leading-tight">
+                  <span className="truncate text-xs font-medium">Control plane online</span>
+                  <span className="truncate text-xs text-sidebar-foreground/60">Monitoring fleet</span>
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
+        <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
-        <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
-          <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
-            <SidebarTrigger className="md:hidden">
-              <Menu className="size-4" />
-              <span className="sr-only">Open navigation</span>
-            </SidebarTrigger>
-
-            <Link href="/dashboard" className="mr-1 flex size-8 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-white md:hidden">DC</Link>
-            <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-              <CurrentIcon className="hidden size-4 text-primary sm:block" />
-              <span className="truncate">{currentSection.label}</span>
-            </div>
+      <SidebarInset className="min-h-svh">
+        <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur-sm">
+          <div className="flex h-14 items-center gap-2 px-4 sm:px-6 lg:px-8">
+            <SidebarTrigger />
+            <Separator orientation="vertical" className="mx-1 h-4" />
+            <span className="truncate text-sm font-medium">{currentSection.label}</span>
 
             <div className="ml-auto flex items-center gap-2">
               {authEnabled ? (
@@ -146,37 +161,17 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
                   <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
                 </>
               ) : (
-                <span className="rounded-md border border-warning/20 bg-warning/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
-                  Local demo
-                </span>
+                <Badge variant="outline">Local demo</Badge>
               )}
             </div>
           </div>
-
         </header>
 
-        <main className="flex-1">
-          <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1500px] flex-col gap-6 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">
+        <div className="flex flex-1 flex-col">
+          <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             {children}
           </div>
-        </main>
-        <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
-          {[
-            { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-            { href: "/screens", label: "Screens", icon: MonitorSmartphone },
-            { href: "/media", label: "Media", icon: ImageIcon },
-            { href: "/playlists", label: "More", icon: Settings2 },
-          ].map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-            return (
-              <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-1 rounded-md py-1 text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
-                <Icon className="size-5" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
