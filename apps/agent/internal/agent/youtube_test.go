@@ -96,6 +96,38 @@ func TestKioskRuntimeCompatibilityIsNoopOffAppliance(t *testing.T) {
 	}
 }
 
+func TestKioskPlaylistCompatibilityAppendsWithoutRestarting(t *testing.T) {
+	t.Parallel()
+
+	legacy := `MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json
+token_payload = {
+    "playlist": playlist_paths,
+}
+launch_browser() {
+}
+launch_mpv() {
+  APP_MODE="mpv"
+}
+  if [[ "${DESIRED_MODE}" != "${APP_MODE}" ]]; then
+  fi
+`
+	patched := applyKioskPlaylistCompatibility(legacy)
+	for _, expected := range []string{
+		"MPV_LOADED_PLAYLIST=/tmp/showroom-mpv-loaded.m3u",
+		`"playlistId": payload.get("playlistId", "")`,
+		"sync_mpv_playlist()",
+		`MPV_PLAYLIST_PATH="${playlist_path}"`,
+		"if ! sync_mpv_playlist; then",
+	} {
+		if !strings.Contains(patched, expected) {
+			t.Fatalf("patched kiosk script is missing %q", expected)
+		}
+	}
+	if strings.Contains(patched, `"playlist": playlist_paths`) {
+		t.Fatal("playlist contents still force a player restart")
+	}
+}
+
 func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
 	t.Parallel()
 
@@ -106,5 +138,48 @@ func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
 	original["asset-2"] = state.AssetRecord{FileName: "asset-2.mp4", Checksum: "youtube:test-2"}
 	if _, exists := cloned["asset-2"]; exists {
 		t.Fatal("cloned asset records changed with the source map")
+	}
+}
+
+func TestManifestHydrationErrorIsHiddenAfterFirstPlayableManifest(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	if !shouldExposeManifestSyncError(manifestPath) {
+		t.Fatal("initial sync failure should remain visible before any playable content exists")
+	}
+	if err := os.WriteFile(manifestPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if shouldExposeManifestSyncError(manifestPath) {
+		t.Fatal("background hydration failure should not replace a healthy playback state")
+	}
+}
+
+func TestManifestHydrationBuildsAPlayablePairBeforeLargerBatches(t *testing.T) {
+	t.Parallel()
+
+	if got := manifestHydrationDownloadLimit(0); got != 2 {
+		t.Fatalf("empty cache download limit = %d, want 2", got)
+	}
+	if got := manifestHydrationDownloadLimit(1); got != 1 {
+		t.Fatalf("single asset download limit = %d, want 1", got)
+	}
+	if got := manifestHydrationDownloadLimit(2); got != hydrationBatchSize {
+		t.Fatalf("playable cache download limit = %d, want %d", got, hydrationBatchSize)
+	}
+}
+
+func TestManifestPlaylistSizeIncludesScheduledAssets(t *testing.T) {
+	t.Parallel()
+
+	manifest := &remote.DeviceManifest{
+		DefaultPlaylist: []remote.ManifestPlaylistItem{{AssetID: "default"}},
+		ScheduleWindows: []remote.ScheduleWindow{{
+			Playlist: []remote.ManifestPlaylistItem{{AssetID: "scheduled-1"}, {AssetID: "scheduled-2"}},
+		}},
+	}
+	if got := manifestPlaylistSize(manifest); got != 3 {
+		t.Fatalf("manifest playlist size = %d, want 3", got)
 	}
 }

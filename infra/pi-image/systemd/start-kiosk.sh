@@ -24,6 +24,7 @@ CURRENT_PLAYLIST_ID=""
 LAST_PLAYBACK_REPORT=0
 MPV_SOCKET=/tmp/showroom-mpv.sock
 MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json
+MPV_LOADED_PLAYLIST=/tmp/showroom-mpv-loaded.m3u
 
 if ! command -v startx >/dev/null 2>&1; then
   echo "startx not found; install the xinit package" >&2
@@ -177,7 +178,7 @@ token_payload = {
     "manifestVersion": payload.get("manifestVersion", ""),
     "volume": int(volume),
     "orientation": orientation,
-    "playlist": playlist_paths,
+    "playlistId": payload.get("playlistId", ""),
 }
 
 token = hashlib.sha256(json.dumps(token_payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -202,6 +203,7 @@ report_playback() {
   LAST_PLAYBACK_REPORT="${now}"
   python3 - "${CURRENT_ASSET_ID}" "${CURRENT_PLAYLIST_ID}" "${MPV_SOCKET}" "${MPV_ASSET_MAP}" <<'PY' >/dev/null 2>&1 || true
 import json
+import os
 import socket
 import sys
 import urllib.request
@@ -230,6 +232,38 @@ request = urllib.request.Request(
     method="POST",
 )
 urllib.request.urlopen(request, timeout=2).read()
+PY
+}
+
+sync_mpv_playlist() {
+  [[ "${APP_MODE}" == "mpv" && -S "${MPV_SOCKET}" && -f "${MPV_LOADED_PLAYLIST}" ]] || return 0
+
+  python3 - "${MPV_PLAYLIST_PATH:-/tmp/showroom-mpv-playlist.m3u}" "${MPV_LOADED_PLAYLIST}" "${MPV_SOCKET}" <<'PY'
+import json
+import socket
+import sys
+
+def read_playlist(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return [line.strip() for line in handle if line.strip() and not line.startswith("#")]
+
+desired = read_playlist(sys.argv[1])
+loaded = read_playlist(sys.argv[2])
+if desired[:len(loaded)] != loaded:
+    raise SystemExit(2)
+
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect(sys.argv[3])
+    for path in desired[len(loaded):]:
+        client.sendall((json.dumps({"command": ["loadfile", path, "append"]}) + "\n").encode("utf-8"))
+        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+        if response.get("error") != "success":
+            raise SystemExit(3)
+
+with open(sys.argv[2] + ".next", "w", encoding="utf-8") as handle:
+    handle.write("\n".join(desired) + ("\n" if desired else ""))
+os.replace(sys.argv[2] + ".next", sys.argv[2])
 PY
 }
 
@@ -297,6 +331,8 @@ launch_mpv() {
   setsid mpv "${args[@]}" &
   APP_PID=$!
   APP_MODE="mpv"
+  MPV_PLAYLIST_PATH="${playlist_path}"
+  tail -n +2 "${playlist_path}" > "${MPV_LOADED_PLAYLIST}"
 }
 
 while true; do
@@ -321,6 +357,12 @@ while true; do
 
   if [[ -n "${APP_PID}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
     APP_PID=""
+  fi
+
+  if [[ "${DESIRED_MODE}" == "mpv" && "${APP_MODE}" == "mpv" && "${DESIRED_TOKEN}" == "${APP_TOKEN}" && -n "${APP_PID}" ]]; then
+    if ! sync_mpv_playlist; then
+      APP_TOKEN=""
+    fi
   fi
 
   if [[ "${DESIRED_MODE}" != "${APP_MODE}" || "${DESIRED_TOKEN}" != "${APP_TOKEN}" || -z "${APP_PID}" ]]; then
