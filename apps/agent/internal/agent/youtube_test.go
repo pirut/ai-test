@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
@@ -100,22 +101,44 @@ func TestKioskPlaylistCompatibilityAppendsWithoutRestarting(t *testing.T) {
 	t.Parallel()
 
 	legacy := `MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json
+cleanup() {
+  if [[ -n "${X_PID}" ]]; then
+    kill "${X_PID}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
 token_payload = {
     "playlist": playlist_paths,
 }
 launch_browser() {
 }
 launch_mpv() {
+  local playlist_path="$3"
+  local args=(
+    "--playlist=${playlist_path}"
+  )
+  rm -f "${MPV_SOCKET}"
   APP_MODE="mpv"
 }
+  CURRENT_PLAYLIST_ID="${runtime_lines[8]:-${CURRENT_MANIFEST_VERSION}}"
+  launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}"
   if [[ "${DESIRED_MODE}" != "${APP_MODE}" ]]; then
   fi
 `
 	patched := applyKioskPlaylistCompatibility(legacy)
 	for _, expected := range []string{
 		"MPV_LOADED_PLAYLIST=/tmp/showroom-mpv-loaded.m3u",
+		"APP_AUDIO_DEVICE=\"\"",
+		`pkill -TERM -P "${X_PID}"`,
+		"trap 'exit 0' INT TERM",
 		`"playlistId": payload.get("playlistId", "")`,
 		"sync_mpv_playlist()",
+		"detect_mpv_audio_device()",
+		`cat "${card_path}/id"`,
+		`"--audio-device=${audio_device}"`,
+		`"--playlist-start=${start_index}"`,
+		`START_INDEX="${runtime_lines[9]:-0}"`,
+		`"${PLAYLIST_PATH}" "${START_INDEX}"`,
 		`MPV_PLAYLIST_PATH="${playlist_path}"`,
 		"if ! sync_mpv_playlist; then",
 	} {
@@ -125,6 +148,41 @@ launch_mpv() {
 	}
 	if strings.Contains(patched, `"playlist": playlist_paths`) {
 		t.Fatal("playlist contents still force a player restart")
+	}
+}
+
+func TestHydrationFailureBackoffDefersUnavailableAsset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
+	service := &Service{now: func() time.Time { return now }}
+	key := "asset-1:checksum-1"
+	if !service.canAttemptHydration(key) {
+		t.Fatal("new asset should be eligible for hydration")
+	}
+	service.recordHydrationFailure(key, fmt.Errorf("yt-dlp download failed: This video is not available"))
+	if service.canAttemptHydration(key) {
+		t.Fatal("permanently unavailable asset should be deferred")
+	}
+	now = now.Add(unavailableAssetRetryDelay)
+	if !service.canAttemptHydration(key) {
+		t.Fatal("asset should be retried after the unavailable-content delay")
+	}
+}
+
+func TestHydrationFailureBackoffClearsAfterSuccess(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
+	service := &Service{now: func() time.Time { return now }}
+	key := "asset-1:checksum-1"
+	service.recordHydrationFailure(key, fmt.Errorf("temporary network failure"))
+	if service.canAttemptHydration(key) {
+		t.Fatal("transiently failing asset should be deferred")
+	}
+	service.clearHydrationFailure(key)
+	if !service.canAttemptHydration(key) {
+		t.Fatal("successful hydration should clear retry state")
 	}
 }
 
