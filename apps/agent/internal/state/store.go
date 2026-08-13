@@ -38,6 +38,7 @@ type HealthSnapshot struct {
 	IPAddress            string  `json:"ipAddress,omitempty"`
 	PlayerHealthy        bool    `json:"playerHealthy"`
 	PlayerHeartbeatAt    string  `json:"playerHeartbeatAt,omitempty"`
+	PlayerProgressAt     string  `json:"playerProgressAt,omitempty"`
 	AgentRestarts        int     `json:"agentRestarts,omitempty"`
 	PlayerRestarts       int     `json:"playerRestarts,omitempty"`
 	RollbackCount        int     `json:"rollbackCount,omitempty"`
@@ -63,6 +64,8 @@ type DeviceState struct {
 	PreviousCachedAssets    map[string]AssetRecord      `json:"previousCachedAssets,omitempty"`
 	PreviousManifestVersion string                      `json:"previousManifestVersion,omitempty"`
 	LastPlayerHeartbeatAt   string                      `json:"lastPlayerHeartbeatAt,omitempty"`
+	LastPlayerProgressAt    string                      `json:"lastPlayerProgressAt,omitempty"`
+	PlayerPositionSeconds   float64                     `json:"playerPositionSeconds,omitempty"`
 	PlayerState             string                      `json:"playerState,omitempty"`
 	Health                  HealthSnapshot              `json:"health"`
 	CompletedCommands       map[string]CompletedCommand `json:"completedCommands,omitempty"`

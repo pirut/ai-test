@@ -162,6 +162,53 @@ func ensureKioskRuntimeCompatibility() (bool, error) {
 }
 
 func applyKioskPlaylistCompatibility(script string) string {
+	script = strings.ReplaceAll(script,
+		`    "manifestVersion": payload.get("manifestVersion", ""),`+"\n",
+		"",
+	)
+	if !strings.Contains(script, `"positionSeconds": position_seconds`) {
+		const legacyPlaybackReporter = `asset_id = sys.argv[1] or None
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(1)
+        client.connect(sys.argv[3])
+        client.sendall(b'{"command":["get_property","path"]}\n')
+        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+    with open(sys.argv[4], "r", encoding="utf-8") as handle:
+        asset_id = json.load(handle).get(response.get("data"), asset_id)
+except (OSError, ValueError, KeyError):
+    pass
+
+payload = json.dumps({
+    "assetId": asset_id,
+    "playlistId": sys.argv[2] or None,
+    "state": "playing",
+}).encode("utf-8")`
+		const progressPlaybackReporter = `asset_id = sys.argv[1] or None
+position_seconds = None
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(1)
+        client.connect(sys.argv[3])
+        responses = client.makefile("r", encoding="utf-8")
+        client.sendall(b'{"command":["get_property","path"]}\n')
+        path_response = json.loads(responses.readline())
+        client.sendall(b'{"command":["get_property","time-pos"]}\n')
+        position_response = json.loads(responses.readline())
+    with open(sys.argv[4], "r", encoding="utf-8") as handle:
+        asset_id = json.load(handle).get(path_response.get("data"), asset_id)
+    position_seconds = float(position_response.get("data"))
+except (OSError, TypeError, ValueError, KeyError):
+    raise SystemExit(0)
+
+payload = json.dumps({
+    "assetId": asset_id,
+    "playlistId": sys.argv[2] or None,
+    "state": "playing",
+    "positionSeconds": position_seconds,
+}).encode("utf-8")`
+		script = strings.Replace(script, legacyPlaybackReporter, progressPlaybackReporter, 1)
+	}
 	if !strings.Contains(script, "MPV_LOADED_PLAYLIST=") {
 		script = strings.Replace(script,
 			"MPV_ASSET_MAP=/tmp/showroom-mpv-assets.json\n",
@@ -218,12 +265,22 @@ PY
 			1,
 		)
 	}
-	if !strings.Contains(script, "if ! sync_mpv_playlist; then") {
+	const legacySyncCall = `    if ! sync_mpv_playlist; then
+      APP_TOKEN=""
+    fi`
+	const guardedSyncCall = `    if sync_mpv_playlist; then
+      :
+    else
+      sync_status="$?"
+      if [[ "${sync_status}" == "2" ]]; then
+        APP_TOKEN=""
+      fi
+    fi`
+	script = strings.ReplaceAll(script, legacySyncCall, guardedSyncCall)
+	if !strings.Contains(script, `if [[ "${sync_status}" == "2" ]]; then`) {
 		const syncCall = `
   if [[ "${DESIRED_MODE}" == "mpv" && "${APP_MODE}" == "mpv" && "${DESIRED_TOKEN}" == "${APP_TOKEN}" && -n "${APP_PID}" ]]; then
-    if ! sync_mpv_playlist; then
-      APP_TOKEN=""
-    fi
+` + guardedSyncCall + `
   fi
 `
 		script = strings.Replace(script,
@@ -266,6 +323,7 @@ func (s *Service) runHealthLoop(ctx context.Context) {
 		snapshot := health.Collect(ctx, health.Input{
 			HardwareProfile:       s.config.HardwareProfile,
 			LastPlayerHeartbeatAt: current.LastPlayerHeartbeatAt,
+			LastPlayerProgressAt:  current.LastPlayerProgressAt,
 			PlayerStaleAfter:      s.config.PlayerStaleAfter,
 			AgentRestarts:         current.Health.AgentRestarts,
 			PlayerRestarts:        current.Health.PlayerRestarts,
@@ -587,7 +645,7 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		}
 
 		item.URL = "/assets/" + fileName
-		if item.AssetType == "video" {
+		if item.AssetType == "video" && item.DurationSeconds <= 0 {
 			duration, err := probeMediaDuration(ctx, destPath)
 			if err != nil {
 				return item, false, fmt.Errorf("probe video %s: %w", item.AssetID, err)

@@ -2,6 +2,7 @@ package local
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,19 +42,28 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload struct {
-		AssetID    string `json:"assetId"`
-		PlaylistID string `json:"playlistId"`
-		State      string `json:"state"`
+		AssetID         string   `json:"assetId"`
+		PlaylistID      string   `json:"playlistId"`
+		State           string   `json:"state"`
+		PositionSeconds *float64 `json:"positionSeconds"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
 		http.Error(w, "invalid playback status", http.StatusBadRequest)
 		return
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	if err := s.store.Update(func(next *state.DeviceState) {
-		next.CurrentAssetID = strings.TrimSpace(payload.AssetID)
+		assetID := strings.TrimSpace(payload.AssetID)
+		if payload.PositionSeconds != nil && (next.LastPlayerProgressAt == "" || next.CurrentAssetID != assetID || math.Abs(next.PlayerPositionSeconds-*payload.PositionSeconds) >= 0.5) {
+			next.LastPlayerProgressAt = now
+		}
+		if payload.PositionSeconds != nil {
+			next.PlayerPositionSeconds = *payload.PositionSeconds
+		}
+		next.CurrentAssetID = assetID
 		next.CurrentPlaylistID = strings.TrimSpace(payload.PlaylistID)
 		next.PlayerState = strings.TrimSpace(payload.State)
-		next.LastPlayerHeartbeatAt = time.Now().UTC().Format(time.RFC3339)
+		next.LastPlayerHeartbeatAt = now
 	}); err != nil {
 		http.Error(w, "unable to persist playback status", http.StatusInternalServerError)
 		return
@@ -66,9 +76,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	current := s.store.Snapshot()
 	if r.URL.Query().Get("deep") == "1" && current.Credential != "" {
-		heartbeatAt, err := time.Parse(time.RFC3339, current.LastPlayerHeartbeatAt)
-		if err != nil || time.Since(heartbeatAt) > s.config.PlayerStaleAfter {
-			http.Error(w, "player heartbeat is stale", http.StatusServiceUnavailable)
+		livenessAt := current.LastPlayerHeartbeatAt
+		staleMessage := "player heartbeat is stale"
+		if current.LastPlayerProgressAt != "" {
+			livenessAt = current.LastPlayerProgressAt
+			staleMessage = "player progress is stale"
+		}
+		observedAt, err := time.Parse(time.RFC3339, livenessAt)
+		if err != nil || time.Since(observedAt) > s.config.PlayerStaleAfter {
+			http.Error(w, staleMessage, http.StatusServiceUnavailable)
 			return
 		}
 	}

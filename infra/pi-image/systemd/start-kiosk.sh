@@ -175,7 +175,6 @@ if payload.get("mode") == "mpv" and playlist_paths:
 token_payload = {
     "mode": payload.get("mode", "browser"),
     "browserUrl": payload.get("browserUrl", "http://127.0.0.1:4173"),
-    "manifestVersion": payload.get("manifestVersion", ""),
     "volume": int(volume),
     "orientation": orientation,
     "playlistId": payload.get("playlistId", ""),
@@ -209,21 +208,27 @@ import sys
 import urllib.request
 
 asset_id = sys.argv[1] or None
+position_seconds = None
 try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(1)
         client.connect(sys.argv[3])
+        responses = client.makefile("r", encoding="utf-8")
         client.sendall(b'{"command":["get_property","path"]}\n')
-        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+        path_response = json.loads(responses.readline())
+        client.sendall(b'{"command":["get_property","time-pos"]}\n')
+        position_response = json.loads(responses.readline())
     with open(sys.argv[4], "r", encoding="utf-8") as handle:
-        asset_id = json.load(handle).get(response.get("data"), asset_id)
-except (OSError, ValueError, KeyError):
-    pass
+        asset_id = json.load(handle).get(path_response.get("data"), asset_id)
+    position_seconds = float(position_response.get("data"))
+except (OSError, TypeError, ValueError, KeyError):
+    raise SystemExit(0)
 
 payload = json.dumps({
     "assetId": asset_id,
     "playlistId": sys.argv[2] or None,
     "state": "playing",
+    "positionSeconds": position_seconds,
 }).encode("utf-8")
 request = urllib.request.Request(
     "http://127.0.0.1:4173/local/playback",
@@ -360,8 +365,13 @@ while true; do
   fi
 
   if [[ "${DESIRED_MODE}" == "mpv" && "${APP_MODE}" == "mpv" && "${DESIRED_TOKEN}" == "${APP_TOKEN}" && -n "${APP_PID}" ]]; then
-    if ! sync_mpv_playlist; then
-      APP_TOKEN=""
+    if sync_mpv_playlist; then
+      :
+    else
+      sync_status="$?"
+      if [[ "${sync_status}" == "2" ]]; then
+        APP_TOKEN=""
+      fi
     fi
   fi
 
