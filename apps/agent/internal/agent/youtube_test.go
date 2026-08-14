@@ -108,6 +108,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 token_payload = {
+    "manifestVersion": payload.get("manifestVersion", ""),
     "playlist": playlist_paths,
 }
 launch_browser() {
@@ -140,7 +141,7 @@ launch_mpv() {
 		`START_INDEX="${runtime_lines[9]:-0}"`,
 		`"${PLAYLIST_PATH}" "${START_INDEX}"`,
 		`MPV_PLAYLIST_PATH="${playlist_path}"`,
-		"if ! sync_mpv_playlist; then",
+		`if [[ "${sync_status}" == "2" ]]; then`,
 	} {
 		if !strings.Contains(patched, expected) {
 			t.Fatalf("patched kiosk script is missing %q", expected)
@@ -148,6 +149,46 @@ launch_mpv() {
 	}
 	if strings.Contains(patched, `"playlist": playlist_paths`) {
 		t.Fatal("playlist contents still force a player restart")
+	}
+	if strings.Contains(patched, `"manifestVersion": payload.get("manifestVersion", ""),`) {
+		t.Fatal("metadata-only manifest versions still force the active video to restart")
+	}
+	if strings.Contains(patched, "if ! sync_mpv_playlist; then") {
+		t.Fatal("a transient MPV IPC error still forces the active video to restart")
+	}
+}
+
+func TestKioskPlaybackCompatibilityReportsActualProgress(t *testing.T) {
+	t.Parallel()
+
+	legacy := `asset_id = sys.argv[1] or None
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(1)
+        client.connect(sys.argv[3])
+        client.sendall(b'{"command":["get_property","path"]}\n')
+        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+    with open(sys.argv[4], "r", encoding="utf-8") as handle:
+        asset_id = json.load(handle).get(response.get("data"), asset_id)
+except (OSError, ValueError, KeyError):
+    pass
+
+payload = json.dumps({
+    "assetId": asset_id,
+    "playlistId": sys.argv[2] or None,
+    "state": "playing",
+}).encode("utf-8")
+`
+
+	patched := applyKioskPlaylistCompatibility(legacy)
+	for _, expected := range []string{
+		`"time-pos"`,
+		`"positionSeconds": position_seconds`,
+		"raise SystemExit(0)",
+	} {
+		if !strings.Contains(patched, expected) {
+			t.Fatalf("patched kiosk progress reporter is missing %q", expected)
+		}
 	}
 }
 
@@ -196,6 +237,45 @@ func TestCloneAssetRecordsDoesNotShareMutableMap(t *testing.T) {
 	original["asset-2"] = state.AssetRecord{FileName: "asset-2.mp4", Checksum: "youtube:test-2"}
 	if _, exists := cloned["asset-2"]; exists {
 		t.Fatal("cloned asset records changed with the source map")
+	}
+}
+
+func TestCachedManifestReusesKnownDurationWithoutFFprobe(t *testing.T) {
+	root := t.TempDir()
+	stateRoot := filepath.Join(root, "state")
+	storageRoot := filepath.Join(root, "cache")
+	if err := os.MkdirAll(storageRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storageRoot, "asset-1.mp4"), []byte("cached-video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.Open(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(next *state.DeviceState) {
+		next.CachedAssets["asset-1"] = state.AssetRecord{FileName: "asset-1.mp4", Checksum: "youtube:test"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", t.TempDir())
+	service := &Service{config: config.Config{StateRoot: stateRoot, StorageRoot: storageRoot}, store: store}
+	manifest := &remote.DeviceManifest{
+		ManifestVersion: "manifest-1",
+		DefaultPlaylist: []remote.ManifestPlaylistItem{{
+			AssetID: "asset-1", AssetType: "video", URL: "https://example.test/video", DurationSeconds: 153,
+		}},
+		AssetChecksums: map[string]string{"asset-1": "youtube:test"},
+	}
+
+	_, localManifest, err := service.cacheManifest(context.Background(), manifest)
+	if err != nil {
+		t.Fatalf("cache unchanged manifest: %v", err)
+	}
+	if got := localManifest.DefaultPlaylist[0].DurationSeconds; got != 153 {
+		t.Fatalf("cached duration = %d, want 153", got)
 	}
 }
 

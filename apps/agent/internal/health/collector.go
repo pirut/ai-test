@@ -16,6 +16,7 @@ import (
 type Input struct {
 	HardwareProfile       string
 	LastPlayerHeartbeatAt string
+	LastPlayerProgressAt  string
 	PlayerStaleAfter      time.Duration
 	AgentRestarts         int
 	PlayerRestarts        int
@@ -39,13 +40,18 @@ func Collect(ctx context.Context, input Input) state.HealthSnapshot {
 		ThrottledFlags:       command(ctx, "vcgencmd", "get_throttled"),
 		HDMIConnected:        hdmiConnected(),
 		PlayerHeartbeatAt:    input.LastPlayerHeartbeatAt,
+		PlayerProgressAt:     input.LastPlayerProgressAt,
 		AgentRestarts:        input.AgentRestarts,
 		PlayerRestarts:       input.PlayerRestarts,
 		RollbackCount:        max(input.RollbackCount, readInteger("/var/lib/showroom/state/rollback-count")),
 	}
-	if input.LastPlayerHeartbeatAt != "" {
-		if heartbeatAt, err := time.Parse(time.RFC3339, input.LastPlayerHeartbeatAt); err == nil {
-			snapshot.PlayerHealthy = now.Sub(heartbeatAt) <= input.PlayerStaleAfter
+	livenessAt := input.LastPlayerHeartbeatAt
+	if input.LastPlayerProgressAt != "" {
+		livenessAt = input.LastPlayerProgressAt
+	}
+	if livenessAt != "" {
+		if observedAt, err := time.Parse(time.RFC3339, livenessAt); err == nil {
+			snapshot.PlayerHealthy = now.Sub(observedAt) <= input.PlayerStaleAfter
 		}
 	}
 	if runtime.GOOS != "linux" {
