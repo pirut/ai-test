@@ -18,6 +18,7 @@ APP_PID=""
 X_PID=""
 APP_MODE=""
 APP_TOKEN=""
+APP_AUDIO_DEVICE=""
 CURRENT_ASSET_ID=""
 CURRENT_MANIFEST_VERSION=""
 CURRENT_PLAYLIST_ID=""
@@ -90,15 +91,51 @@ set_display_mode() {
   xrandr --output "${DISPLAY_OUTPUT}" --mode "${DISPLAY_MODE_FALLBACK}" "${rate_args[@]}" || true
 }
 
+detect_display_output() {
+  if [[ -n "${SHOWROOM_DISPLAY_OUTPUT:-}" ]]; then
+    DISPLAY_OUTPUT="${SHOWROOM_DISPLAY_OUTPUT}"
+    return
+  fi
+
+  local connected
+  connected="$(xrandr --query 2>/dev/null | awk '$2 == "connected" { print $1; exit }')"
+  if [[ -n "${connected}" ]]; then
+    DISPLAY_OUTPUT="${connected}"
+  fi
+}
+
+detect_mpv_audio_device() {
+  if [[ -n "${SHOWROOM_AUDIO_DEVICE:-}" ]]; then
+    printf '%s\n' "${SHOWROOM_AUDIO_DEVICE}"
+    return
+  fi
+
+  local card_path card_index eld_path card_name
+  for card_path in /proc/asound/card*; do
+    [[ -d "${card_path}" ]] || continue
+    card_index="${card_path##*card}"
+    for eld_path in "${card_path}"/eld*; do
+      [[ -r "${eld_path}" ]] || continue
+      grep -q $'^monitor_name[[:space:]]\+[^[:space:]]' "${eld_path}" || continue
+      card_name="$(cat "${card_path}/id" 2>/dev/null)"
+      [[ -n "${card_name}" ]] || continue
+      printf 'alsa/hdmi:CARD=%s,DEV=0\n' "${card_name}"
+      return
+    done
+  done
+}
+
 cleanup() {
   stop_app
   if [[ -n "${X_PID}" ]]; then
+    pkill -TERM -P "${X_PID}" 2>/dev/null || true
     kill "${X_PID}" 2>/dev/null || true
     wait "${X_PID}" 2>/dev/null || true
   fi
 }
 
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 0' INT TERM
 
 echo "Starting X11/Openbox on tty7" >&2
 startx /usr/bin/openbox-session -- :0 vt7 -nolisten tcp &
@@ -125,6 +162,7 @@ fi
 # Debian trixie installs the classic implementation under this explicit name;
 # the historical /usr/bin/unclutter alias is no longer provided.
 unclutter-classic -idle 0.1 -root &
+detect_display_output
 set_display_mode
 
 fetch_runtime() {
@@ -191,6 +229,7 @@ print(playlist_path if playlist_paths else "")
 print(payload.get("manifestVersion", ""))
 print((playlist[0].get("assetId") or playlist[0].get("id") or "") if playlist else "")
 print(payload.get("playlistId", ""))
+print(int(payload.get("startIndex", 0) or 0))
 PY
 }
 
@@ -302,6 +341,9 @@ launch_mpv() {
   local volume="$1"
   local orientation="$2"
   local playlist_path="$3"
+  local start_index="$4"
+  local audio_device
+  audio_device="$(detect_mpv_audio_device)"
 
   if ! command -v mpv >/dev/null 2>&1; then
     launch_browser "http://127.0.0.1:4173"
@@ -324,6 +366,7 @@ launch_mpv() {
     "--input-ipc-server=${MPV_SOCKET}"
     "--video-rotate=${orientation}"
     "--playlist=${playlist_path}"
+    "--playlist-start=${start_index}"
   )
 
   if [[ "${volume}" -le 0 ]]; then
@@ -332,10 +375,16 @@ launch_mpv() {
     args+=("--volume=${volume}")
   fi
 
+  if [[ -n "${audio_device}" ]]; then
+    args+=("--audio-device=${audio_device}")
+    echo "Routing audio to ${audio_device}" >&2
+  fi
+
   rm -f "${MPV_SOCKET}"
   setsid mpv "${args[@]}" &
   APP_PID=$!
   APP_MODE="mpv"
+  APP_AUDIO_DEVICE="${audio_device}"
   MPV_PLAYLIST_PATH="${playlist_path}"
   tail -n +2 "${playlist_path}" > "${MPV_LOADED_PLAYLIST}"
 }
@@ -359,6 +408,7 @@ while true; do
   CURRENT_MANIFEST_VERSION="${runtime_lines[6]:-}"
   CURRENT_ASSET_ID="${runtime_lines[7]:-}"
   CURRENT_PLAYLIST_ID="${runtime_lines[8]:-${CURRENT_MANIFEST_VERSION}}"
+  START_INDEX="${runtime_lines[9]:-0}"
 
   if [[ -n "${APP_PID}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
     APP_PID=""
@@ -378,7 +428,7 @@ while true; do
   if [[ "${DESIRED_MODE}" != "${APP_MODE}" || "${DESIRED_TOKEN}" != "${APP_TOKEN}" || -z "${APP_PID}" ]]; then
     stop_app
     if [[ "${DESIRED_MODE}" == "mpv" && -n "${PLAYLIST_PATH}" ]]; then
-      launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}"
+      launch_mpv "${VOLUME}" "${ORIENTATION}" "${PLAYLIST_PATH}" "${START_INDEX}"
     else
       launch_browser "${BROWSER_URL}"
     fi
