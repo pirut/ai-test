@@ -907,11 +907,14 @@ export function getClaimStatus(input: { deviceSessionId: string; claimToken: str
       entry.deviceSessionId === input.deviceSessionId &&
       entry.claimToken === input.claimToken,
   );
+  if (!registration) {
+    throw new Error("Unknown registration");
+  }
 
   return claimStatusResponseSchema.parse({
-    claimed: Boolean(registration?.claimedDeviceId && registration?.credential),
-    deviceId: registration?.claimedDeviceId,
-    credential: registration?.credential,
+    claimed: Boolean(registration.claimedDeviceId && registration.credential),
+    deviceId: registration.claimedDeviceId,
+    credential: registration.credential,
     pollAgainSeconds: 15,
   });
 }

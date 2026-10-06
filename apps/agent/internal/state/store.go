@@ -1,10 +1,14 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type AssetRecord struct {
@@ -58,6 +62,7 @@ type DeviceState struct {
 	LastHeartbeatAt         string                      `json:"lastHeartbeatAt,omitempty"`
 	LastScreenshotAt        string                      `json:"lastScreenshotAt,omitempty"`
 	LastError               string                      `json:"lastError,omitempty"`
+	LastCloudContactAt      string                      `json:"lastCloudContactAt,omitempty"`
 	CurrentAssetID          string                      `json:"currentAssetId,omitempty"`
 	CurrentPlaylistID       string                      `json:"currentPlaylistId,omitempty"`
 	CachedAssets            map[string]AssetRecord      `json:"cachedAssets,omitempty"`
@@ -72,18 +77,28 @@ type DeviceState struct {
 }
 
 type PlayerStatus struct {
-	Claimed         bool   `json:"claimed"`
-	DeviceID        string `json:"deviceId,omitempty"`
-	ClaimCode       string `json:"claimCode,omitempty"`
-	ManifestVersion string `json:"manifestVersion,omitempty"`
-	LastSyncAt      string `json:"lastSyncAt,omitempty"`
-	LastError       string `json:"lastError,omitempty"`
+	Claimed            bool   `json:"claimed"`
+	DeviceID           string `json:"deviceId,omitempty"`
+	ClaimCode          string `json:"claimCode,omitempty"`
+	ManifestVersion    string `json:"manifestVersion,omitempty"`
+	LastSyncAt         string `json:"lastSyncAt,omitempty"`
+	LastError          string `json:"lastError,omitempty"`
+	Online             bool   `json:"online"`
+	LastCloudContactAt string `json:"lastCloudContactAt,omitempty"`
 }
 
+// CloudContactFreshness is how recently the agent must have reached the
+// control plane for the screen to count as online.
+const CloudContactFreshness = 2 * time.Minute
+
 type Store struct {
-	path  string
-	state DeviceState
-	mu    sync.RWMutex
+	path      string
+	state     DeviceState
+	mu        sync.RWMutex
+	lastSaved []byte
+	// lastIdentity is the identity last written to the backup file. The backup
+	// is only rewritten when pairing or credentials change, which is rare.
+	lastIdentity string
 }
 
 func Open(root string) (*Store, error) {
@@ -100,11 +115,8 @@ func Open(root string) (*Store, error) {
 		},
 	}
 
-	payload, err := os.ReadFile(store.path)
-	if err == nil {
-		if err := json.Unmarshal(payload, &store.state); err != nil {
-			return nil, err
-		}
+	if loaded, ok := store.load(); ok {
+		store.state = loaded
 		if store.state.CachedAssets == nil {
 			store.state.CachedAssets = map[string]AssetRecord{}
 		}
@@ -121,6 +133,39 @@ func Open(root string) (*Store, error) {
 	}
 
 	return store, nil
+}
+
+// load reads the state file, falling back to the identity backup when the main
+// file was corrupted (for example by a power cut mid-write). A screen that
+// cannot parse its state must still boot: crash-looping here would leave the
+// display dark until someone re-flashes it.
+func (s *Store) load() (DeviceState, bool) {
+	for _, path := range []string{s.path, s.backupPath()} {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var loaded DeviceState
+		if err := json.Unmarshal(payload, &loaded); err != nil {
+			log.Printf("device state %s is unreadable: %v", path, err)
+			continue
+		}
+		if path != s.path {
+			log.Printf("recovered device state from %s", path)
+		}
+		return loaded, true
+	}
+	if _, err := os.Stat(s.path); err == nil {
+		corruptPath := fmt.Sprintf("%s.corrupt-%d", s.path, time.Now().Unix())
+		if err := os.Rename(s.path, corruptPath); err == nil {
+			log.Printf("moved unreadable device state to %s and started fresh", corruptPath)
+		}
+	}
+	return DeviceState{}, false
+}
+
+func (s *Store) backupPath() string {
+	return s.path + ".bak"
 }
 
 func (s *Store) Snapshot() DeviceState {
@@ -160,13 +205,19 @@ func (s *Store) Update(apply func(*DeviceState)) error {
 
 func (s *Store) PlayerStatus() PlayerStatus {
 	current := s.Snapshot()
+	online := false
+	if contactAt, err := time.Parse(time.RFC3339, current.LastCloudContactAt); err == nil {
+		online = time.Since(contactAt) < CloudContactFreshness
+	}
 	return PlayerStatus{
-		Claimed:         current.Credential != "",
-		DeviceID:        current.DeviceID,
-		ClaimCode:       current.ClaimCode,
-		ManifestVersion: current.ManifestVersion,
-		LastSyncAt:      current.LastSyncAt,
-		LastError:       current.LastError,
+		Claimed:            current.Credential != "",
+		DeviceID:           current.DeviceID,
+		ClaimCode:          current.ClaimCode,
+		ManifestVersion:    current.ManifestVersion,
+		LastSyncAt:         current.LastSyncAt,
+		LastError:          current.LastError,
+		Online:             online,
+		LastCloudContactAt: current.LastCloudContactAt,
 	}
 }
 
@@ -175,11 +226,52 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-
-	tempPath := s.path + ".tmp"
-	if err := os.WriteFile(tempPath, payload, 0o644); err != nil {
-		return err
+	if bytes.Equal(payload, s.lastSaved) {
+		// Nothing changed. Skipping the write spares the SD card.
+		return nil
 	}
 
-	return os.Rename(tempPath, s.path)
+	if err := WriteFileAtomic(s.path, payload, 0o644); err != nil {
+		return err
+	}
+	s.lastSaved = payload
+
+	identity := s.state.DeviceSessionID + "\x00" + s.state.ClaimToken + "\x00" + s.state.DeviceID + "\x00" + s.state.Credential
+	if identity != s.lastIdentity {
+		if err := WriteFileAtomic(s.backupPath(), payload, 0o600); err != nil {
+			log.Printf("unable to write device state backup: %v", err)
+		} else {
+			s.lastIdentity = identity
+		}
+	}
+	return nil
+}
+
+// WriteFileAtomic replaces path with payload so that a power cut leaves either
+// the old or the new content, never a truncated file.
+func WriteFileAtomic(path string, payload []byte, perm os.FileMode) error {
+	tempPath := path + ".tmp"
+	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(payload); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+	return nil
 }

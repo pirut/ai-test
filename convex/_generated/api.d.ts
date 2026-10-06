@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as credentialPolicy from "../credentialPolicy.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as device from "../device.js";
@@ -27,6 +28,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  credentialPolicy: typeof credentialPolicy;
   crons: typeof crons;
   dashboard: typeof dashboard;
   device: typeof device;

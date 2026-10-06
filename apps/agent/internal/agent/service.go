@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -60,6 +61,15 @@ type Service struct {
 	hydrationMu       sync.Mutex
 	hydrationFailures map[string]hydrationFailure
 	now               func() time.Time
+
+	// syncMu serializes pairing, credential refresh and manifest sync.
+	syncMu      sync.Mutex
+	syncTrigger chan struct{}
+
+	authMu                   sync.Mutex
+	rejectedCredential       string
+	credentialRejections     int
+	firstCredentialRejection time.Time
 }
 
 func New(cfg config.Config) (*Service, error) {
@@ -91,6 +101,7 @@ func New(cfg config.Config) (*Service, error) {
 		start:             time.Now(),
 		hydrationFailures: make(map[string]hydrationFailure),
 		now:               time.Now,
+		syncTrigger:       make(chan struct{}, 1),
 	}, nil
 }
 
@@ -159,7 +170,8 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
-	go s.runPollLoop(ctx)
+	go s.runSyncLoop(ctx)
+	go s.runCommandLoop(ctx)
 	go s.runHeartbeatLoop(ctx)
 	go s.runScreenshotLoop(ctx)
 	go s.runHealthLoop(ctx)
@@ -532,31 +544,11 @@ func (s *Service) runHealthLoop(ctx context.Context) {
 	}
 }
 
-func (s *Service) runPollLoop(ctx context.Context) {
-	if err := s.poll(ctx); err != nil {
-		log.Printf("initial poll failed: %v", err)
-	}
-
-	ticker := time.NewTicker(s.config.PollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := s.poll(ctx); err != nil {
-				log.Printf("poll failed: %v", err)
-			}
-		}
-	}
-}
-
 func (s *Service) runHeartbeatLoop(ctx context.Context) {
 	send := func() {
 		snapshot := s.store.Snapshot()
 		if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
-			s.recordError(err)
+			s.noteRequestError(snapshot.Credential, err)
 			log.Printf("heartbeat failed: %v", err)
 		}
 	}
@@ -593,109 +585,6 @@ func (s *Service) runScreenshotLoop(ctx context.Context) {
 	}
 }
 
-func (s *Service) poll(ctx context.Context) error {
-	current := s.store.Snapshot()
-	if current.Credential == "" {
-		if err := s.ensureClaimFlow(ctx, current); err != nil {
-			s.recordError(err)
-			return err
-		}
-		return nil
-	}
-
-	if err := s.ensureCredentialFresh(ctx, current); err != nil {
-		s.recordError(err)
-		return err
-	}
-	current = s.store.Snapshot()
-
-	if err := s.syncManifest(ctx, current.Credential); err != nil {
-		if shouldExposeManifestSyncError(filepath.Join(s.config.StateRoot, "manifest.json")) {
-			s.recordError(err)
-		} else {
-			log.Printf("background manifest hydration failed: %v", err)
-			_ = s.store.Update(func(next *state.DeviceState) { next.LastError = "" })
-		}
-	} else {
-		_ = s.store.Update(func(next *state.DeviceState) {
-			next.LastError = ""
-		})
-	}
-
-	if err := s.processCommands(ctx, current.Credential); err != nil {
-		s.recordError(err)
-	}
-
-	return nil
-}
-
-func shouldExposeManifestSyncError(manifestPath string) bool {
-	return !fileExists(manifestPath)
-}
-
-func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState) error {
-	if current.DeviceSessionID == "" || current.ClaimToken == "" {
-		registration, err := s.client.RegisterTemporary(ctx)
-		if err != nil {
-			return err
-		}
-
-		return s.store.Update(func(next *state.DeviceState) {
-			next.DeviceSessionID = registration.DeviceSessionID
-			next.ClaimCode = registration.ClaimCode
-			next.ClaimToken = registration.ClaimToken
-			next.LastError = ""
-		})
-	}
-
-	status, err := s.client.ClaimStatus(ctx, current.DeviceSessionID, current.ClaimToken)
-	if err != nil {
-		return err
-	}
-	if !status.Claimed {
-		return nil
-	}
-
-	if err := s.store.Update(func(next *state.DeviceState) {
-		next.DeviceID = status.DeviceID
-		next.Credential = status.Credential
-		next.CredentialExpiresAt = expiresAtRFC3339(status.ExpiresInSeconds)
-		next.ClaimCode = ""
-		next.ClaimToken = ""
-		next.LastError = ""
-	}); err != nil {
-		return err
-	}
-
-	if err := s.syncManifest(ctx, status.Credential); err != nil {
-		return err
-	}
-	return s.maybeSendHeartbeat(ctx, s.store.Snapshot())
-}
-
-func (s *Service) ensureCredentialFresh(ctx context.Context, current state.DeviceState) error {
-	if current.Credential == "" {
-		return nil
-	}
-
-	expiresAt, needsRefresh := credentialNeedsRefresh(current.CredentialExpiresAt)
-	if !needsRefresh {
-		_ = expiresAt
-		return nil
-	}
-
-	refreshed, err := s.client.RefreshAuth(ctx, current.Credential)
-	if err != nil {
-		return err
-	}
-
-	return s.store.Update(func(next *state.DeviceState) {
-		next.DeviceID = refreshed.DeviceID
-		next.Credential = refreshed.Credential
-		next.CredentialExpiresAt = expiresAtRFC3339(refreshed.ExpiresInSeconds)
-	})
-}
-
 func (s *Service) syncManifest(ctx context.Context, credential string) error {
 	manifest, err := s.client.FetchManifest(ctx, credential)
 	if err != nil {
@@ -709,15 +598,26 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		return err
 	}
 
+	if s.store.Snapshot().Credential != credential {
+		// The screen was unpaired while media downloaded. Do not resurrect
+		// content for an account it no longer belongs to.
+		return fmt.Errorf("device credential changed during sync")
+	}
+
 	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
 	previousManifestPath := filepath.Join(s.config.StateRoot, "manifest.previous.json")
-	if payload, err := os.ReadFile(manifestPath); err == nil {
-		if err := os.WriteFile(previousManifestPath+".tmp", payload, 0o644); err == nil {
-			_ = os.Rename(previousManifestPath+".tmp", previousManifestPath)
-		}
-	}
-	if err := writeJSONFile(manifestPath, localManifest); err != nil {
+	nextPayload, err := json.MarshalIndent(localManifest, "", "  ")
+	if err != nil {
 		return err
+	}
+	if existing, readErr := os.ReadFile(manifestPath); readErr != nil || !bytes.Equal(existing, nextPayload) {
+		// Only touch the SD card when the playlist actually changed.
+		if readErr == nil {
+			_ = state.WriteFileAtomic(previousManifestPath, existing, 0o644)
+		}
+		if err := state.WriteFileAtomic(manifestPath, nextPayload, 0o644); err != nil {
+			return err
+		}
 	}
 
 	if err := s.store.Update(func(next *state.DeviceState) {
@@ -725,7 +625,8 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		next.ManifestVersion = manifest.ManifestVersion
 		next.PreviousManifestVersion = previousState.ManifestVersion
 		next.PreviousCachedAssets = previousAssets
-		next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
+		next.LastSyncAt = nowRFC3339()
+		next.LastCloudContactAt = nowRFC3339()
 		next.CachedAssets = cachedAssets
 	}); err != nil {
 		return err
@@ -1082,6 +983,7 @@ func (s *Service) processCommands(ctx context.Context, credential string) error 
 	for _, command := range commands {
 		command := command
 		if err := s.executeCommand(ctx, credential, command); err != nil {
+			s.noteRequestError(credential, err)
 			log.Printf("command %s failed: %v", command.CommandType, err)
 		}
 	}
@@ -1096,16 +998,24 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 			"completedAt": completed.CompletedAt, "leaseToken": command.LeaseToken,
 		})
 	}
+	if command.CommandType == "reboot_device" {
+		// Report success before rebooting: the reboot kills this process, and
+		// an unreported command would be redelivered after boot and reboot the
+		// screen again. The stored result answers any redelivery instead.
+		if err := s.finishCommand(ctx, credential, command, nil); err != nil {
+			log.Printf("reboot result could not be reported yet: %v", err)
+		}
+		return s.runShell(ctx, s.config.RebootCommand)
+	}
+
 	var err error
 	switch command.CommandType {
 	case "sync_now":
-		err = s.syncManifest(ctx, credential)
+		err = s.syncNow(ctx, credential)
 	case "take_screenshot":
 		err = s.maybeUploadScreenshot(ctx, s.store.Snapshot(), true)
 	case "restart_player":
 		err = s.runShell(ctx, s.config.RestartPlayerCommand)
-	case "reboot_device":
-		err = s.runShell(ctx, s.config.RebootCommand)
 	case "blank_screen":
 		err = s.runShell(ctx, s.config.BlankScreenCommand)
 	case "unblank_screen":
@@ -1128,6 +1038,27 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 		err = fmt.Errorf("unsupported command: %s", command.CommandType)
 	}
 
+	if finishErr := s.finishCommand(ctx, credential, command, err); finishErr != nil {
+		return finishErr
+	}
+	return err
+}
+
+// syncNow runs a manifest sync for the dashboard's "Sync now" button. When the
+// background sync is already running it reports that instead of queueing a
+// second download behind it, so the command loop stays responsive.
+func (s *Service) syncNow(ctx context.Context, credential string) error {
+	if !s.syncMu.TryLock() {
+		s.requestSync()
+		return nil
+	}
+	defer s.syncMu.Unlock()
+	return s.syncManifest(ctx, credential)
+}
+
+// finishCommand persists a command's outcome locally, then reports it. The
+// local record lets a redelivered command be answered without running twice.
+func (s *Service) finishCommand(ctx context.Context, credential string, command remote.DeviceCommand, err error) error {
 	payload := map[string]interface{}{
 		"commandId": command.ID,
 		"status":    "succeeded",
@@ -1161,8 +1092,7 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 	if postErr := s.client.PostCommandResult(ctx, credential, payload); postErr != nil {
 		return fmt.Errorf("command result post failed: %w", postErr)
 	}
-
-	return err
+	return nil
 }
 
 func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceState) error {
@@ -1172,7 +1102,10 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 
 	if current.LastHeartbeatAt != "" {
 		lastHeartbeatAt, err := time.Parse(time.RFC3339, current.LastHeartbeatAt)
-		if err == nil && time.Since(lastHeartbeatAt) < s.config.HeartbeatInterval {
+		// Only skip a heartbeat that was just sent (for example right after
+		// claiming). Skipping anything under a full interval would halve the
+		// heartbeat rate, because ticks land slightly before the interval ends.
+		if err == nil && time.Since(lastHeartbeatAt) < s.config.HeartbeatInterval/2 {
 			return nil
 		}
 	}
@@ -1206,7 +1139,8 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 	}
 
 	return s.store.Update(func(next *state.DeviceState) {
-		next.LastHeartbeatAt = time.Now().UTC().Format(time.RFC3339)
+		next.LastHeartbeatAt = nowRFC3339()
+		next.LastCloudContactAt = nowRFC3339()
 	})
 }
 
@@ -1398,13 +1332,7 @@ func writeJSONFile(path string, value interface{}) error {
 	if err != nil {
 		return err
 	}
-
-	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, payload, 0o644); err != nil {
-		return err
-	}
-
-	return os.Rename(tempPath, path)
+	return state.WriteFileAtomic(path, payload, 0o644)
 }
 
 func diskUsage(path string) (freeBytes int64, totalBytes int64) {

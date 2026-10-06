@@ -12,6 +12,8 @@ type PlayerStatus = {
   manifestVersion?: string;
   lastSyncAt?: string;
   lastError?: string;
+  online?: boolean;
+  lastCloudContactAt?: string;
 };
 
 type WiFiStatus = {
@@ -190,13 +192,22 @@ export function PlayerApp() {
           const wifiStatus = nextWiFi ?? current.wifiStatus;
           const manifest = fetchedManifest ?? current.manifest;
 
+          if (playerStatus && !playerStatus.claimed) {
+            // An unpaired screen (new, or removed from its account) shows
+            // pairing, never content left over from a previous owner.
+            return {
+              ...current,
+              manifest: null,
+              playlist: [],
+              index: 0,
+              playerStatus,
+              wifiStatus,
+              status:
+                !wifiStatus?.connected && !playerStatus.claimCode ? "wifi-setup" : "unclaimed",
+            };
+          }
+
           if (!manifest) {
-            if (playerStatus && !playerStatus.claimed && !wifiStatus?.connected && !playerStatus.claimCode) {
-              return { ...current, playerStatus, wifiStatus, status: "wifi-setup" };
-            }
-            if (playerStatus && !playerStatus.claimed) {
-              return { ...current, playerStatus, wifiStatus, status: "unclaimed" };
-            }
             return {
               ...current,
               playerStatus,
@@ -454,7 +465,8 @@ export function PlayerApp() {
         )}
       </div>
 
-      {state.status === "offline" ? (
+      {state.status === "offline" ||
+      (state.playerStatus?.claimed && state.playerStatus.online === false) ? (
         <div className="playerStatus" role="status">Offline · playing saved content</div>
       ) : null}
       {state.playbackError ? (

@@ -11,6 +11,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
+import { deviceCredentialTtlMs } from "./credentialPolicy";
 import { serializeScreenDetail } from "./screenSerialization";
 import {
   hashValue,
@@ -19,7 +20,6 @@ import {
   requireOrgIdentity,
 } from "./lib";
 
-const deviceCredentialTtlMs = 24 * 60 * 60_000;
 const defaultFailureThresholdPercent = 10;
 
 function releaseCommandPayload(release: Doc<"releases">) {

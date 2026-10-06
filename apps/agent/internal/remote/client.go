@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -80,16 +82,77 @@ type DeviceCommand struct {
 	LeaseToken  string                 `json:"leaseToken,omitempty"`
 }
 
+// HTTPError is returned when the control plane answers with a non-2xx status,
+// so callers can tell "the server rejected this" apart from "the network is
+// down".
+type HTTPError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	detail := e.Body
+	if detail == "" {
+		detail = http.StatusText(e.StatusCode)
+	}
+	return fmt.Sprintf("%s %s failed: %s", e.Method, e.Path, detail)
+}
+
+func statusCode(err error) int {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode
+	}
+	return 0
+}
+
+// IsUnauthorized reports whether the server explicitly rejected the device
+// credential. Network failures and server errors are never unauthorized.
+func IsUnauthorized(err error) bool {
+	code := statusCode(err)
+	return code == http.StatusUnauthorized || code == http.StatusForbidden
+}
+
+// IsClaimSessionExpired reports whether the pairing session no longer exists
+// and the device must request a new claim code.
+func IsClaimSessionExpired(err error) bool {
+	code := statusCode(err)
+	return code == http.StatusGone || code == http.StatusNotFound
+}
+
+const downloadStallTimeout = 60 * time.Second
+
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	// downloadClient has no overall deadline: large videos on slow showroom
+	// Wi-Fi legitimately take many minutes. Stalls are caught per read instead.
+	downloadClient *http.Client
 }
 
 func New(baseURL string) *Client {
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          4,
+		ForceAttemptHTTP2:     true,
+	}
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: 45 * time.Second,
+			Timeout:   45 * time.Second,
+			Transport: transport,
+		},
+		downloadClient: &http.Client{
+			Transport: transport,
 		},
 	}
 }
@@ -224,8 +287,7 @@ func (c *Client) UploadScreenshot(ctx context.Context, credential string, device
 	defer response.Body.Close()
 
 	if response.StatusCode >= 400 {
-		payload, _ := io.ReadAll(response.Body)
-		return fmt.Errorf("screenshot upload failed: %s", strings.TrimSpace(string(payload)))
+		return newHTTPError(request, response)
 	}
 
 	return nil
@@ -240,7 +302,9 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 	if info, err := os.Stat(partialPath); err == nil {
 		partialSize = info.Size()
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	downloadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	request, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return err
 	}
@@ -248,12 +312,19 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", partialSize))
 	}
 
-	response, err := c.httpClient.Do(request)
+	response, err := c.downloadClient.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
 
+	if response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		// The partial file no longer matches the source (it changed or the
+		// partial is already complete). Start over on the next attempt instead
+		// of failing forever on the same stale range.
+		_ = os.Remove(partialPath)
+		return fmt.Errorf("download for %s restarted after an invalid resume range", sourceURL)
+	}
 	if response.StatusCode >= 400 {
 		return fmt.Errorf("download failed for %s: %s", sourceURL, response.Status)
 	}
@@ -270,9 +341,14 @@ func (c *Client) DownloadFile(ctx context.Context, sourceURL string, destPath st
 		return err
 	}
 
-	written, err := io.Copy(file, response.Body)
+	body := newStallReader(response.Body, downloadStallTimeout, cancel)
+	written, err := io.Copy(file, body)
+	body.Stop()
 	if err != nil {
 		file.Close()
+		if body.Stalled() {
+			return fmt.Errorf("download for %s stalled for %s; it will resume on the next attempt", sourceURL, downloadStallTimeout)
+		}
 		return err
 	}
 	if written == 0 && partialSize == 0 {
@@ -343,13 +419,66 @@ func (c *Client) doJSON(request *http.Request, out interface{}) error {
 	defer response.Body.Close()
 
 	if response.StatusCode >= 400 {
-		payload, _ := io.ReadAll(response.Body)
-		return fmt.Errorf("%s %s failed: %s", request.Method, request.URL.Path, strings.TrimSpace(string(payload)))
+		return newHTTPError(request, response)
 	}
 
 	if out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 		return nil
 	}
 
 	return json.NewDecoder(response.Body).Decode(out)
+}
+
+func newHTTPError(request *http.Request, response *http.Response) *HTTPError {
+	payload, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	return &HTTPError{
+		Method:     request.Method,
+		Path:       request.URL.Path,
+		StatusCode: response.StatusCode,
+		Body:       strings.TrimSpace(string(payload)),
+	}
+}
+
+// stallReader cancels a download when no bytes arrive for the stall timeout,
+// so a dead connection cannot hang hydration indefinitely.
+type stallReader struct {
+	reader  io.Reader
+	timer   *time.Timer
+	timeout time.Duration
+	stalled chan struct{}
+}
+
+func newStallReader(reader io.Reader, timeout time.Duration, cancel context.CancelFunc) *stallReader {
+	stalled := make(chan struct{})
+	return &stallReader{
+		reader:  reader,
+		timeout: timeout,
+		stalled: stalled,
+		timer: time.AfterFunc(timeout, func() {
+			close(stalled)
+			cancel()
+		}),
+	}
+}
+
+func (r *stallReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.timer.Reset(r.timeout)
+	}
+	return n, err
+}
+
+func (r *stallReader) Stop() {
+	r.timer.Stop()
+}
+
+func (r *stallReader) Stalled() bool {
+	select {
+	case <-r.stalled:
+		return true
+	default:
+		return false
+	}
 }
