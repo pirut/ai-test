@@ -135,6 +135,7 @@ export default defineSchema({
     issuedAt: v.number(),
     expiresAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
+    supersededAt: v.optional(v.number()),
   })
     .index("by_secret_hash", ["secretHash"])
     .index("by_device", ["deviceId"]),

@@ -8,7 +8,24 @@ const schema = z.object({
   claimToken: z.string(),
 });
 
+// The screen treats 410 as "this pairing code is dead, request a new one".
+const deadSessionPattern = /Unknown registration|Claim session expired|Invalid claim token/i;
+
 export async function POST(request: Request) {
-  const payload = schema.parse(await request.json());
-  return NextResponse.json(await getClaimStatus(payload));
+  const payload = schema.safeParse(await request.json().catch(() => null));
+  if (!payload.success) {
+    return NextResponse.json({ error: "Invalid claim status request" }, { status: 400 });
+  }
+
+  try {
+    return NextResponse.json(await getClaimStatus(payload.data));
+  } catch (error) {
+    if (error instanceof Error && deadSessionPattern.test(error.message)) {
+      return NextResponse.json(
+        { error: "Claim session expired", code: "claim_session_expired" },
+        { status: 410 },
+      );
+    }
+    throw error;
+  }
 }

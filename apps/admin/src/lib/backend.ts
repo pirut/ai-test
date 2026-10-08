@@ -15,7 +15,7 @@ import {
   claimStatusResponseSchema,
   deviceCommandSchema,
 } from "@showroom/contracts";
-import { ConvexHttpClient } from "convex/browser";
+import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 import { z } from "zod";
 
@@ -679,6 +679,58 @@ export async function getCommandsForCredential(credential: string | null) {
       return null;
     }
     throw error;
+  }
+}
+
+// Resolves as soon as the screen has a queued command, its credential stops
+// being accepted, the wait elapses, or the screen disconnects. Uses a Convex
+// subscription, so an idle screen costs one open subscription rather than a
+// stream of polls.
+export async function waitForDeviceCommands(
+  credential: string,
+  waitMs: number,
+  signal?: AbortSignal,
+) {
+  if (waitMs <= 0 || signal?.aborted) {
+    return;
+  }
+
+  if (!hasConvexBackend()) {
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline && !signal?.aborted) {
+      const device = mock.authenticateDevice(credential);
+      if (!device || mock.getCommandsForDevice(device.id).length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return;
+  }
+
+  if (!env.convexUrl || typeof WebSocket === "undefined") {
+    return;
+  }
+
+  const client = new ConvexClient(env.convexUrl);
+  try {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(finish, waitMs);
+      signal?.addEventListener("abort", finish, { once: true });
+      client.onUpdate(
+        api.device.hasQueuedCommands,
+        { credential },
+        (queued) => {
+          if (queued !== false) finish();
+        },
+        () => finish(),
+      );
+
+      function finish() {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", finish);
+        resolve();
+      }
+    });
+  } finally {
+    await client.close().catch(() => undefined);
   }
 }
 
