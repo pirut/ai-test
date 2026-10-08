@@ -5,10 +5,17 @@ import { z } from "zod";
 import { claimDevice } from "@/lib/backend";
 
 const schema = z.object({
-  claimCode: z.string().length(6),
-  name: z.string().min(2),
-  siteName: z.string().min(2),
+  claimCode: z
+    .string()
+    .trim()
+    .transform((value) => value.replace(/[\s-]/g, "").toUpperCase())
+    .pipe(z.string().length(6, "Claim codes are 6 characters")),
+  name: z.string().trim().min(2, "Give the screen a name of at least 2 characters"),
+  siteName: z.string().trim().min(2, "Give the site a name of at least 2 characters"),
 });
+
+const invalidCodeMessage =
+  "That code didn't match a screen waiting to pair. Check the code on the screen; it refreshes automatically if it expired.";
 
 export async function POST(request: Request) {
   const session = await getAuthSession();
@@ -20,15 +27,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Admin role required" }, { status: 403 });
   }
 
-  const payload = schema.parse(await request.json());
-  const result = await claimDevice({
-    orgId: session.orgId,
-    ...payload,
-  });
-
-  if (!result) {
-    return NextResponse.json({ error: "Invalid claim code" }, { status: 404 });
+  const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
+      { status: 400 },
+    );
   }
 
-  return NextResponse.json(result, { status: 201 });
+  let result: Awaited<ReturnType<typeof claimDevice>>;
+  try {
+    result = await claimDevice({ orgId: session.orgId, ...parsed.data });
+  } catch (error) {
+    if (error instanceof Error && /Invalid claim code/i.test(error.message)) {
+      return NextResponse.json({ error: invalidCodeMessage }, { status: 404 });
+    }
+    throw error;
+  }
+
+  if (!result) {
+    return NextResponse.json({ error: invalidCodeMessage }, { status: 404 });
+  }
+
+  // The device credential is for the screen only; never hand it to the browser.
+  return NextResponse.json({ deviceId: result.deviceId }, { status: 201 });
 }

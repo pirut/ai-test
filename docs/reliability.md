@@ -14,6 +14,7 @@ Showroom is designed to keep the last known-good playlist running when the netwo
 ## Cloud link
 
 - The agent runs three independent loops: sync (pairing, credential refresh, manifest and media), commands, and heartbeats. A long media download never delays a dashboard command, and commands never wait on a sync.
+- Commands are long-polled: the agent asks for commands with `waitSeconds=20`, and the server holds the request on a Convex subscription until a command is queued, so dashboard buttons act within about a second. Against a server that answers immediately, the agent falls back to polling every `SHOWROOM_POLL_INTERVAL`.
 - Connectivity failures (network errors, 5xx, 429) back off exponentially with jitter, capped at 2 minutes for sync and 1 minute for commands, and recover to the normal interval on the first success.
 - Device credentials last 24 hours and rotate an hour before expiry. A screen that was powered off or offline past expiry can still exchange its credential for up to 30 days. The previous credential keeps working for 10 minutes after a rotation, so a lost refresh response cannot lock a screen out.
 - An expired pairing code is replaced automatically: the claim-status endpoint answers 410 and the agent registers again, so the code on screen always works. A screen claimed just before its code expired still receives its credential.

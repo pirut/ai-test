@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAssetFileNameUsesMP4ForYouTube(t *testing.T) {
@@ -48,7 +49,7 @@ func TestHTTPErrorsAreClassified(t *testing.T) {
 	if !IsClaimSessionExpired(err) {
 		t.Fatalf("expected an expired claim session, got %v", err)
 	}
-	_, err = client.FetchCommands(context.Background(), "credential")
+	_, err = client.FetchCommands(context.Background(), "credential", 0)
 	if IsUnauthorized(err) || IsClaimSessionExpired(err) {
 		t.Fatalf("a 502 must not look like a rejection: %v", err)
 	}
@@ -77,5 +78,21 @@ func TestDownloadRestartsAfterInvalidResumeRange(t *testing.T) {
 	}
 	if payload, _ := os.ReadFile(dest); string(payload) != "fresh" {
 		t.Fatalf("unexpected content %q", payload)
+	}
+}
+
+func TestFetchCommandsRequestsLongPoll(t *testing.T) {
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"commands":[]}`))
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL).FetchCommands(context.Background(), "credential", 20*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if query != "waitSeconds=20" {
+		t.Fatalf("expected a long-poll request, got query %q", query)
 	}
 }

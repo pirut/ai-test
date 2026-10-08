@@ -105,18 +105,67 @@ func (s *Service) runSyncLoop(ctx context.Context) {
 	runLoop(ctx, "sync", s.config.PollInterval, syncMaxBackoff, s.syncTrigger, s.syncOnce)
 }
 
+// commandLongPollWait is how long the server may hold a command request open.
+// It stays under the HTTP client's response-header timeout.
+const commandLongPollWait = 20 * time.Second
+
+// runCommandLoop long-polls for commands so the dashboard's buttons act within
+// about a second. Against a server without long polling it falls back to the
+// normal poll interval.
 func (s *Service) runCommandLoop(ctx context.Context) {
-	runLoop(ctx, "command poll", s.config.PollInterval, commandMaxBackoff, nil, func(ctx context.Context) error {
+	failures := 0
+	for {
+		delay := backoffDelay(s.config.PollInterval, 0, commandMaxBackoff)
 		current := s.store.Snapshot()
-		if current.Credential == "" {
-			return nil
+		if current.Credential != "" {
+			started := time.Now()
+			count, err := s.processCommands(ctx, current.Credential, commandLongPollWait)
+			if err != nil {
+				s.noteRequestError(current.Credential, err)
+				log.Printf("command poll failed: %v", err)
+				if isConnectivityError(err) {
+					failures++
+				} else {
+					failures = 0
+				}
+			} else {
+				failures = 0
+			}
+			delay = nextCommandPollDelay(s.config.PollInterval, failures, count, err, time.Since(started))
 		}
-		err := s.processCommands(ctx, current.Credential)
-		if err != nil {
-			s.noteRequestError(current.Credential, err)
+
+		if delay <= 0 {
+			if ctx.Err() != nil {
+				return
+			}
+			continue
 		}
-		return err
-	})
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func nextCommandPollDelay(base time.Duration, failures int, count int, err error, elapsed time.Duration) time.Duration {
+	switch {
+	case err != nil:
+		return backoffDelay(base, failures, commandMaxBackoff)
+	case count > 0:
+		// More commands may be queued right behind these.
+		return 0
+	case elapsed >= commandLongPollWait/2:
+		// The server held the request, so it supports long polling: ask again
+		// right away and keep the line open.
+		return 0
+	default:
+		// The server answered immediately with nothing, so it does not long
+		// poll. Poll on the normal interval rather than hammering it.
+		return backoffDelay(base, 0, commandMaxBackoff)
+	}
 }
 
 // syncOnce owns pairing, credential refresh and manifest sync. It is the only

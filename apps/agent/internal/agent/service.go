@@ -974,10 +974,10 @@ func (s *Service) resolveYouTubeDLBinary(ctx context.Context) (string, error) {
 	return binaryPath, nil
 }
 
-func (s *Service) processCommands(ctx context.Context, credential string) error {
-	commands, err := s.client.FetchCommands(ctx, credential)
+func (s *Service) processCommands(ctx context.Context, credential string, wait time.Duration) (int, error) {
+	commands, err := s.client.FetchCommands(ctx, credential, wait)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	for _, command := range commands {
@@ -988,7 +988,7 @@ func (s *Service) processCommands(ctx context.Context, credential string) error 
 		}
 	}
 
-	return nil
+	return len(commands), nil
 }
 
 func (s *Service) executeCommand(ctx context.Context, credential string, command remote.DeviceCommand) error {

@@ -240,6 +240,27 @@ export const getManifest = query({
   },
 });
 
+// Subscribed to by the device commands endpoint while a screen long-polls, so a
+// command queued from the dashboard is delivered within about a second.
+// Returns null when the credential is not accepted.
+export const hasQueuedCommands = query({
+  args: {
+    credential: v.string(),
+  },
+  returns: v.union(v.boolean(), v.null()),
+  handler: async (ctx, args) => {
+    const device = await resolveDeviceByCredential(ctx, args.credential);
+    if (!device) {
+      return null;
+    }
+    const queued = await ctx.db
+      .query("deviceCommands")
+      .withIndex("by_device_and_status", (q) => q.eq("deviceId", device._id).eq("status", "queued"))
+      .take(1);
+    return queued.length > 0;
+  },
+});
+
 export const claimCommands = mutation({
   args: {
     credential: v.string(),

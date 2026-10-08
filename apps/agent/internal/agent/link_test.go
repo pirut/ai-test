@@ -220,3 +220,19 @@ func TestRebootIsReportedBeforeItRuns(t *testing.T) {
 		t.Fatal("reboot result was not persisted for redelivery")
 	}
 }
+
+func TestCommandPollingKeepsTheLineOpenOnlyWhenTheServerLongPolls(t *testing.T) {
+	base := 15 * time.Second
+	if got := nextCommandPollDelay(base, 0, 0, nil, commandLongPollWait); got != 0 {
+		t.Fatalf("a held request should be followed immediately, got %s", got)
+	}
+	if got := nextCommandPollDelay(base, 0, 2, nil, time.Millisecond); got != 0 {
+		t.Fatalf("delivered commands should be followed immediately, got %s", got)
+	}
+	if got := nextCommandPollDelay(base, 0, 0, nil, 50*time.Millisecond); got < base*9/10 {
+		t.Fatalf("a server without long polling must not be hammered, got %s", got)
+	}
+	if got := nextCommandPollDelay(base, 3, 0, &remote.HTTPError{StatusCode: http.StatusBadGateway}, time.Millisecond); got < 50*time.Second {
+		t.Fatalf("failures should back off, got %s", got)
+	}
+}

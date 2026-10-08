@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -222,8 +223,15 @@ func (c *Client) FetchManifest(ctx context.Context, credential string) (*DeviceM
 	return &payload.Manifest, nil
 }
 
-func (c *Client) FetchCommands(ctx context.Context, credential string) ([]DeviceCommand, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/device/commands", nil)
+// FetchCommands returns queued commands. With a positive wait the server may
+// hold the request open until a command is queued (long polling); servers that
+// do not support it answer immediately.
+func (c *Client) FetchCommands(ctx context.Context, credential string, wait time.Duration) ([]DeviceCommand, error) {
+	endpoint := c.baseURL + "/api/device/commands"
+	if seconds := int(wait / time.Second); seconds > 0 {
+		endpoint += "?waitSeconds=" + strconv.Itoa(seconds)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
