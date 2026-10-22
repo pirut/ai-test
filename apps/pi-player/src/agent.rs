@@ -19,6 +19,52 @@ pub struct WifiStatus {
     pub ssid: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// Scan results, strongest first. Agents before the setup picker send
+    /// none, and the screen falls back to typing the name.
+    #[serde(default)]
+    pub networks: Vec<Network>,
+    /// The setup hotspot a phone can join, when the image enables it.
+    #[serde(default)]
+    pub hotspot: Option<Hotspot>,
+    #[serde(default)]
+    pub connecting: bool,
+    #[serde(default)]
+    pub last_attempt: Option<Attempt>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Network {
+    pub ssid: String,
+    #[serde(default)]
+    pub signal: u8,
+    #[serde(default)]
+    pub secure: bool,
+    #[serde(default)]
+    pub in_use: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hotspot {
+    pub ssid: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default)]
+    pub url: String,
+    /// QR modules, one string of '0'/'1' per row.
+    #[serde(default)]
+    pub join_qr: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attempt {
+    pub ssid: String,
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -270,6 +316,24 @@ mod tests {
         assert_eq!(state.items[1].duration_seconds, Some(8));
         assert!(state.items[0].is_video());
         assert_eq!(state.start_item_id.as_deref(), Some("i2"));
+    }
+
+    #[test]
+    fn decodes_wifi_setup_details() {
+        let payload = br#"{"supported":true,"connected":false,"interface":"wlan0",
+            "networks":[{"ssid":"Guest","signal":80,"security":"WPA2","secure":true},{"ssid":"Lobby","signal":40,"secure":false}],
+            "hotspot":{"ssid":"Showroom-AB12","password":"abcd2345","url":"http://10.42.0.1/","joinQr":["101","010","101"],"pageQr":["1"]},
+            "connecting":true,"lastAttempt":{"ssid":"Guest","ok":false,"message":"Check the password","at":"2026-10-22T12:00:00Z"}}"#;
+        let wifi: WifiStatus = serde_json::from_slice(payload).unwrap();
+        assert_eq!(wifi.networks.len(), 2);
+        assert!(wifi.networks[0].secure);
+        assert_eq!(wifi.hotspot.unwrap().join_qr.len(), 3);
+        assert!(wifi.connecting);
+        assert!(!wifi.last_attempt.unwrap().ok);
+
+        let old: WifiStatus =
+            serde_json::from_slice(br#"{"supported":true,"connected":false}"#).unwrap();
+        assert!(old.networks.is_empty() && old.hotspot.is_none());
     }
 
     #[test]

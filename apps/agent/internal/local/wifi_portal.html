@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Screen setup</title>
+<style>
+  :root { color-scheme: dark; --bg: #090d13; --card: #0f1924; --line: #24303d; --text: #f5f7fb; --muted: #b8c2cd; --accent: #91aaff; --error: #ffd0d6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 28px 16px 48px; }
+  .label { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 6px; }
+  h1 { font-size: 28px; line-height: 1.15; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 18px; }
+  .banner { border: 1px solid #6b3a44; background: #2a1419; color: var(--error); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+  li + li { border-top: 1px solid var(--line); }
+  button.row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 15px 16px; background: none; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  button.row:active, button.row[aria-expanded="true"] { background: #142130; }
+  .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+  .bars i { width: 4px; background: #3c4a5a; border-radius: 1px; }
+  .bars i.on { background: var(--accent); }
+  form { padding: 4px 16px 16px; display: grid; gap: 10px; }
+  label { display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+  input { width: 100%; padding: 13px 12px; border-radius: 10px; border: 1px solid #3c4a5a; background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+  .show { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+  .show input { width: auto; }
+  button.primary { padding: 14px; border: 0; border-radius: 10px; background: var(--accent); color: var(--bg); font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
+  button.primary:disabled { opacity: .6; }
+  .formError { color: var(--error); font-size: 14px; margin: 0; }
+  .empty { padding: 16px; color: var(--muted); }
+  .done h1 { margin-top: 8px; }
+  .done ol { color: var(--muted); padding-left: 20px; margin: 0; display: grid; gap: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="pick">
+    <p class="label">Screen setup</p>
+    <h1>Choose your Wi-Fi</h1>
+    <p>Pick the network this screen should use. You only do this once.</p>
+    <div class="banner" id="banner" hidden></div>
+    <ul id="list"><li class="empty">Loading networks…</li></ul>
+  </section>
+  <section class="done" id="done" hidden>
+    <p class="label">Almost there</p>
+    <h1 id="doneTitle">Connecting…</h1>
+    <ol>
+      <li>Your phone will leave the setup network now. That's expected.</li>
+      <li>Look at the screen. It shows a claim code once it is online.</li>
+      <li>If the password was wrong, the setup network comes back within a minute. Join it again to retry.</li>
+    </ol>
+  </section>
+</main>
+<script>
+(function () {
+  var list = document.getElementById("list");
+  var banner = document.getElementById("banner");
+  var openRow = null;
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    for (var key in attrs || {}) {
+      if (key === "text") node.textContent = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    }
+    (children || []).forEach(function (child) { if (child) node.appendChild(child); });
+    return node;
+  }
+
+  function bars(signal) {
+    var level = signal >= 75 ? 4 : signal >= 50 ? 3 : signal >= 25 ? 2 : 1;
+    var wrap = el("span", { "class": "bars", "aria-label": "Signal " + signal + "%" });
+    for (var i = 1; i <= 4; i++) {
+      var bar = el("i", i <= level ? { "class": "on" } : {});
+      bar.style.height = (i * 3 + 2) + "px";
+      wrap.appendChild(bar);
+    }
+    return wrap;
+  }
+
+  function connectForm(network) {
+    var manual = !network;
+    var form = el("form");
+    var nameInput = null;
+    if (manual) {
+      nameInput = el("input", { autocapitalize: "off", autocomplete: "off", autocorrect: "off", spellcheck: "false", maxlength: "32", required: "" });
+      form.appendChild(el("label", { text: "Network name" }, [nameInput]));
+    }
+    var password = null;
+    if (manual || network.secure) {
+      password = el("input", { type: "password", autocapitalize: "off", autocomplete: "off", autocorrect: "off", spellcheck: "false", maxlength: "63" });
+      form.appendChild(el("label", { text: manual ? "Password (leave empty if open)" : "Password" }, [password]));
+      var toggle = el("input", { type: "checkbox" });
+      toggle.addEventListener("change", function () { password.type = toggle.checked ? "text" : "password"; });
+      form.appendChild(el("label", { "class": "show" }, [toggle, document.createTextNode("Show password")]));
+    }
+    var error = el("p", { "class": "formError", hidden: "" });
+    var submit = el("button", { "class": "primary", type: "submit", text: "Connect" });
+    form.appendChild(error);
+    form.appendChild(submit);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var ssid = manual ? nameInput.value.trim() : network.ssid;
+      var body = { ssid: ssid, password: password ? password.value : "", hidden: manual };
+      submit.disabled = true;
+      submit.textContent = "Sending…";
+      error.hidden = true;
+      fetch("/api/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (response) {
+          if (response.ok) {
+            document.getElementById("pick").hidden = true;
+            document.getElementById("done").hidden = false;
+            document.getElementById("doneTitle").textContent = "Connecting to " + ssid + "…";
+            return;
+          }
+          return response.text().then(function (text) { throw new Error(text.trim() || "Something went wrong."); });
+        })
+        .catch(function (err) {
+          error.textContent = err.message;
+          error.hidden = false;
+          submit.disabled = false;
+          submit.textContent = "Connect";
+        });
+    });
+    setTimeout(function () { (nameInput || password || submit).focus(); }, 0);
+    return form;
+  }
+
+  function row(network) {
+    var item = el("li");
+    var meta = network
+      ? el("span", { "class": "meta" }, [network.secure ? el("span", { text: "🔒", "aria-label": "Password protected" }) : el("span", { text: "Open" }), bars(network.signal)])
+      : el("span", { "class": "meta", text: "Hidden or not listed" });
+    var button = el("button", { "class": "row", type: "button", "aria-expanded": "false" }, [
+      el("span", { "class": "name", text: network ? network.ssid : "Other network…" }),
+      meta
+    ]);
+    button.addEventListener("click", function () {
+      if (openRow && openRow !== item) {
+        openRow.querySelector("button.row").setAttribute("aria-expanded", "false");
+        var old = openRow.querySelector("form");
+        if (old) old.remove();
+      }
+      var existing = item.querySelector("form");
+      if (existing) {
+        existing.remove();
+        button.setAttribute("aria-expanded", "false");
+        openRow = null;
+        return;
+      }
+      button.setAttribute("aria-expanded", "true");
+      item.appendChild(connectForm(network));
+      openRow = item;
+    });
+    item.appendChild(button);
+    return item;
+  }
+
+  fetch("/api/state", { cache: "no-store" })
+    .then(function (response) { return response.json(); })
+    .then(function (state) {
+      if (state.lastAttempt && !state.lastAttempt.ok && state.lastAttempt.message) {
+        banner.textContent = state.lastAttempt.message;
+        banner.hidden = false;
+      }
+      list.textContent = "";
+      (state.networks || []).forEach(function (network) { list.appendChild(row(network)); });
+      list.appendChild(row(null));
+    })
+    .catch(function () {
+      list.textContent = "";
+      list.appendChild(row(null));
+    });
+})();
+</script>
+</body>
+</html>
