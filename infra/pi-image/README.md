@@ -121,6 +121,35 @@ flash endurance. The persistent journal retains agent, kiosk, X11 startup, and
 boot failure context across reboot and A/B rollback, with a 256 MB ceiling and
 14-day retention policy.
 
+### Slim image (no X11/Chromium)
+
+```bash
+SHOWROOM_IMAGE_VARIANT=slim ./infra/pi-image/build-appliance-image.sh
+```
+
+The slim image leaves out chromium, Xorg, xinit, openbox, unclutter, scrot and
+everything only they pull in, so the native player is the only renderer and the
+legacy kiosk fallback is gone. Its files are named `showroom-<layer>-slim-*`,
+it writes `slim` to `/etc/showroom/image-variant`, and the build fails without
+the native player. The default build stays `full`.
+
+Only flash or OTA a slim image to a screen that has already shown its playlist
+on the native player under a full image. Connect OTA rolls back a slot that
+fails to boot, not one that boots to a blank screen, so roll it out one screen
+at a time. To return a screen to the Chromium fallback, OTA a full image.
+
+### Persistent partition size
+
+SD-card images (`rpi4`, `rpi5`) ship a 1G persistent partition, so the raw
+image is about 6 GiB instead of 17 GiB and Raspberry Pi Imager writes roughly a
+third as much. On every boot `showroom-grow-persistent` grows that partition and
+its ext4 filesystem to fill the card (growpart, then online resize2fs) before
+network setup, the agent or the kiosk start. It does nothing once the filesystem
+is 4 GiB or larger, so screens flashed with the old fixed 12G layout are left
+alone. The result is recorded in `/persistent/common/showroom-grow-persistent`.
+eMMC layers (`cm4`, `cm5`) keep the fixed 12G partition because their
+partition table is write-protected.
+
 ## OS OTA
 
 Publish `update.tar.zst` through Raspberry Pi Connect OTA. Connect OTA and
@@ -152,6 +181,17 @@ sudo showroom-network-setup
 The dashboard can later stage replacement credentials; NetworkManager retains
 old profiles as fallbacks. Connect provides break-glass remote shell access
 without exposing SSH to the public internet.
+
+`showroom-kiosk-launch` starts the native Rust player (`apps/pi-player`,
+libmpv on DRM/KMS) when the active player release contains
+`bin/showroom-player`, and otherwise runs the legacy X11/Chromium kiosk. It
+also falls back to the legacy kiosk if the native player reports that it cannot
+open the display. To force the legacy kiosk on one screen:
+
+```bash
+echo legacy | sudo tee /var/lib/showroom/state/kiosk-renderer
+sudo systemctl restart showroom-kiosk.service
+```
 
 The kiosk runs on tty7. Tty1 automatically logs into the locked, non-root
 `showroom-maint` physical-console account, so a failed kiosk never leaves a

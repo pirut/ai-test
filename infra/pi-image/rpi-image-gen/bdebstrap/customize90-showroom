@@ -35,6 +35,7 @@ chroot "${root}" visudo -cf /etc/sudoers.d/020-showroom-maintenance
 
 "${BDEBSTRAP_HOOKS}/enable-units" "${root}" \
   showroom-agent \
+  showroom-grow-persistent \
   showroom-kiosk \
   showroom-kiosk-retry.timer \
   showroom-update-guard \

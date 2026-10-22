@@ -10,6 +10,7 @@ coverage
 apps/admin/.next
 apps/player/dist
 apps/player/node_modules
+apps/pi-player/target
 apps/admin/node_modules
 packages/*/node_modules
 .vercel
@@ -32,6 +33,7 @@ infra/pi-image/rpi-image-gen/rootfs-overlay/etc/profile.d/20-showroom-console.sh
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/ssh/sshd_config.d/20-showroom.conf
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/sudoers.d/020-showroom-maintenance
 infra/pi-image/rpi-image-gen/rootfs-overlay/etc/sysctl.d/20-showroom-kernel-console.conf
+infra/pi-image/rpi-image-gen/rootfs-overlay/etc/showroom/image-variant
 infra/pi-image/out/appliance-source/
 infra/pi-image/out/rpi-image-gen-*/
 infra/pi-image/secrets/

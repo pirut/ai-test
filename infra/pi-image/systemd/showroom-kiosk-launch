@@ -1,0 +1,104 @@
+#!/bin/bash
+set -euo pipefail
+
+# Chooses the screen renderer for showroom-kiosk.service.
+#
+# The native player (libmpv on DRM/KMS) ships inside the signed player
+# release as bin/showroom-player. When it is present it owns the display;
+# otherwise, or when it reports that native output is unavailable on this
+# device (exit 78), the legacy X11/Chromium kiosk runs instead. Write
+# "legacy" to /var/lib/showroom/state/kiosk-renderer to force the old kiosk.
+
+RELEASE_PLAYER=/var/lib/showroom/releases/player/current/bin/showroom-player
+BUILTIN_PLAYER=/opt/showroom/player/bin/showroom-player
+LEGACY_KIOSK=/usr/local/bin/showroom-start-kiosk
+RENDERER_OVERRIDE=/var/lib/showroom/state/kiosk-renderer
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/showroom-kiosk}"
+NATIVE_MARKER="${RUNTIME_DIR}/native-player"
+EXIT_NATIVE_UNAVAILABLE=78
+EXIT_NATIVE_RESTART=75
+# Native crashes are counted in /tmp (cleared on reboot): three within 15
+# minutes switch this boot to the legacy kiosk instead of crash-looping into
+# the recovery screen.
+CRASH_LOG=/tmp/showroom-native-crashes
+CRASH_LIMIT=3
+CRASH_WINDOW_SECONDS=900
+
+renderer="${SHOWROOM_KIOSK_RENDERER:-}"
+if [[ -z "${renderer}" && -r "${RENDERER_OVERRIDE}" ]]; then
+  renderer="$(tr -d '[:space:]' <"${RENDERER_OVERRIDE}")"
+fi
+
+player=""
+for candidate in "${RELEASE_PLAYER}" "${BUILTIN_PLAYER}"; do
+  if [[ -x "${candidate}" ]]; then
+    player="${candidate}"
+    break
+  fi
+done
+
+run_legacy() {
+  rm -f "${NATIVE_MARKER}"
+  if [[ ! -x "${LEGACY_KIOSK}" ]]; then
+    # Slim images ship without X11/Chromium. Fail so systemd retries the
+    # native player and, after repeated failures, shows the recovery screen.
+    echo "Legacy kiosk is not installed (slim image) and the native player cannot run" >&2
+    exit 1
+  fi
+  exec "${LEGACY_KIOSK}"
+}
+
+recent_crashes() {
+  local now cutoff count=0 stamp
+  now="$(date +%s)"
+  cutoff=$((now - CRASH_WINDOW_SECONDS))
+  [[ -r "${CRASH_LOG}" ]] || { echo 0; return; }
+  while read -r stamp; do
+    [[ "${stamp}" =~ ^[0-9]+$ ]] && (( stamp >= cutoff )) && count=$((count + 1))
+  done <"${CRASH_LOG}"
+  echo "${count}"
+}
+
+if [[ "${renderer}" == "legacy" || -z "${player}" ]]; then
+  echo "Starting legacy X11/Chromium kiosk" >&2
+  run_legacy
+fi
+
+if [[ "${renderer}" != "native" && -x "${LEGACY_KIOSK}" ]] && (( $(recent_crashes) >= CRASH_LIMIT )); then
+  echo "Native player crashed ${CRASH_LIMIT} times in $((CRASH_WINDOW_SECONDS / 60)) minutes; using the legacy kiosk until reboot" >&2
+  run_legacy
+fi
+
+# The player copes with a missing agent, so this wait is only a courtesy. Bound
+# it by wall clock so it always finishes well before showroom-kiosk-ready
+# gives up and systemd marks the unit failed.
+agent_wait_deadline=$((SECONDS + 45))
+while (( SECONDS < agent_wait_deadline )); do
+  if curl -fsS --max-time 1 http://127.0.0.1:4173/healthz >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+echo "Starting native player ${player}" >&2
+mkdir -p "${RUNTIME_DIR}"
+: >"${NATIVE_MARKER}"
+while true; do
+  status=0
+  "${player}" || status=$?
+  # The player asks to be started again after the TV reconnects so mpv can
+  # reopen the display; that is not a failure.
+  [[ "${status}" == "${EXIT_NATIVE_RESTART}" ]] || break
+  echo "Native player requested a restart" >&2
+done
+
+if [[ "${status}" == "${EXIT_NATIVE_UNAVAILABLE}" && "${renderer}" != "native" ]]; then
+  echo "Native player is unavailable on this device; falling back to the legacy kiosk" >&2
+  run_legacy
+fi
+
+if [[ "${status}" != 0 ]]; then
+  date +%s >>"${CRASH_LOG}"
+fi
+rm -f "${NATIVE_MARKER}"
+exit "${status}"

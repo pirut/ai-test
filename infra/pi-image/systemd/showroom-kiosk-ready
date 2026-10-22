@@ -1,13 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
-for _ in $(seq 1 30); do
-  if [[ -S /tmp/.X11-unix/X0 ]]; then
+# The native player marks itself in the kiosk runtime directory; the legacy
+# kiosk is ready once X11 accepts connections. The launcher can spend up to
+# 45 seconds waiting for the agent on first boot, so wait longer than that
+# while staying inside the unit's 90 second TimeoutStartSec.
+NATIVE_MARKER=/run/showroom-kiosk/native-player
+READY_TIMEOUT_SECONDS=80
+
+for _ in $(seq 1 "${READY_TIMEOUT_SECONDS}"); do
+  if [[ -e "${NATIVE_MARKER}" || -S /tmp/.X11-unix/X0 ]]; then
     /usr/bin/chvt 7
     exit 0
   fi
   sleep 1
 done
 
-echo "X11 did not become ready within 30 seconds" >&2
+echo "Kiosk display did not become ready within ${READY_TIMEOUT_SECONDS} seconds" >&2
 exit 1

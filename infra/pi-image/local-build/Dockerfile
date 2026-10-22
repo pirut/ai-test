@@ -1,10 +1,15 @@
 FROM golang:1.22-bookworm AS go-toolchain
 
+FROM rust:1.90-bookworm AS rust-toolchain
+
 FROM node:22-bookworm
 
 COPY --from=go-toolchain /usr/local/go /usr/local/go
+COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 COPY infra/pi-image/local-build/rpi-image-gen-root-namespace.patch /tmp/rpi-image-gen-root-namespace.patch
-ENV PATH="/usr/local/go/bin:${PATH}"
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
+ENV PATH="/usr/local/go/bin:/usr/local/cargo/bin:${PATH}"
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
@@ -24,6 +29,7 @@ RUN apt-get update \
   && /opt/rpi-image-gen/install_deps.sh \
   && NS_SETUP='_ns_setup() { [[ -n "${_NS_APT_ARCHIVES:-}" ]] && return 1; return 0; }' /opt/rpi-image-gen/bin/ns true \
   && go version \
+  && cargo --version \
   && node --version \
   && xz --version
 
