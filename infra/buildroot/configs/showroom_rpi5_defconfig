@@ -1,14 +1,18 @@
 # Showroom OS for Raspberry Pi 5: kernel, firmware, the native player, the
 # agent and RAUC, nothing else. Pinned to Buildroot 2026.02.3 (see
-# infra/buildroot/build.sh). Architecture, toolchain and kernel match
-# Buildroot's raspberrypi5_defconfig.
+# infra/buildroot/build.sh). Architecture and kernel match Buildroot's
+# raspberrypi5_defconfig.
 
-# Architecture and toolchain
+# Architecture and toolchain. Buildroot builds its own glibc toolchain with
+# the kernel's own headers: Raspberry Pi's HEVC decoder in FFmpeg needs
+# V4L2 and DMA heap definitions newer than the 5.4 headers of the prebuilt
+# Bootlin toolchain.
 BR2_aarch64=y
 BR2_cortex_a76=y
-BR2_TOOLCHAIN_EXTERNAL=y
-BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
-BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_KERNEL_HEADERS_AS_KERNEL=y
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_12=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
 BR2_CCACHE=y
 BR2_GLOBAL_PATCH_DIR="board/raspberrypi/patches $(BR2_EXTERNAL_SHOWROOM_PATH)/patches"
 BR2_DOWNLOAD_FORCE_CHECK_HASHES=y
