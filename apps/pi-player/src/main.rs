@@ -161,6 +161,12 @@ fn start_mpv(config: &Config) -> Result<Mpv, mpv::Error> {
     Ok(mpv)
 }
 
+/// Whether playback moved since `anchor`: forward by at least half a second,
+/// or back to an earlier point (a loop or a reopened file).
+fn progress_advanced(anchor: Option<f64>, position: f64) -> bool {
+    anchor.is_none_or(|last| position >= last + 0.5 || position + 1.0 < last)
+}
+
 /// Waits for mpv to open its video output (the DRM display).
 fn wait_for_video_output(mpv: &Mpv, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
@@ -283,6 +289,10 @@ struct Player {
     current: Option<Item>,
     started_at: Instant,
     time_pos: Option<f64>,
+    /// Media position when progress was last counted. time-pos changes every
+    /// frame by less than a frame's length, so progress is measured from
+    /// here rather than from the previous update.
+    progress_pos: Option<f64>,
     last_progress_at: Instant,
     recovering: bool,
     recover_attempts: u32,
@@ -327,6 +337,7 @@ impl Player {
             current: None,
             started_at: now,
             time_pos: None,
+            progress_pos: None,
             last_progress_at: now,
             recovering: false,
             recover_attempts: 0,
@@ -412,10 +423,9 @@ impl Player {
             }
             Event::PropertyChange { name, value } => match (name.as_str(), value) {
                 ("time-pos", PropertyValue::Double(position)) => {
-                    let advanced = self
-                        .time_pos
-                        .is_none_or(|last| position > last + 0.05 || position + 1.0 < last);
+                    let advanced = progress_advanced(self.progress_pos, position);
                     if advanced {
+                        self.progress_pos = Some(position);
                         self.last_progress_at = Instant::now();
                         if self.recovering {
                             self.recovering = false;
@@ -474,6 +484,7 @@ impl Player {
             .as_ref()
             .filter(|item| item.is_video())
             .map(|_| 0.0);
+        self.progress_pos = self.time_pos;
         self.report();
     }
 
@@ -867,4 +878,36 @@ fn main() {
     } else {
         1
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::progress_advanced;
+
+    #[test]
+    fn per_frame_updates_add_up_to_progress() {
+        // 30 fps: each time-pos update is ~0.033s past the previous one.
+        let mut anchor = Some(0.0);
+        let mut counted = 0;
+        for frame in 1..=60 {
+            let position = frame as f64 / 30.0;
+            if progress_advanced(anchor, position) {
+                anchor = Some(position);
+                counted += 1;
+            }
+        }
+        assert_eq!(counted, 4, "two seconds of playback counts as progress");
+    }
+
+    #[test]
+    fn a_frozen_clock_is_not_progress() {
+        assert!(!progress_advanced(Some(12.0), 12.0));
+        assert!(!progress_advanced(Some(12.0), 12.3));
+    }
+
+    #[test]
+    fn looping_back_counts_as_progress() {
+        assert!(progress_advanced(Some(59.9), 0.1));
+        assert!(progress_advanced(None, 0.0));
+    }
 }
