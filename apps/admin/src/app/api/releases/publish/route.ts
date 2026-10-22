@@ -44,13 +44,14 @@ function signChecksum(sha256: string) {
 }
 
 async function uploadArtifact(file: File) {
-  const sha256 = await sha256ForFile(file);
-  const signed = signChecksum(sha256);
+  // The upload URL is only issued to platform operators, so ask for it before signing.
   const upload = await createReleaseArtifactUpload({
     fileName: file.name,
     mimeType: file.type || "application/octet-stream",
     bytes: file.size,
   });
+  const sha256 = await sha256ForFile(file);
+  const signed = signChecksum(sha256);
 
   const uploadResponse = await fetch(upload.uploadUrl, {
     method: "POST",

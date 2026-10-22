@@ -90,6 +90,23 @@ export default async function DashboardPage() {
         action={session.has({ role: "org:admin" }) ? <AddScreenDialog /> : undefined}
       />
 
+      {devices.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Set up your first screen</CardTitle>
+            <CardDescription>
+              Download the image, flash it to a Raspberry Pi, and enter the code it shows on the TV.
+            </CardDescription>
+            <CardAction>
+              <Button render={<Link href="/get-started" />}>
+                Get started
+                <ArrowRight data-icon="inline-end" />
+              </Button>
+            </CardAction>
+          </CardHeader>
+        </Card>
+      ) : null}
+
       <section aria-label="Fleet summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summary.map((item) => (
           <Card key={item.label} size="sm">

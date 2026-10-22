@@ -9,6 +9,7 @@ import {
   MonitorSmartphone,
   Package2,
   PlaySquare,
+  Rocket,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -41,6 +42,7 @@ const navItems = [
   { href: "/schedules", label: "Schedules", icon: CalendarRange },
   { href: "/releases", label: "Releases", icon: Package2 },
   { href: "/team", label: "Team", icon: Users },
+  { href: "/get-started", label: "Get started", icon: Rocket },
 ];
 
 const clerkAppearance = {
@@ -58,8 +60,19 @@ const clerkAppearance = {
   },
 } as const;
 
-export function TopShell({ children, authEnabled }: { children: React.ReactNode; authEnabled: boolean }) {
+export function TopShell({
+  children,
+  authEnabled,
+  showReleases = true,
+}: {
+  children: React.ReactNode;
+  authEnabled: boolean;
+  showReleases?: boolean;
+}) {
   const pathname = usePathname();
+  const visibleNavItems = showReleases
+    ? navItems
+    : navItems.filter((item) => item.href !== "/releases");
   const currentSection = navItems.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   ) ?? navItems[0];
@@ -101,7 +114,7 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {navItems.map((item) => {
+                {visibleNavItems.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   const Icon = item.icon;
 
