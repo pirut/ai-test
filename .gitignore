@@ -10,6 +10,7 @@ coverage
 apps/admin/.next
 apps/player/dist
 apps/player/node_modules
+apps/pi-player/target
 apps/admin/node_modules
 packages/*/node_modules
 .vercel

@@ -1,5 +1,5 @@
 [Unit]
-Description=Showroom Chromium kiosk
+Description=Showroom kiosk display (native player, legacy Chromium fallback)
 After=local-fs.target systemd-user-sessions.service getty@tty1.service showroom-network-onboarding.service showroom-agent.service
 Wants=getty@tty1.service showroom-agent.service
 Requires=showroom-network-onboarding.service
@@ -11,8 +11,8 @@ StartLimitAction=none
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/showroom-start-kiosk
-# Verify X11 is accepting connections before switching the physical display.
+ExecStart=/usr/local/bin/showroom-kiosk-launch
+# Wait for the native player or X11 before switching the physical display.
 ExecStartPost=+/usr/local/bin/showroom-kiosk-ready
 Restart=on-failure
 RestartSec=10s

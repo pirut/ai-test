@@ -1,0 +1,66 @@
+#!/bin/bash
+set -euo pipefail
+
+# Chooses the screen renderer for showroom-kiosk.service.
+#
+# The native player (libmpv on DRM/KMS) ships inside the signed player
+# release as bin/showroom-player. When it is present it owns the display;
+# otherwise, or when it reports that native output is unavailable on this
+# device (exit 78), the legacy X11/Chromium kiosk runs instead. Write
+# "legacy" to /var/lib/showroom/state/kiosk-renderer to force the old kiosk.
+
+RELEASE_PLAYER=/var/lib/showroom/releases/player/current/bin/showroom-player
+BUILTIN_PLAYER=/opt/showroom/player/bin/showroom-player
+LEGACY_KIOSK=/usr/local/bin/showroom-start-kiosk
+RENDERER_OVERRIDE=/var/lib/showroom/state/kiosk-renderer
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/showroom-kiosk}"
+NATIVE_MARKER="${RUNTIME_DIR}/native-player"
+EXIT_NATIVE_UNAVAILABLE=78
+
+renderer="${SHOWROOM_KIOSK_RENDERER:-}"
+if [[ -z "${renderer}" && -r "${RENDERER_OVERRIDE}" ]]; then
+  renderer="$(tr -d '[:space:]' <"${RENDERER_OVERRIDE}")"
+fi
+
+player=""
+for candidate in "${RELEASE_PLAYER}" "${BUILTIN_PLAYER}"; do
+  if [[ -x "${candidate}" ]]; then
+    player="${candidate}"
+    break
+  fi
+done
+
+run_legacy() {
+  rm -f "${NATIVE_MARKER}"
+  if [[ ! -x "${LEGACY_KIOSK}" ]]; then
+    echo "Legacy kiosk is not installed and the native player cannot run" >&2
+    exit 1
+  fi
+  exec "${LEGACY_KIOSK}"
+}
+
+if [[ "${renderer}" == "legacy" || -z "${player}" ]]; then
+  echo "Starting legacy X11/Chromium kiosk" >&2
+  run_legacy
+fi
+
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 1 http://127.0.0.1:4173/healthz >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+echo "Starting native player ${player}" >&2
+mkdir -p "${RUNTIME_DIR}"
+: >"${NATIVE_MARKER}"
+status=0
+"${player}" || status=$?
+
+if [[ "${status}" == "${EXIT_NATIVE_UNAVAILABLE}" && "${renderer}" != "native" ]]; then
+  echo "Native player is unavailable on this device; falling back to the legacy kiosk" >&2
+  run_legacy
+fi
+
+rm -f "${NATIVE_MARKER}"
+exit "${status}"

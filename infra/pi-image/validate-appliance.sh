@@ -105,6 +105,8 @@ validate_scripts() {
   local root="$1"
   local scripts=(
     showroom-start-kiosk
+    showroom-kiosk-launch
+    showroom-screenshot
     showroom-diagnostics
     showroom-recovery-screen
     showroom-kiosk-recovery
@@ -207,6 +209,14 @@ validate_source() {
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Type=simple$' "kiosk readiness must not depend on a lossy notify handshake"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^ExecStartPost=\+/usr/local/bin/showroom-kiosk-ready$' "kiosk must validate X11 before switching displays"
   require_not_contains "${ROOT_DIR}/systemd/start-kiosk.sh" 'systemd-notify' "kiosk launcher must not use the legacy notify handshake"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^ExecStart=/usr/local/bin/showroom-kiosk-launch$' "kiosk must start through the native/legacy renderer launcher"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^RELEASE_PLAYER=/var/lib/showroom/releases/player/current/bin/showroom-player$' "launcher must prefer the native player from the signed player release"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^LEGACY_KIOSK=/usr/local/bin/showroom-start-kiosk$' "launcher must keep the legacy kiosk as a fallback"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-ready" 'NATIVE_MARKER=/run/showroom-kiosk/native-player' "kiosk readiness must accept the native player"
+  require_contains "${ROOT_DIR}/config/config.env" '^SHOWROOM_SCREENSHOT_COMMAND=/usr/local/bin/showroom-screenshot$' "screenshots must work for both renderers"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- libmpv2$' "native player needs libmpv"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- fonts-dejavu-core$' "native setup screens need an explicit font"
+  require_contains "${ROOT_DIR}/prepare-artifacts.sh" 'bin/showroom-player' "player bundle must include the native player"
   require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" 'DISPLAY_MODE_PRIMARY="\$\{SHOWROOM_DISPLAY_MODE_PRIMARY:-1920x1080\}"' "kiosk must default to the 1080p media target, not 4K output"
   require_not_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^    "(volume|orientation)": ' "volume and orientation changes must be applied live, not restart the player"
   require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^apply_mpv_properties\(\) \{$' "kiosk must apply volume and orientation over mpv IPC"
@@ -228,7 +238,7 @@ validate_source() {
   require_contains "${sudoers}" '/usr/local/bin/showroom-network-setup' "maintenance account cannot safely reopen network setup"
 
   for source_script in \
-    start-kiosk.sh showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
+    start-kiosk.sh showroom-kiosk-launch showroom-screenshot showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
     showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
@@ -240,7 +250,7 @@ validate_source() {
 
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry showroom-kiosk-ready \
-    showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
+    showroom-kiosk-launch showroom-screenshot showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
     showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
   done
@@ -264,6 +274,9 @@ validate_rootfs() {
   [[ "$(stat -c '%u:%g' "${root}/usr/lib/xorg/Xorg.wrap")" == "0:0" ]] || fail "Xorg.wrap must be owned by root"
   require_file "${root}/opt/showroom/player/index.html"
   require_file "${root}/var/lib/showroom/releases/player/1.0.0/index.html"
+  require_executable "${root}/opt/showroom/player/bin/showroom-player"
+  require_executable "${root}/var/lib/showroom/releases/player/1.0.0/bin/showroom-player"
+  compgen -G "${root}/usr/lib/*-linux-gnu/libmpv.so.2" >/dev/null || fail "libmpv.so.2 is missing for the native player"
   [[ -L "${root}/var/lib/showroom/releases/player/current" ]] || fail "active player release symlink is missing"
 
   local executable
@@ -309,8 +322,8 @@ validate_rootfs() {
     [[ " ${maintenance_groups} " == *" ${group} "* ]] || fail "maintenance account lacks required ${group} device permission"
   done
   chroot "${root}" /usr/sbin/runuser -u pi -- /bin/sh -c \
-    'test -x /usr/local/bin/showroom-start-kiosk && test -x /usr/lib/xorg/Xorg.wrap && test -r /opt/showroom/player/index.html' || \
-    fail "pi cannot execute the kiosk/X wrapper or read built-in player assets"
+    'test -x /usr/local/bin/showroom-kiosk-launch && test -x /opt/showroom/player/bin/showroom-player && test -x /usr/local/bin/showroom-start-kiosk && test -x /usr/lib/xorg/Xorg.wrap && test -r /opt/showroom/player/index.html' || \
+    fail "pi cannot execute the kiosk launcher, native player, or X wrapper, or read built-in player assets"
 
   # sshd expects its boot-created privilege-separation directory even for
   # configuration-only validation. The extracted image intentionally has an

@@ -29,6 +29,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/local/status", s.handleStatus)
 	mux.HandleFunc("/local/playback", s.handlePlayback)
 	mux.HandleFunc("/local/kiosk/runtime", s.handleKioskRuntime)
+	mux.HandleFunc("/local/player/state", s.handlePlayerState)
 	mux.HandleFunc("/local/wifi/status", s.handleWiFiStatus)
 	mux.HandleFunc("/local/wifi/configure", s.handleWiFiConfigure)
 	mux.HandleFunc("/assets/", s.handleAsset)

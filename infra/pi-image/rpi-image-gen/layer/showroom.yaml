@@ -13,10 +13,12 @@ mmdebstrap:
     - chromium
     - curl
     - ffmpeg
+    - fonts-dejavu-core
     - iputils-ping
     - iproute2
     - jq
     - kbd
+    - libmpv2
     - mpv
     - openbox
     - procps
