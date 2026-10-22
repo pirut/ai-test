@@ -16,6 +16,7 @@ mmdebstrap:
     - ca-certificates
     - cloud-guest-utils
     - curl
+    - dnsmasq-base
     - e2fsprogs
     - fdisk
     - ffmpeg

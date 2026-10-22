@@ -45,6 +45,7 @@ install_file 0644 "${ROOT_DIR}/config/config.env" "${OVERLAY_DIR}/etc/showroom-a
 sed -i.bak "s|^SHOWROOM_RELEASE_PUBLIC_KEY=.*$|SHOWROOM_RELEASE_PUBLIC_KEY=${SHOWROOM_RELEASE_PUBLIC_KEY}|" "${OVERLAY_DIR}/etc/showroom-agent/config.env"
 sed -i.bak "s|^SHOWROOM_HARDWARE_PROFILE=.*$|SHOWROOM_HARDWARE_PROFILE=${SHOWROOM_HARDWARE_PROFILE:-rpi5-standard}|" "${OVERLAY_DIR}/etc/showroom-agent/config.env"
 rm -f "${OVERLAY_DIR}/etc/showroom-agent/config.env.bak"
+install_file 0644 "${ROOT_DIR}/config/showroom-setup-dnsmasq.conf" "${OVERLAY_DIR}/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf"
 install_file 0644 "${ROOT_DIR}/config/Xwrapper.config" "${OVERLAY_DIR}/etc/X11/Xwrapper.config"
 install_file 0644 "${ROOT_DIR}/config/99-modesetting.conf" "${OVERLAY_DIR}/etc/X11/xorg.conf.d/99-modesetting.conf"
 install_file 0644 "${ROOT_DIR}/config/getty-tty1-override.conf" "${OVERLAY_DIR}/etc/systemd/system/getty@tty1.service.d/override.conf"
