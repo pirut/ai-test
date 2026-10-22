@@ -8,8 +8,10 @@ export XAUTHORITY=/home/pi/.Xauthority
 RUNTIME_URL="http://127.0.0.1:4173/local/kiosk/runtime"
 RUNTIME_PATH="/tmp/showroom-kiosk-runtime.json"
 DISPLAY_OUTPUT="${SHOWROOM_DISPLAY_OUTPUT:-HDMI-1}"
-DISPLAY_MODE_PRIMARY="${SHOWROOM_DISPLAY_MODE_PRIMARY:-3840x2160}"
-DISPLAY_MODE_FALLBACK="${SHOWROOM_DISPLAY_MODE_FALLBACK:-1920x1080}"
+# Media targets 1080p. Driving a 4K panel at 3840x2160 makes the Pi composite
+# every frame at four times the pixels for no visible gain, so let the TV upscale.
+DISPLAY_MODE_PRIMARY="${SHOWROOM_DISPLAY_MODE_PRIMARY:-1920x1080}"
+DISPLAY_MODE_FALLBACK="${SHOWROOM_DISPLAY_MODE_FALLBACK:-1280x720}"
 DISPLAY_RATE="${SHOWROOM_DISPLAY_RATE:-}"
 HOSTNAME_SHORT="$(hostname -s 2>/dev/null || hostname)"
 CHROMIUM_PROFILE_ROOT=/home/pi/.config/chromium-kiosk
@@ -19,6 +21,8 @@ X_PID=""
 APP_MODE=""
 APP_TOKEN=""
 APP_AUDIO_DEVICE=""
+APP_VOLUME=""
+APP_ORIENTATION=""
 CURRENT_ASSET_ID=""
 CURRENT_MANIFEST_VERSION=""
 CURRENT_PLAYLIST_ID=""
@@ -210,11 +214,11 @@ if payload.get("mode") == "mpv" and playlist_paths:
         json.dump({item.get("localPath", ""): item.get("assetId") or item.get("id") for item in playlist if item.get("localPath")}, handle)
     os.replace(next_map, asset_map_path)
 
+# Volume and orientation are applied live (mpv IPC, or the browser player's own
+# manifest polling), so they must not restart the player.
 token_payload = {
     "mode": payload.get("mode", "browser"),
     "browserUrl": payload.get("browserUrl", "http://127.0.0.1:4173"),
-    "volume": int(volume),
-    "orientation": orientation,
     "playlistId": payload.get("playlistId", ""),
 }
 
@@ -284,6 +288,7 @@ sync_mpv_playlist() {
 
   python3 - "${MPV_PLAYLIST_PATH:-/tmp/showroom-mpv-playlist.m3u}" "${MPV_LOADED_PLAYLIST}" "${MPV_SOCKET}" <<'PY'
 import json
+import os
 import socket
 import sys
 
@@ -299,15 +304,52 @@ if desired[:len(loaded)] != loaded:
 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
     client.settimeout(2)
     client.connect(sys.argv[3])
-    for path in desired[len(loaded):]:
-        client.sendall((json.dumps({"command": ["loadfile", path, "append"]}) + "\n").encode("utf-8"))
-        response = json.loads(client.recv(65536).decode("utf-8").splitlines()[0])
+    responses = client.makefile("r", encoding="utf-8")
+    # mpv broadcasts events on the same socket, so match replies by request_id.
+    for request_id, path in enumerate(desired[len(loaded):], start=1):
+        client.sendall((json.dumps({"command": ["loadfile", path, "append"], "request_id": request_id}) + "\n").encode("utf-8"))
+        while True:
+            response = json.loads(responses.readline())
+            if response.get("request_id") == request_id:
+                break
         if response.get("error") != "success":
             raise SystemExit(3)
 
 with open(sys.argv[2] + ".next", "w", encoding="utf-8") as handle:
     handle.write("\n".join(desired) + ("\n" if desired else ""))
 os.replace(sys.argv[2] + ".next", sys.argv[2])
+PY
+}
+
+apply_mpv_properties() {
+  [[ "${APP_MODE}" == "mpv" && -S "${MPV_SOCKET}" ]] || return 0
+  [[ "${VOLUME}" != "${APP_VOLUME}" || "${ORIENTATION}" != "${APP_ORIENTATION}" ]] || return 0
+
+  python3 - "${MPV_SOCKET}" "${VOLUME}" "${ORIENTATION}" <<'PY'
+import json
+import socket
+import sys
+
+volume = int(sys.argv[2])
+commands = [
+    ["set_property", "mute", volume <= 0],
+    ["set_property", "video-rotate", int(sys.argv[3])],
+]
+if volume > 0:
+    commands.append(["set_property", "volume", volume])
+
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect(sys.argv[1])
+    responses = client.makefile("r", encoding="utf-8")
+    for request_id, command in enumerate(commands, start=1):
+        client.sendall((json.dumps({"command": command, "request_id": request_id}) + "\n").encode("utf-8"))
+        while True:
+            response = json.loads(responses.readline())
+            if response.get("request_id") == request_id:
+                break
+        if response.get("error") != "success":
+            raise SystemExit(1)
 PY
 }
 
@@ -385,6 +427,8 @@ launch_mpv() {
   APP_PID=$!
   APP_MODE="mpv"
   APP_AUDIO_DEVICE="${audio_device}"
+  APP_VOLUME="${volume}"
+  APP_ORIENTATION="${orientation}"
   MPV_PLAYLIST_PATH="${playlist_path}"
   tail -n +2 "${playlist_path}" > "${MPV_LOADED_PLAYLIST}"
 }
@@ -422,6 +466,13 @@ while true; do
       if [[ "${sync_status}" == "2" ]]; then
         APP_TOKEN=""
       fi
+    fi
+    if apply_mpv_properties; then
+      APP_VOLUME="${VOLUME}"
+      APP_ORIENTATION="${ORIENTATION}"
+    else
+      echo "Unable to apply volume/orientation over mpv IPC; restarting mpv" >&2
+      APP_TOKEN=""
     fi
   fi
 
