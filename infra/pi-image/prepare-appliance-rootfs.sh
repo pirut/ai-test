@@ -20,6 +20,8 @@ install_file() {
 install_file 0755 "${ROOT_DIR}/artifacts/showroom-agent" "${OVERLAY_DIR}/usr/local/libexec/showroom-agent"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-agent-launch" "${OVERLAY_DIR}/usr/local/bin/showroom-agent-launch"
 install_file 0755 "${ROOT_DIR}/systemd/start-kiosk.sh" "${OVERLAY_DIR}/usr/local/bin/showroom-start-kiosk"
+install_file 0755 "${ROOT_DIR}/systemd/showroom-kiosk-launch" "${OVERLAY_DIR}/usr/local/bin/showroom-kiosk-launch"
+install_file 0755 "${ROOT_DIR}/systemd/showroom-screenshot" "${OVERLAY_DIR}/usr/local/bin/showroom-screenshot"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-diagnostics" "${OVERLAY_DIR}/usr/local/bin/showroom-diagnostics"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-recovery-screen" "${OVERLAY_DIR}/usr/local/bin/showroom-recovery-screen"
 install_file 0755 "${ROOT_DIR}/systemd/showroom-kiosk-recovery" "${OVERLAY_DIR}/usr/local/bin/showroom-kiosk-recovery"

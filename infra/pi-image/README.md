@@ -153,6 +153,17 @@ The dashboard can later stage replacement credentials; NetworkManager retains
 old profiles as fallbacks. Connect provides break-glass remote shell access
 without exposing SSH to the public internet.
 
+`showroom-kiosk-launch` starts the native Rust player (`apps/pi-player`,
+libmpv on DRM/KMS) when the active player release contains
+`bin/showroom-player`, and otherwise runs the legacy X11/Chromium kiosk. It
+also falls back to the legacy kiosk if the native player reports that it cannot
+open the display. To force the legacy kiosk on one screen:
+
+```bash
+echo legacy | sudo tee /var/lib/showroom/state/kiosk-renderer
+sudo systemctl restart showroom-kiosk.service
+```
+
 The kiosk runs on tty7. Tty1 automatically logs into the locked, non-root
 `showroom-maint` physical-console account, so a failed kiosk never leaves a
 technician at an unusable password prompt. No maintenance password is embedded

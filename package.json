@@ -16,8 +16,9 @@
     "pi:publish-release": "./scripts/publish-pi-release.sh",
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:convex",
     "typecheck:convex": "tsc --noEmit -p convex/tsconfig.json",
-    "test": "npm run test:unit && npm run test:go",
+    "test": "npm run test:unit && npm run test:go && npm run test:pi-player",
     "test:go": "cd apps/agent && GOCACHE=/tmp/showroom-go-build-cache go test ./...",
+    "test:pi-player": "cargo test --locked --manifest-path apps/pi-player/Cargo.toml",
     "test:unit": "node --test --import tsx tests/**/*.test.ts"
   },
   "devDependencies": {
