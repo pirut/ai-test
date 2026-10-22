@@ -1,7 +1,6 @@
 package local
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -41,13 +40,7 @@ type nativePlayerItem struct {
 func (s *Server) handlePlayerState(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.playerState(func() wifiStatus {
-		status, err := wifiStatusSnapshot(context.Background())
-		if err != nil {
-			return wifiStatus{Supported: false, Error: err.Error()}
-		}
-		return status
-	}))
+	_ = json.NewEncoder(w).Encode(s.playerState(s.readWiFiStatus))
 }
 
 func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
