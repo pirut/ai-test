@@ -74,6 +74,7 @@ EOF
 Version=1
 Path=/var/lib/showroom
 Path=/home/pi/.config/chromium-kiosk
+Path=/var/lib/tailscale
 EOF
   cat >"${fixture}/bin/systemd-escape" <<'EOF'
 #!/bin/sh
@@ -91,7 +92,8 @@ EOF
   for path in \
     /etc/NetworkManager/system-connections \
     /var/lib/showroom \
-    /home/pi/.config/chromium-kiosk; do
+    /home/pi/.config/chromium-kiosk \
+    /var/lib/tailscale; do
     unit="$("${fixture}/bin/systemd-escape" --path "${path}").mount"
     [[ -f "${fixture}/out/${unit}" ]] || fail "slot-shared generator omitted ${path} mount unit"
     [[ -L "${fixture}/out/local-fs.target.wants/${unit}" ]] || fail "slot-shared generator did not activate ${path} mount unit"
@@ -116,6 +118,7 @@ validate_scripts() {
     showroom-network-onboarding
     showroom-network-setup
     showroom-grow-persistent
+    showroom-tailscale-join
   )
   local script
   for script in "${scripts[@]}"; do
@@ -125,6 +128,7 @@ validate_scripts() {
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-grow-persistent" --self-test >/dev/null
+  bash "${root}/usr/local/bin/showroom-tailscale-join" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${root}/etc/showroom-agent/config.env" \
     bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
@@ -244,12 +248,13 @@ validate_source() {
 
   for source_script in \
     start-kiosk.sh showroom-kiosk-launch showroom-screenshot showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
-    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding showroom-grow-persistent; do
+    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding showroom-grow-persistent showroom-tailscale-join; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-grow-persistent" --self-test >/dev/null
+  bash "${ROOT_DIR}/systemd/showroom-tailscale-join" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
     bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
@@ -258,7 +263,8 @@ validate_source() {
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry showroom-kiosk-ready \
     showroom-kiosk-launch showroom-screenshot showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
     showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service \
-    showroom-grow-persistent showroom-grow-persistent.service; do
+    showroom-grow-persistent showroom-grow-persistent.service \
+    showroom-tailscale-join showroom-tailscale-join.service showroom-tailscale-join.timer; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
   done
 
@@ -272,11 +278,28 @@ validate_source() {
   require_contains "${grow_unit}" '^Requires=persistent\.mount$' "persistent growth must wait for the persistent mount"
   require_contains "${grow_unit}" '^Before=showroom-network-onboarding\.service showroom-agent\.service showroom-kiosk\.service$' "persistent growth must finish before setup, agent and kiosk start"
   require_contains "${ROOT_DIR}/systemd/showroom-grow-persistent" '^MIN_GROWN_BYTES=\$\(\(4 \* 1024 \* 1024 \* 1024\)\)$' "persistent growth must leave already-large (deployed 12G) filesystems untouched"
+  validate_tailscale_source
   for package in cloud-guest-utils e2fsprogs fdisk; do
     require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" "^[[:space:]]+- ${package}$" "persistent growth needs ${package}"
   done
 
   pass "source console, SSH, sudo, kiosk, recovery, and install contracts"
+}
+
+# Tailscale is additive remote access: both variants carry it, its state
+# survives A/B updates, and nothing joins until the dashboard hands out a key.
+validate_tailscale_source() {
+  local layer="${ROOT_DIR}/rpi-image-gen/layer/showroom-tailscale.yaml"
+  local join="${ROOT_DIR}/systemd/showroom-tailscale-join"
+  local customize="${ROOT_DIR}/rpi-image-gen/bdebstrap/customize90-showroom"
+  require_file "${layer}"
+  require_contains "${layer}" '^[[:space:]]+- tailscale$' "Tailscale layer must install tailscale"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^# X-Env-Layer-Requires: .*showroom-tailscale' "full image must include the Tailscale layer"
+  require_contains "${ROOT_DIR}/rpi-image-gen/rootfs-overlay/etc/rpi-image-gen/slot-shared.d/showroom.conf" '^Path=/var/lib/tailscale$' "Tailscale node state must survive A/B OS updates"
+  require_contains "${customize}" '^  showroom-tailscale-join\.timer$' "post-overlay customize hook must enable the tailnet join timer"
+  require_contains "${join}" '/api/device/tailscale' "tailnet join must fetch its key from the dashboard"
+  require_contains "${join}" '--accept-dns=false' "tailnet join must not replace the screen's DNS resolver"
+  require_not_contains "${join}" 'tskey-' "auth keys must never be committed"
 }
 
 # Images built before the slim variant carry no marker and are full images.
@@ -299,7 +322,7 @@ validate_slim_layer() {
   local expected actual
   require_file "${slim}"
   require_contains "${slim}" '^# X-Env-Layer-Name: showroom-appliance-slim$' "slim layer must have its own name"
-  require_contains "${slim}" '^# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota$' "slim layer must keep Connect OTA and the admin user"
+  require_contains "${slim}" '^# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota,showroom-tailscale$' "slim layer must keep Connect OTA, the admin user and Tailscale"
   expected="$(sed -n 's/^[[:space:]]*- //p' "${full}" | grep -Ev "${legacy_only}" | sort)"
   actual="$(sed -n 's/^[[:space:]]*- //p' "${slim}" | sort)"
   [[ "${expected}" == "${actual}" ]] || fail "slim layer packages differ from showroom.yaml minus the X11/Chromium kiosk"
@@ -348,7 +371,7 @@ validate_rootfs() {
   for executable in \
     usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt usr/bin/nm-online usr/bin/pgrep \
     usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/systemd-analyze usr/bin/systemd-notify usr/bin/journalctl usr/bin/sudo \
-    usr/bin/rpi-connect usr/sbin/ip usr/sbin/runuser usr/sbin/sshd usr/sbin/wpa_supplicant sbin/agetty; do
+    usr/bin/rpi-connect usr/bin/tailscale usr/sbin/tailscaled usr/sbin/ip usr/sbin/runuser usr/sbin/sshd usr/sbin/wpa_supplicant sbin/agetty; do
     require_executable "${root}/${executable}"
   done
 
@@ -416,10 +439,10 @@ validate_rootfs() {
     SYSTEMD_LOG_LEVEL=warning chroot "${root}" /usr/bin/systemd-analyze verify \
       showroom-agent.service showroom-kiosk.service showroom-kiosk-recovery.service \
       showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-recovery.service \
-      showroom-network-onboarding.service || \
+      showroom-network-onboarding.service showroom-tailscale-join.service showroom-tailscale-join.timer || \
       fail "Showroom systemd units are invalid under the image's systemd version"
     local enabled_unit
-    for enabled_unit in NetworkManager.service systemd-resolved.service showroom-network-onboarding.service showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer getty@tty1.service; do
+    for enabled_unit in NetworkManager.service systemd-resolved.service showroom-network-onboarding.service showroom-agent.service showroom-kiosk.service showroom-kiosk-retry.timer tailscaled.service showroom-tailscale-join.timer getty@tty1.service; do
       chroot "${root}" /usr/bin/systemctl is-enabled --quiet "${enabled_unit}" || fail "${enabled_unit} is not enabled in the generated image"
     done
   fi

@@ -1,0 +1,10 @@
+[Unit]
+Description=Join the Showroom fleet tailnet for remote SSH
+After=network-online.target tailscaled.service showroom-agent.service
+Wants=network-online.target
+ConditionPathExists=/usr/bin/tailscale
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/showroom-tailscale-join
+TimeoutStartSec=3min

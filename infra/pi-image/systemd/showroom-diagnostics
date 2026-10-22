@@ -77,6 +77,14 @@ else
   printf 'nmcli is unavailable\n'
 fi
 
+heading "Remote access (Tailscale)"
+if command -v tailscale >/dev/null 2>&1; then
+  printf 'Tailnet:       %s\n' "$(tailscale status --json 2>/dev/null | jq -r '.BackendState // "unknown"' 2>/dev/null || printf unknown)"
+  printf 'Tailnet name:  %s\n' "$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "none"' 2>/dev/null || printf none)"
+else
+  printf 'Tailscale is not installed on this image\n'
+fi
+
 heading "HDMI and display"
 display_found=0
 for connector in /sys/class/drm/card*-HDMI-A-*/status; do
