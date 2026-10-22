@@ -21,7 +21,7 @@ cp -R apps/player/dist/. "${ARTIFACTS_DIR}/player/"
 # libmpv is loaded at runtime, so cross-compiling needs only an arm64 C linker.
 if [[ "$(uname -m)" != "aarch64" && -z "${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER:-}" ]]; then
   if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-    echo "aarch64-linux-gnu-gcc is required to cross-compile the native player (apt install gcc-aarch64-linux-gnu)" >&2
+    echo "aarch64-linux-gnu-gcc is required to cross-compile the native player (apt install gcc-aarch64-linux-gnu libc6-dev-arm64-cross)" >&2
     exit 1
   fi
   export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
