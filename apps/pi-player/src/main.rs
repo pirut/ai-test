@@ -6,6 +6,7 @@
 //! the cached playlist over loopback HTTP and reports playback back to it.
 
 mod agent;
+mod display;
 mod input;
 mod mpv;
 mod playlist;
@@ -28,10 +29,19 @@ use wifi_form::{Action, WifiForm};
 /// Exit status the launcher treats as "native playback unavailable on this
 /// device", so it can fall back to the legacy kiosk (sysexits EX_CONFIG).
 const EXIT_UNAVAILABLE: i32 = 78;
+/// Exit status asking the launcher to start the player again right away
+/// (sysexits EX_TEMPFAIL), without counting as a kiosk failure.
+const EXIT_RESTART: i32 = 75;
 const OVERLAY_ID: &str = "1";
 const REPORT_INTERVAL: Duration = Duration::from_secs(10);
 const STALL_AFTER: Duration = Duration::from_secs(20);
-const IDLE_RELOAD_BACKOFF: Duration = Duration::from_secs(5);
+const RELOAD_BACKOFF_MIN: Duration = Duration::from_secs(5);
+const RELOAD_BACKOFF_MAX: Duration = Duration::from_secs(300);
+/// A file that starts loading but never opens (bad file, stuck demuxer).
+const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
+const DISPLAY_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+const WATCHDOG_PING_INTERVAL: Duration = Duration::from_secs(10);
+const DRM_CLASS: &str = "/sys/class/drm";
 
 struct Config {
     agent_url: String,
@@ -43,6 +53,7 @@ struct Config {
     audio_device: Option<String>,
     runtime_dir: PathBuf,
     poll_interval: Duration,
+    watchdog: Duration,
 }
 
 fn env_or(name: &str, default: &str) -> String {
@@ -70,6 +81,11 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             runtime_dir: PathBuf::from(env_or("SHOWROOM_PLAYER_RUNTIME_DIR", &runtime_dir)),
+            watchdog: Duration::from_secs(
+                env_or("SHOWROOM_PLAYER_WATCHDOG_SEC", "60")
+                    .parse()
+                    .unwrap_or(60),
+            ),
             poll_interval: Duration::from_millis(
                 env_or("SHOWROOM_PLAYER_POLL_MS", "2000")
                     .parse()
@@ -181,6 +197,40 @@ fn agent_supports_native_player(client: &agent::Client) -> bool {
     true
 }
 
+/// A TV that is off at boot has no connected HDMI connector, and mpv cannot
+/// open DRM without one. Wait for it instead of failing (which would push the
+/// launcher into the legacy kiosk), and keep the agent's health check fed.
+/// Returns false if asked to quit while waiting.
+fn wait_for_display(client: &agent::Client) -> bool {
+    let drm = std::path::Path::new(DRM_CLASS);
+    if display::connection(drm) != display::Connection::Disconnected {
+        return true;
+    }
+    eprintln!("showroom-player: no display connected; waiting for one");
+    let waiting_since = Instant::now();
+    let mut last_report: Option<Instant> = None;
+    while display::connection(drm) == display::Connection::Disconnected {
+        if system::QUIT.load(Ordering::SeqCst) {
+            return false;
+        }
+        // Harmless before the watchdog is armed; keeps it fed if a restart
+        // lands here while the TV is off.
+        system::sd_notify("WATCHDOG=1");
+        if last_report.is_none_or(|at| at.elapsed() >= REPORT_INTERVAL) {
+            let _ = client.report_playback(&PlaybackReport {
+                asset_id: String::new(),
+                playlist_id: None,
+                state: "no-display",
+                position_seconds: Some(waiting_since.elapsed().as_secs_f64()),
+            });
+            last_report = Some(Instant::now());
+        }
+        thread::sleep(DISPLAY_CHECK_INTERVAL);
+    }
+    eprintln!("showroom-player: display connected");
+    true
+}
+
 fn spawn_agent_poller(client: agent::Client, interval: Duration, sender: Sender<Msg>) {
     thread::spawn(move || loop {
         let result = client.player_state().map_err(|error| error.to_string());
@@ -241,6 +291,19 @@ struct Player {
     reload_not_before: Instant,
     volume: Option<i64>,
     rotation: Option<i64>,
+
+    load_started_at: Option<Instant>,
+    consecutive_errors: u32,
+    reload_backoff: Duration,
+    idle_since: Instant,
+    display: display::Connection,
+    last_display_check: Instant,
+    last_watchdog_ping: Instant,
+    restart_requested: bool,
+    /// The playlist that last failed completely; retried only after the
+    /// backoff unless the agent sends a different one.
+    failed_items: Vec<Item>,
+    loading_path: String,
 }
 
 impl Player {
@@ -272,6 +335,16 @@ impl Player {
             reload_not_before: now,
             volume: None,
             rotation: None,
+            load_started_at: None,
+            consecutive_errors: 0,
+            reload_backoff: RELOAD_BACKOFF_MIN,
+            idle_since: now,
+            display: display::connection(std::path::Path::new(DRM_CLASS)),
+            last_display_check: now,
+            last_watchdog_ping: now,
+            restart_requested: false,
+            failed_items: Vec::new(),
+            loading_path: String::new(),
         }
     }
 
@@ -303,7 +376,9 @@ impl Player {
             if system::SCREENSHOT.swap(false, Ordering::SeqCst) {
                 self.screenshot();
             }
-            self.tick();
+            if !self.tick() {
+                return;
+            }
         }
     }
 
@@ -319,14 +394,21 @@ impl Player {
                 level,
                 text,
             } => eprintln!("mpv[{prefix}] {level}: {text}"),
+            Event::StartFile => {
+                self.load_started_at = Some(Instant::now());
+                self.loading_path = self.mpv.get_string("path").unwrap_or_default();
+            }
             Event::FileLoaded => self.on_file_loaded(),
             Event::EndFile { reason, error } if reason == mpv::END_FILE_REASON_ERROR => {
-                let title = self
-                    .current
-                    .as_ref()
-                    .map(|item| item.title.clone())
-                    .unwrap_or_default();
-                eprintln!("showroom-player: playback error {error} on {title:?}; mpv moves to the next item");
+                self.load_started_at = None;
+                self.consecutive_errors += 1;
+                eprintln!(
+                    "showroom-player: playback error {error} on {:?}",
+                    self.loading_path
+                );
+                if self.consecutive_errors as usize >= self.applied.len().max(1) {
+                    self.back_off("every item in the playlist failed to play");
+                }
             }
             Event::PropertyChange { name, value } => match (name.as_str(), value) {
                 ("time-pos", PropertyValue::Double(position)) => {
@@ -349,12 +431,7 @@ impl Player {
                     if idle && self.screen == Screen::Playing && !self.applied.is_empty() {
                         // Every entry failed or mpv dropped the playlist; load
                         // it again on the next state update, with a backoff.
-                        eprintln!(
-                            "showroom-player: mpv went idle with a playlist loaded; reloading"
-                        );
-                        self.applied.clear();
-                        self.current = None;
-                        self.reload_not_before = Instant::now() + IDLE_RELOAD_BACKOFF;
+                        self.back_off("mpv went idle with a playlist loaded");
                     }
                 }
                 _ => {}
@@ -364,7 +441,25 @@ impl Player {
         true
     }
 
+    /// Drops the playlist and reloads it later, waiting longer each time it
+    /// fails again so a broken file cannot spin the CPU.
+    fn back_off(&mut self, reason: &str) {
+        eprintln!(
+            "showroom-player: {reason}; reloading in {}s",
+            self.reload_backoff.as_secs()
+        );
+        self.command(&["stop"]);
+        self.failed_items = std::mem::take(&mut self.applied);
+        self.current = None;
+        self.consecutive_errors = 0;
+        self.reload_not_before = Instant::now() + self.reload_backoff;
+        self.reload_backoff = (self.reload_backoff * 2).min(RELOAD_BACKOFF_MAX);
+    }
+
     fn on_file_loaded(&mut self) {
+        self.load_started_at = None;
+        self.consecutive_errors = 0;
+        self.reload_backoff = RELOAD_BACKOFF_MIN;
         let path = self.mpv.get_string("path").unwrap_or_default();
         self.current = self
             .applied
@@ -399,13 +494,16 @@ impl Player {
 
         let screen = screens::choose(Some(&state));
         if screen == Screen::Playing {
-            if Instant::now() >= self.reload_not_before {
+            let backing_off =
+                Instant::now() < self.reload_not_before && state.items == self.failed_items;
+            if !backing_off {
                 self.sync_playlist(&state);
             }
         } else if !self.applied.is_empty() || !self.idle {
             self.command(&["stop"]);
             self.applied.clear();
             self.current = None;
+            self.idle_since = Instant::now();
         }
 
         if self.volume != Some(state.volume) {
@@ -536,38 +634,89 @@ impl Player {
         self.overlay = events;
     }
 
-    fn tick(&mut self) {
-        let Some(item) = self.current.clone() else {
-            return;
-        };
-        if self.screen != Screen::Playing {
-            return;
+    /// Periodic checks. Returns false when the player should exit.
+    fn tick(&mut self) -> bool {
+        if self.last_watchdog_ping.elapsed() >= WATCHDOG_PING_INTERVAL {
+            system::sd_notify("WATCHDOG=1");
+            self.last_watchdog_ping = Instant::now();
         }
-        if item.is_video() && !self.idle && self.last_progress_at.elapsed() > STALL_AFTER {
-            self.recover_attempts += 1;
-            self.recovering = true;
-            self.last_progress_at = Instant::now();
-            self.redraw();
-            if self.applied.len() > 1 && self.recover_attempts >= 2 {
-                eprintln!("showroom-player: {} stalled again; skipping it", item.title);
-                self.command(&["playlist-next", "force"]);
-                self.recover_attempts = 0;
-            } else {
-                eprintln!("showroom-player: {} stalled; reopening it", item.title);
-                self.command(&["playlist-play-index", "current"]);
+
+        if self.last_display_check.elapsed() >= DISPLAY_CHECK_INTERVAL {
+            self.last_display_check = Instant::now();
+            let now = display::connection(std::path::Path::new(DRM_CLASS));
+            let reconnected = self.display == display::Connection::Disconnected
+                && now == display::Connection::Connected;
+            if now != self.display {
+                eprintln!("showroom-player: display {:?}", now);
+                self.display = now;
             }
-            self.report();
+            if reconnected {
+                // DRM outputs and HDMI audio are only probed when mpv starts,
+                // so start over; the launcher re-runs the player at once.
+                eprintln!("showroom-player: display reconnected; restarting to reopen it");
+                self.restart_requested = true;
+                return false;
+            }
         }
+
+        if self
+            .load_started_at
+            .is_some_and(|at| at.elapsed() > LOAD_TIMEOUT)
+        {
+            eprintln!("showroom-player: a file did not open within {LOAD_TIMEOUT:?}; skipping it");
+            self.load_started_at = None;
+            self.consecutive_errors += 1;
+            if self.consecutive_errors as usize >= self.applied.len().max(1) {
+                self.back_off("every item in the playlist failed to open");
+            } else {
+                self.command(&["playlist-next", "force"]);
+            }
+        }
+
+        if self.screen == Screen::Playing {
+            if let Some(item) = self.current.clone() {
+                if item.is_video() && !self.idle && self.last_progress_at.elapsed() > STALL_AFTER {
+                    self.recover_attempts += 1;
+                    self.recovering = true;
+                    self.last_progress_at = Instant::now();
+                    self.redraw();
+                    if self.applied.len() > 1 && self.recover_attempts >= 2 {
+                        eprintln!("showroom-player: {} stalled again; skipping it", item.title);
+                        self.command(&["playlist-next", "force"]);
+                        self.recover_attempts = 0;
+                    } else {
+                        eprintln!("showroom-player: {} stalled; reopening it", item.title);
+                        self.command(&["playlist-play-index", "current"]);
+                    }
+                    self.report();
+                }
+            }
+        }
+
         if self
             .last_report_at
             .is_none_or(|at| at.elapsed() >= REPORT_INTERVAL)
         {
             self.report();
         }
+        true
     }
 
     fn report(&mut self) {
         let Some(item) = self.current.as_ref() else {
+            // Not playing on purpose (setup or waiting screens): keep the
+            // agent's health check fed so it does not restart the kiosk
+            // every two minutes while a screen waits for content.
+            if self.screen != Screen::Playing {
+                let report = PlaybackReport {
+                    asset_id: String::new(),
+                    playlist_id: self.state.as_ref().and_then(|s| s.playlist_id.clone()),
+                    state: "idle",
+                    position_seconds: Some(self.idle_since.elapsed().as_secs_f64()),
+                };
+                let _ = self.jobs.try_send(Job::Report(report));
+                self.last_report_at = Some(Instant::now());
+            }
             return;
         };
         // Images have no media clock; report time on screen so the agent's
@@ -669,6 +818,9 @@ fn main() {
         std::process::exit(EXIT_UNAVAILABLE);
     }
     system::activate_own_vt();
+    if !wait_for_display(&client) {
+        return;
+    }
 
     let mpv = match start_mpv(&config) {
         Ok(mpv) => mpv,
@@ -681,6 +833,13 @@ fn main() {
         eprintln!("showroom-player: mpv did not open the DRM display");
         drop(mpv);
         std::process::exit(EXIT_UNAVAILABLE);
+    }
+
+    if !config.watchdog.is_zero() {
+        system::sd_notify(&format!(
+            "READY=1\nWATCHDOG_USEC={}",
+            config.watchdog.as_micros()
+        ));
     }
 
     let terminal = input::RawTerminal::enable();
@@ -696,9 +855,16 @@ fn main() {
     let mut player = Player::new(mpv, config, jobs);
     player.run(messages, keys);
     let shutdown_requested = system::QUIT.load(Ordering::SeqCst);
+    let restart_requested = player.restart_requested;
     drop(player);
     drop(terminal);
-    // Leaving for any reason other than a stop request is a failure, so
-    // systemd restarts the kiosk.
-    std::process::exit(if shutdown_requested { 0 } else { 1 });
+    // Leaving for any reason other than a stop or restart request is a
+    // failure, so systemd restarts the kiosk.
+    std::process::exit(if shutdown_requested {
+        0
+    } else if restart_requested {
+        EXIT_RESTART
+    } else {
+        1
+    });
 }

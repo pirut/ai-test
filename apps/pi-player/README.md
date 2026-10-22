@@ -18,12 +18,24 @@ posts progress to `/local/playback` every 10 seconds and on each new item.
   "waiting for content" screens as mpv OSD overlays.
 - Reopens a video that stops advancing for 20 seconds, and skips it after a
   second stall when the playlist has other items.
+- Skips files that fail to open or do not open within 30 seconds. When every
+  item fails it stops and retries with a growing backoff (5 s to 5 min), or at
+  once if the agent sends a different playlist.
+- Waits for a TV that is off at boot instead of failing, and restarts itself
+  (exit 75, re-run by the launcher) when HDMI reconnects so DRM and HDMI audio
+  are probed again.
+- Arms a 60 s systemd watchdog (`WATCHDOG_USEC`, `SHOWROOM_PLAYER_WATCHDOG_SEC`)
+  and pings it from its main loop, so a hung player is killed and restarted.
+- Reports an `idle` heartbeat on setup and waiting screens, so the agent's
+  health check does not restart the kiosk while a screen waits for content.
 - Writes `$XDG_RUNTIME_DIR/screenshot.jpg` on `SIGUSR1` for the agent's
   screenshot upload (`showroom-screenshot` in the image).
 
 libmpv is loaded with `dlopen` at runtime. If libmpv is missing or mpv cannot
 open the DRM display, the player exits with status 78 and
-`showroom-kiosk-launch` falls back to the legacy X11/Chromium kiosk.
+`showroom-kiosk-launch` falls back to the legacy X11/Chromium kiosk. It does
+the same when the agent is too old to serve `/local/player/state`, and after
+three native crashes within 15 minutes (until the next reboot).
 
 ## Configuration
 

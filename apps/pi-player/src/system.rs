@@ -77,6 +77,28 @@ pub fn detect_hdmi_audio_device(asound: &Path) -> Option<String> {
     None
 }
 
+/// Sends a message to systemd's notify socket, if the service has one.
+/// The kiosk unit runs the player under a launcher script, so the unit uses
+/// NotifyAccess=all and the player arms its own watchdog with WATCHDOG_USEC.
+pub fn sd_notify(message: &str) {
+    use std::os::unix::net::{SocketAddr, UnixDatagram};
+    let Ok(path) = std::env::var("NOTIFY_SOCKET") else {
+        return;
+    };
+    let Ok(socket) = UnixDatagram::unbound() else {
+        return;
+    };
+    let address = if let Some(name) = path.strip_prefix('@') {
+        use std::os::linux::net::SocketAddrExt;
+        SocketAddr::from_abstract_name(name.as_bytes())
+    } else {
+        SocketAddr::from_pathname(&path)
+    };
+    if let Ok(address) = address {
+        let _ = socket.send_to_addr(message.as_bytes(), &address);
+    }
+}
+
 const VT_ACTIVATE: libc::c_ulong = 0x5606;
 const VT_WAITACTIVE: libc::c_ulong = 0x5607;
 

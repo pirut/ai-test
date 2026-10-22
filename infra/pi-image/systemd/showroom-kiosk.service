@@ -11,6 +11,9 @@ StartLimitAction=none
 
 [Service]
 Type=simple
+# The native player runs under the launcher script and arms its own watchdog
+# with WATCHDOG_USEC, so it must be allowed to notify from a child process.
+NotifyAccess=all
 ExecStart=/usr/local/bin/showroom-kiosk-launch
 # Wait for the native player or X11 before switching the physical display.
 ExecStartPost=+/usr/local/bin/showroom-kiosk-ready

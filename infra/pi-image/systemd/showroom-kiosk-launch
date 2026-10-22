@@ -16,6 +16,13 @@ RENDERER_OVERRIDE=/var/lib/showroom/state/kiosk-renderer
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/showroom-kiosk}"
 NATIVE_MARKER="${RUNTIME_DIR}/native-player"
 EXIT_NATIVE_UNAVAILABLE=78
+EXIT_NATIVE_RESTART=75
+# Native crashes are counted in /tmp (cleared on reboot): three within 15
+# minutes switch this boot to the legacy kiosk instead of crash-looping into
+# the recovery screen.
+CRASH_LOG=/tmp/showroom-native-crashes
+CRASH_LIMIT=3
+CRASH_WINDOW_SECONDS=900
 
 renderer="${SHOWROOM_KIOSK_RENDERER:-}"
 if [[ -z "${renderer}" && -r "${RENDERER_OVERRIDE}" ]]; then
@@ -39,8 +46,24 @@ run_legacy() {
   exec "${LEGACY_KIOSK}"
 }
 
+recent_crashes() {
+  local now cutoff count=0 stamp
+  now="$(date +%s)"
+  cutoff=$((now - CRASH_WINDOW_SECONDS))
+  [[ -r "${CRASH_LOG}" ]] || { echo 0; return; }
+  while read -r stamp; do
+    [[ "${stamp}" =~ ^[0-9]+$ ]] && (( stamp >= cutoff )) && count=$((count + 1))
+  done <"${CRASH_LOG}"
+  echo "${count}"
+}
+
 if [[ "${renderer}" == "legacy" || -z "${player}" ]]; then
   echo "Starting legacy X11/Chromium kiosk" >&2
+  run_legacy
+fi
+
+if [[ "${renderer}" != "native" && -x "${LEGACY_KIOSK}" ]] && (( $(recent_crashes) >= CRASH_LIMIT )); then
+  echo "Native player crashed ${CRASH_LIMIT} times in $((CRASH_WINDOW_SECONDS / 60)) minutes; using the legacy kiosk until reboot" >&2
   run_legacy
 fi
 
@@ -54,13 +77,22 @@ done
 echo "Starting native player ${player}" >&2
 mkdir -p "${RUNTIME_DIR}"
 : >"${NATIVE_MARKER}"
-status=0
-"${player}" || status=$?
+while true; do
+  status=0
+  "${player}" || status=$?
+  # The player asks to be started again after the TV reconnects so mpv can
+  # reopen the display; that is not a failure.
+  [[ "${status}" == "${EXIT_NATIVE_RESTART}" ]] || break
+  echo "Native player requested a restart" >&2
+done
 
 if [[ "${status}" == "${EXIT_NATIVE_UNAVAILABLE}" && "${renderer}" != "native" ]]; then
   echo "Native player is unavailable on this device; falling back to the legacy kiosk" >&2
   run_legacy
 fi
 
+if [[ "${status}" != 0 ]]; then
+  date +%s >>"${CRASH_LOG}"
+fi
 rm -f "${NATIVE_MARKER}"
 exit "${status}"
