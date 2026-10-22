@@ -20,7 +20,11 @@ export async function POST(
   }
 
   const { deviceId } = await params;
-  const payload = schema.parse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Unknown or malformed command" }, { status: 400 });
+  }
+  const payload = parsed.data;
 
   if (
     (
@@ -38,8 +42,14 @@ export async function POST(
       ssid: z.string().trim().min(1).max(32),
       password: z.string().min(8).max(63),
       priority: z.number().int().min(-999).max(999).default(100),
-    }).parse(payload.payload);
-    payload.payload = network;
+    }).safeParse(payload.payload);
+    if (!network.success) {
+      return NextResponse.json(
+        { error: "Wi-Fi name must be 1 to 32 characters and the password 8 to 63 characters" },
+        { status: 400 },
+      );
+    }
+    payload.payload = network.data;
   }
 
   const command = await issueCommand({
