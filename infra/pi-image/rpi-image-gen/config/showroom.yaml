@@ -18,7 +18,8 @@ image:
   name: showroom-appliance
   boot_part_size: 192M
   system_part_size: 2400M
-  data_part_size: 12G
+  # Grown to fill the card on first boot by showroom-grow-persistent.
+  data_part_size: 1G
   rootfs_type: erofs
 
 layer:

@@ -23,6 +23,14 @@ case "${DEVICE_LAYER}" in
   *) echo "SHOWROOM_DEVICE_LAYER must be rpi4, rpi5, cm4, or cm5" >&2; exit 1 ;;
 esac
 
+# SD-card images ship a 1G persistent partition that grows on first boot, so
+# Imager writes far less. eMMC layers keep the fixed size because
+# rpi-image-gen write-protects their partition table.
+case "${DEVICE_LAYER}" in
+  rpi4|rpi5) DATA_PART_SIZE=1G ;;
+  cm4|cm5) DATA_PART_SIZE=12G ;;
+esac
+
 case "${DEVICE_LAYER}" in
   rpi4) export SHOWROOM_HARDWARE_PROFILE="${SHOWROOM_HARDWARE_PROFILE:-rpi4-industrial-sd}" ;;
   rpi5) export SHOWROOM_HARDWARE_PROFILE="${SHOWROOM_HARDWARE_PROFILE:-rpi5-industrial-sd}" ;;
@@ -67,6 +75,7 @@ sed \
   -e "s/^  layer: rpi5$/  layer: ${DEVICE_LAYER}/" \
   -e "s/^  version: 1.0.0$/  version: ${IMAGE_VERSION}/" \
   -e "s/^  app: showroom-appliance$/  app: ${APP_LAYER}/" \
+  -e "s/^  data_part_size: 1G$/  data_part_size: ${DATA_PART_SIZE}/" \
   "${CONFIG_SOURCE}" > "${CONFIG_GENERATED}"
 grep -q "^  app: ${APP_LAYER}$" "${CONFIG_GENERATED}" || { echo "Could not select the ${APP_LAYER} layer in ${CONFIG_GENERATED}" >&2; exit 1; }
 
