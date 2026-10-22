@@ -1,0 +1,8 @@
+# Raspberry Pi firmware A/B selection, rewritten by the RAUC tryboot backend
+# (/usr/libexec/showroom/rauc-tryboot-backend). [all] is the committed slot;
+# a "0 tryboot" reboot tries [tryboot] once and falls back to [all].
+[all]
+tryboot_a_b=1
+boot_partition=2
+[tryboot]
+boot_partition=3

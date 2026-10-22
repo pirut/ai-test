@@ -22,7 +22,10 @@ if [[ "${healthy}" == "1" ]]; then
   exit 0
 fi
 
-python3 - "${PENDING}" <<'PY'
+# Raspberry Pi OS images roll back with Python; Showroom OS (Buildroot) has no
+# Python, so it uses jq for the same symlink swap.
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "${PENDING}" <<'PY'
 import json
 import os
 import sys
@@ -43,6 +46,16 @@ for kind in ("agent", "player"):
     os.symlink(previous, next_link)
     os.replace(next_link, current_link)
 PY
+else
+  for kind in agent player; do
+    previous="$(jq -r --arg kind "${kind}" '.[$kind].previous // empty' "${PENDING}")"
+    current_link="$(jq -r --arg kind "${kind}" '.[$kind].currentLink // empty' "${PENDING}")"
+    [[ -n "${previous}" && -n "${current_link}" ]] || continue
+    rm -f "${current_link}.rollback"
+    ln -s "${previous}" "${current_link}.rollback"
+    mv -T "${current_link}.rollback" "${current_link}"
+  done
+fi
 
 mv "${PENDING}" "${STATE_ROOT}/last-failed-update.json"
 rollback_count="$(cat "${STATE_ROOT}/rollback-count" 2>/dev/null || echo 0)"

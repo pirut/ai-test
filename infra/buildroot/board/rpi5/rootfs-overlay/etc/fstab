@@ -1,0 +1,9 @@
+# <file system>  <mount point>  <type>  <options>  <dump>  <pass>
+/dev/root  /  auto  ro  0  1
+
+# Persistent data partition (grown to fill the card on first boot), and the
+# paths that must survive reboots and A/B OS updates.
+LABEL=showroom-data  /data  ext4  rw,noatime,commit=30,x-systemd.growfs,x-systemd.requires=showroom-data-grow.service  0  2
+/data/showroom  /var/lib/showroom  none  bind,x-systemd.requires=showroom-data-layout.service  0  0
+/data/journal  /var/log/journal  none  bind,x-systemd.requires=showroom-data-layout.service  0  0
+/data/network/system-connections  /etc/NetworkManager/system-connections  none  bind,x-systemd.requires=showroom-data-layout.service  0  0

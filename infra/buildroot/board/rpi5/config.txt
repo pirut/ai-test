@@ -1,0 +1,17 @@
+# Showroom OS firmware configuration. Each boot slot (partitions 2 and 3) has
+# its own copy; autoboot.txt on partition 1 picks the slot.
+kernel=Image
+arm_64bit=1
+auto_initramfs=0
+disable_splash=1
+disable_overscan=1
+camera_auto_detect=0
+display_auto_detect=0
+
+# KMS display for the native player (libmpv on DRM).
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+disable_fw_kms_setup=1
+
+# Reset the Pi if the kernel stops feeding the hardware watchdog.
+kernel_watchdog_timeout=20

@@ -1,0 +1,15 @@
+#!/bin/bash
+# The agent's reboot command on Showroom OS. When an OS update is waiting in
+# the other slot it reboots with the firmware's one-shot tryboot flag, so the
+# new slot gets exactly one boot and a failed one falls back by itself.
+set -euo pipefail
+
+PENDING=/data/rauc/tryboot-pending
+ATTEMPTED=/data/rauc/tryboot-attempted
+
+if [[ -s "${PENDING}" ]]; then
+  cp "${PENDING}" "${ATTEMPTED}"
+  sync
+  exec systemctl reboot "0 tryboot"
+fi
+exec systemctl reboot

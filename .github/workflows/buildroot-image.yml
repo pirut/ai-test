@@ -1,0 +1,127 @@
+name: Showroom OS (Buildroot) image
+
+# Builds the experimental Buildroot image for new Pi 5 screens. It never
+# publishes a release or contacts deployed screens: the image and the signed
+# OS update bundle are workflow artifacts only.
+on:
+  pull_request:
+    paths:
+      - "infra/buildroot/**"
+      - "infra/pi-image/systemd/**"
+      - "infra/pi-image/config/**"
+      - "apps/agent/**"
+      - "apps/pi-player/**"
+      - ".github/workflows/buildroot-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/buildroot/**"
+      - ".github/workflows/buildroot-image.yml"
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: Sign the OS bundle with the production RAUC keys (repository secrets) instead of throwaway ones
+        required: true
+        default: development
+        type: choice
+        options: [development, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buildroot-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SHOWROOM_BUILDROOT_VERSION: 2026.02.3
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck genimage rauc erofs-utils mtools dosfstools e2fsprogs squashfs-tools fdisk
+      - name: Shell scripts
+        run: |
+          shellcheck infra/buildroot/*.sh infra/buildroot/board/rpi5/*.sh infra/buildroot/tests/*.sh \
+            infra/buildroot/board/rpi5/rootfs-overlay/usr/libexec/showroom/* \
+            infra/pi-image/systemd/showroom-update-guard
+      - name: A/B tryboot backend
+        run: sudo ./infra/buildroot/tests/tryboot-backend.sh
+      - name: Card layout and signed bundle
+        run: ./infra/buildroot/tests/post-image-dry-run.sh
+      - name: Defconfig resolves as written
+        run: ./infra/buildroot/tests/check-defconfig.sh
+
+  image:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      SHOWROOM_BUILDROOT_OUTPUT: ${{ github.workspace }}/infra/buildroot/out
+    steps:
+      - name: Free disk space for Buildroot
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross build-essential file wget cpio unzip rsync bc
+      - run: npm ci
+      - name: Image version
+        run: echo "SHOWROOM_IMAGE_VERSION=$(date -u +%Y.%m.%d).${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
+      - name: Production RAUC keys
+        if: github.event_name == 'workflow_dispatch' && inputs.signing == 'production'
+        env:
+          RAUC_CA_CERT: ${{ secrets.SHOWROOM_RAUC_CA_CERT }}
+          RAUC_SIGNING_CERT: ${{ secrets.SHOWROOM_RAUC_SIGNING_CERT }}
+          RAUC_SIGNING_KEY: ${{ secrets.SHOWROOM_RAUC_SIGNING_KEY }}
+        run: |
+          if [[ -z "${RAUC_CA_CERT}" || -z "${RAUC_SIGNING_CERT}" || -z "${RAUC_SIGNING_KEY}" ]]; then
+            echo "Production signing needs the SHOWROOM_RAUC_CA_CERT, SHOWROOM_RAUC_SIGNING_CERT and SHOWROOM_RAUC_SIGNING_KEY secrets" >&2
+            exit 1
+          fi
+          keys="${RUNNER_TEMP}/rauc"
+          mkdir -p "${keys}"
+          umask 077
+          printf '%s\n' "${RAUC_CA_CERT}" >"${keys}/ca.cert.pem"
+          printf '%s\n' "${RAUC_SIGNING_CERT}" >"${keys}/signing.cert.pem"
+          printf '%s\n' "${RAUC_SIGNING_KEY}" >"${keys}/signing.key.pem"
+          {
+            echo "SHOWROOM_RAUC_KEYRING=${keys}/ca.cert.pem"
+            echo "SHOWROOM_RAUC_CERT=${keys}/signing.cert.pem"
+            echo "SHOWROOM_RAUC_KEY=${keys}/signing.key.pem"
+          } >>"${GITHUB_ENV}"
+      - name: Buildroot download and compiler caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            infra/buildroot/.dl
+            ~/.buildroot-ccache
+          key: buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-${{ hashFiles('infra/buildroot/configs/*', 'infra/buildroot/patches/**', 'infra/buildroot/package/**') }}
+          restore-keys: buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-
+      - name: Build
+        run: ./infra/buildroot/build.sh
+      - name: Sizes
+        run: cat "${SHOWROOM_BUILDROOT_OUTPUT}/images/IMAGE_SIZES.txt" >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: showroom-os-rpi5-${{ env.SHOWROOM_IMAGE_VERSION }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            infra/buildroot/out/images/*.img.xz
+            infra/buildroot/out/images/*.raucb
+            infra/buildroot/out/images/SHA256SUMS
+            infra/buildroot/out/images/IMAGE_SIZES.txt

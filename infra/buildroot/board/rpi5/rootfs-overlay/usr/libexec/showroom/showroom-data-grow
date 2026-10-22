@@ -1,0 +1,41 @@
+#!/bin/bash
+# Grows the data partition to the end of the card on first boot, so the flash
+# image itself stays small; x-systemd.growfs then grows the filesystem. It
+# never fails, because /data requires it: a card that cannot grow still boots
+# with the data partition it was flashed with.
+set -uo pipefail
+
+log() {
+  echo "showroom-data-grow: $*" >&2
+}
+
+part="$(readlink -f /dev/disk/by-label/showroom-data 2>/dev/null)" || exit 0
+[[ -b "${part}" ]] || exit 0
+sys="/sys/class/block/$(basename "${part}")"
+[[ -r "${sys}/partition" ]] || exit 0
+number="$(cat "${sys}/partition")"
+disk_name="$(basename "$(readlink -f "${sys}/..")")"
+disk="/dev/${disk_name}"
+disk_sectors="$(cat "/sys/class/block/${disk_name}/size")"
+end=$(( $(cat "${sys}/start") + $(cat "${sys}/size") ))
+
+# Nothing to do once less than 64 MiB (131072 sectors) follows the partition.
+if (( disk_sectors - end < 131072 )); then
+  exit 0
+fi
+
+log "growing ${part} (partition ${number} of ${disk}) to the end of the disk"
+# The data partition is a logical partition, so its extended partition (4)
+# has to grow first.
+if (( number > 4 )); then
+  if ! echo ', +' | sfdisk --no-reread --no-tell-kernel -N 4 "${disk}"; then
+    log "could not grow the extended partition"
+    exit 0
+  fi
+fi
+if ! echo ', +' | sfdisk --no-reread --no-tell-kernel -N "${number}" "${disk}"; then
+  log "could not grow partition ${number}"
+  exit 0
+fi
+partx -u --nr "${number}" "${disk}" || log "the kernel did not pick up the new size; it will after the next reboot"
+exit 0
