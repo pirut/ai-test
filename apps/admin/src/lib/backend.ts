@@ -211,6 +211,16 @@ export async function listPlaylistFolders() {
   );
 }
 
+export async function getWorkspaceAccess() {
+  if (!hasConvexBackend()) {
+    return { isPlatformOperator: true };
+  }
+
+  return z
+    .object({ isPlatformOperator: z.boolean() })
+    .parse(await convexQuery(api.admin.getWorkspaceAccess, {}));
+}
+
 export async function listReleases() {
   if (!hasConvexBackend()) {
     return mock.listReleases();
@@ -468,12 +478,31 @@ export async function claimDevice(input: {
     name: input.name,
     siteName: input.siteName,
   });
-  return z
-    .object({
-      deviceId: z.string(),
-      credential: z.string(),
-    })
+  const parsed = z
+    .union([
+      z.object({
+        deviceId: z.string(),
+        credential: z.string(),
+      }),
+      z.object({
+        error: z.enum(["invalid_code", "too_many_attempts"]),
+      }),
+    ])
     .parse(result);
+  if ("error" in parsed) {
+    if (parsed.error === "too_many_attempts") {
+      throw new ClaimRateLimitedError();
+    }
+    return null;
+  }
+  return parsed;
+}
+
+export class ClaimRateLimitedError extends Error {
+  constructor() {
+    super("Too many wrong claim codes. Try again in 15 minutes.");
+    this.name = "ClaimRateLimitedError";
+  }
 }
 
 export async function issueCommand(input: {

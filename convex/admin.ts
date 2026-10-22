@@ -14,8 +14,10 @@ import * as showroom from "./showroom";
 import { serializeScreenDetail } from "./screenSerialization";
 import {
   hashValue,
+  isPlatformOrg,
   randomToken,
   requireAdmin,
+  requirePlatformAdmin,
   requireOrgIdentity,
 } from "./lib";
 
@@ -719,6 +721,15 @@ export const listLibraryFolders = query({
   },
 });
 
+export const getWorkspaceAccess = query({
+  args: {},
+  returns: v.object({ isPlatformOperator: v.boolean() }),
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgIdentity(ctx);
+    return { isPlatformOperator: isPlatformOrg(orgId) };
+  },
+});
+
 export const listReleases = query({
   args: {},
   returns: v.array(v.any()),
@@ -1109,7 +1120,7 @@ export const createRelease = mutation({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const identity = await requireAdmin(ctx);
+    const identity = await requirePlatformAdmin(ctx);
     if (args.systemUrl) {
       throw new ConvexError("Operating-system updates must use the A/B OTA lane");
     }
@@ -1192,7 +1203,7 @@ export const generateReleaseArtifactUploadUrl = mutation({
     expiresInSeconds: v.number(),
   }),
   handler: async (ctx, _args) => {
-    await requireAdmin(ctx);
+    await requirePlatformAdmin(ctx);
 
     return {
       uploadUrl: await ctx.storage.generateUploadUrl(),
@@ -1246,7 +1257,7 @@ export const publishReleaseArtifacts = mutation({
     ),
   }),
   handler: async (ctx, args) => {
-    const identity = await requireAdmin(ctx);
+    const identity = await requirePlatformAdmin(ctx);
     if (!args.player && !args.agent && !args.system) {
       throw new ConvexError("Provide a player artifact, agent artifact, and/or system bundle");
     }
@@ -1409,7 +1420,7 @@ export const deployRelease = mutation({
     releaseId: v.id("releases"),
   }),
   handler: async (ctx, args) => {
-    const { orgId } = await requireAdmin(ctx);
+    const { orgId } = await requirePlatformAdmin(ctx);
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.organizationId !== orgId) {
       throw new ConvexError("Release not found");
@@ -1823,18 +1834,38 @@ export const removeScreen = mutation({
   },
 });
 
+// Claim codes are 6 characters, so cap guesses per workspace.
+const maxClaimFailures = 10;
+const claimLockoutWindowMs = 15 * 60_000;
+
 export const claimDeviceByCode = mutation({
   args: {
     claimCode: v.string(),
     name: v.string(),
     siteName: v.string(),
   },
-  returns: v.object({
-    deviceId: v.id("devices"),
-    credential: v.string(),
-  }),
+  returns: v.union(
+    v.object({
+      deviceId: v.id("devices"),
+      credential: v.string(),
+    }),
+    v.object({
+      error: v.union(v.literal("invalid_code"), v.literal("too_many_attempts")),
+    }),
+  ),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
+    const now = Date.now();
+    const recentFailures = await ctx.db
+      .query("claimFailures")
+      .withIndex("by_org_and_failed_at", (q) =>
+        q.eq("organizationId", orgId).gt("failedAt", now - claimLockoutWindowMs),
+      )
+      .take(maxClaimFailures);
+    if (recentFailures.length >= maxClaimFailures) {
+      return { error: "too_many_attempts" as const };
+    }
+
     const registration = await ctx.db
       .query("deviceRegistrations")
       .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
@@ -1843,9 +1874,18 @@ export const claimDeviceByCode = mutation({
     if (
       !registration ||
       registration.claimedDeviceId ||
-      (typeof registration.expiresAt === "number" && registration.expiresAt <= Date.now())
+      (typeof registration.expiresAt === "number" && registration.expiresAt <= now)
     ) {
-      throw new ConvexError("Invalid claim code");
+      // Returned rather than thrown so the failure record is kept.
+      await ctx.db.insert("claimFailures", { organizationId: orgId, failedAt: now });
+      const expired = await ctx.db
+        .query("claimFailures")
+        .withIndex("by_org_and_failed_at", (q) =>
+          q.eq("organizationId", orgId).lt("failedAt", now - claimLockoutWindowMs),
+        )
+        .take(50);
+      for (const failure of expired) await ctx.db.delete(failure._id);
+      return { error: "invalid_code" as const };
     }
 
     const credential = randomToken(32);
@@ -1920,6 +1960,9 @@ export const enqueueDeviceCommand = mutation({
       identity.role !== "org:admin"
     ) {
       throw new ConvexError("Admin role required");
+    }
+    if (args.commandType === "update_release" && !isPlatformOrg(orgId)) {
+      throw new ConvexError("Releases are managed by the platform operator");
     }
     const device = await ctx.db.get(args.deviceId);
     if (!device || device.organizationId !== orgId) {

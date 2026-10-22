@@ -153,6 +153,11 @@ export default defineSchema({
     .index("by_claim_code", ["claimCode"])
     .index("by_claimed_device", ["claimedDeviceId"]),
 
+  claimFailures: defineTable({
+    organizationId: v.string(),
+    failedAt: v.number(),
+  }).index("by_org_and_failed_at", ["organizationId", "failedAt"]),
+
   deviceHeartbeats: defineTable({
     organizationId: v.optional(v.string()),
     deviceId: v.id("devices"),

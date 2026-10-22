@@ -122,3 +122,31 @@ export async function resolveDeviceByCredential(
 
   return ctx.db.get(record.deviceId);
 }
+
+// Comma-separated Clerk org ids allowed to manage platform releases. Unset keeps
+// the single-tenant behavior where any workspace admin can publish.
+export function platformOrgIds() {
+  const raw = process.env.SHOWROOM_PLATFORM_ORG_IDS?.trim();
+  if (!raw) {
+    return null;
+  }
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+}
+
+export function isPlatformOrg(orgId: string) {
+  const ids = platformOrgIds();
+  return ids === null || ids.has(orgId);
+}
+
+export async function requirePlatformAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await requireAdmin(ctx);
+  if (!isPlatformOrg(identity.orgId)) {
+    throw new ConvexError("Releases are managed by the platform operator");
+  }
+  return identity;
+}

@@ -16,6 +16,7 @@ export const env = {
   clerkWebhookSigningSecret: normalizeEnv(process.env.CLERK_WEBHOOK_SIGNING_SECRET),
   resendApiKey: normalizeEnv(process.env.RESEND_API_KEY),
   sentryDsn: normalizeEnv(process.env.SENTRY_DSN),
+  imageDownloadUrl: normalizeEnv(process.env.NEXT_PUBLIC_SHOWROOM_IMAGE_URL),
 };
 
 export function hasConvexBackend() {
