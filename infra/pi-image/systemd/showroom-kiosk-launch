@@ -40,7 +40,9 @@ done
 run_legacy() {
   rm -f "${NATIVE_MARKER}"
   if [[ ! -x "${LEGACY_KIOSK}" ]]; then
-    echo "Legacy kiosk is not installed and the native player cannot run" >&2
+    # Slim images ship without X11/Chromium. Fail so systemd retries the
+    # native player and, after repeated failures, shows the recovery screen.
+    echo "Legacy kiosk is not installed (slim image) and the native player cannot run" >&2
     exit 1
   fi
   exec "${LEGACY_KIOSK}"

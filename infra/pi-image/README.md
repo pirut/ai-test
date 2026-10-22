@@ -121,6 +121,23 @@ flash endurance. The persistent journal retains agent, kiosk, X11 startup, and
 boot failure context across reboot and A/B rollback, with a 256 MB ceiling and
 14-day retention policy.
 
+### Slim image (no X11/Chromium)
+
+```bash
+SHOWROOM_IMAGE_VARIANT=slim ./infra/pi-image/build-appliance-image.sh
+```
+
+The slim image leaves out chromium, Xorg, xinit, openbox, unclutter, scrot and
+everything only they pull in, so the native player is the only renderer and the
+legacy kiosk fallback is gone. Its files are named `showroom-<layer>-slim-*`,
+it writes `slim` to `/etc/showroom/image-variant`, and the build fails without
+the native player. The default build stays `full`.
+
+Only flash or OTA a slim image to a screen that has already shown its playlist
+on the native player under a full image. Connect OTA rolls back a slot that
+fails to boot, not one that boots to a blank screen, so roll it out one screen
+at a time. To return a screen to the Chromium fallback, OTA a full image.
+
 ## OS OTA
 
 Publish `update.tar.zst` through Raspberry Pi Connect OTA. Connect OTA and

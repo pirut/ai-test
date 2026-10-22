@@ -1,0 +1,30 @@
+# METABEGIN
+# X-Env-Layer-Name: showroom-appliance-slim
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Category: application
+# X-Env-Layer-Desc: Digital Curator signage appliance without X11 or Chromium.
+#  The native player draws directly to the display; there is no legacy
+#  browser kiosk to fall back to. Build with SHOWROOM_IMAGE_VARIANT=slim.
+# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota
+# METAEND
+---
+# Must match showroom.yaml minus chromium, openbox, python3-xdg, scrot,
+# unclutter, xinit, x11-xserver-utils, xserver-xorg and xserver-xorg-legacy.
+# validate-appliance.sh --source enforces this.
+mmdebstrap:
+  packages:
+    - ca-certificates
+    - curl
+    - ffmpeg
+    - fonts-dejavu-core
+    - iputils-ping
+    - iproute2
+    - jq
+    - kbd
+    - libmpv2
+    - mpv
+    - procps
+    - sudo
+    - util-linux
+    - wpasupplicant
+    - yt-dlp
