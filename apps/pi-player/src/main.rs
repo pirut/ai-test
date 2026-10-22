@@ -167,9 +167,23 @@ fn wait_for_video_output(mpv: &Mpv, timeout: Duration) -> bool {
     false
 }
 
+/// False only when the agent answers but does not know the endpoint (404).
+/// Connection errors count as supported: the agent may just be restarting,
+/// and the player keeps polling it.
+fn agent_supports_native_player(client: &agent::Client) -> bool {
+    for _ in 0..5 {
+        match client.player_state() {
+            Ok(_) => return true,
+            Err(agent::StateError::NotFound) => return false,
+            Err(agent::StateError::Other(_)) => thread::sleep(Duration::from_secs(2)),
+        }
+    }
+    true
+}
+
 fn spawn_agent_poller(client: agent::Client, interval: Duration, sender: Sender<Msg>) {
     thread::spawn(move || loop {
-        let result = client.player_state();
+        let result = client.player_state().map_err(|error| error.to_string());
         // Wi-Fi status costs several nmcli calls on the agent side; it is only
         // included during first-time setup, so poll more gently then.
         let delay = match &result {
@@ -648,6 +662,12 @@ fn main() {
     };
 
     system::install_signal_handlers();
+    if !agent_supports_native_player(&client) {
+        // An agent release older than the native player has no
+        // /local/player/state; let the launcher run the legacy kiosk.
+        eprintln!("showroom-player: the agent has no native player endpoint; deferring to the legacy kiosk");
+        std::process::exit(EXIT_UNAVAILABLE);
+    }
     system::activate_own_vt();
 
     let mpv = match start_mpv(&config) {

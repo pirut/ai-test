@@ -84,6 +84,22 @@ struct WifiConfigureRequest<'a> {
     password: &'a str,
 }
 
+#[derive(Debug)]
+pub enum StateError {
+    /// The agent predates the native player endpoint.
+    NotFound,
+    Other(String),
+}
+
+impl std::fmt::Display for StateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StateError::NotFound => f.write_str("agent has no /local/player/state endpoint"),
+            StateError::Other(message) => f.write_str(message),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Client {
     address: SocketAddr,
@@ -152,12 +168,21 @@ impl Client {
         parse_response(&raw)
     }
 
-    pub fn player_state(&self) -> Result<PlayerState, String> {
-        let response = self.request("GET", "/local/player/state", None, Duration::from_secs(8))?;
-        if response.status != 200 {
-            return Err(format!("player state returned HTTP {}", response.status));
+    pub fn player_state(&self) -> Result<PlayerState, StateError> {
+        let response = self
+            .request("GET", "/local/player/state", None, Duration::from_secs(8))
+            .map_err(StateError::Other)?;
+        if response.status == 404 {
+            return Err(StateError::NotFound);
         }
-        serde_json::from_slice(&response.body).map_err(|e| format!("invalid player state: {e}"))
+        if response.status != 200 {
+            return Err(StateError::Other(format!(
+                "player state returned HTTP {}",
+                response.status
+            )));
+        }
+        serde_json::from_slice(&response.body)
+            .map_err(|e| StateError::Other(format!("invalid player state: {e}")))
     }
 
     pub fn report_playback(&self, report: &PlaybackReport) -> Result<(), String> {
