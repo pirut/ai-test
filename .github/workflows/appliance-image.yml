@@ -9,6 +9,12 @@ on:
         default: rpi5
         type: choice
         options: [rpi4, rpi5, cm4, cm5]
+      image_variant:
+        description: full keeps the Chromium fallback; slim is native-player only
+        required: true
+        default: full
+        type: choice
+        options: [full, slim]
 
 permissions:
   contents: write
@@ -21,6 +27,7 @@ jobs:
       # Emergency-only manual fallback. Production images are built and
       # validated locally; pushes and schedules never invoke this workflow.
       SHOWROOM_DEVICE_LAYER: ${{ inputs.device_layer || 'rpi5' }}
+      SHOWROOM_IMAGE_VARIANT: ${{ inputs.image_variant || 'full' }}
       SHOWROOM_RPI_IMAGE_GEN_VERSION: v2.7.0
       SHOWROOM_INSTALL_BUILD_DEPS: "1"
     steps:
@@ -39,20 +46,21 @@ jobs:
       - run: ./infra/pi-image/build-appliance-image.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-flash-${{ github.run_number }}
+          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-${{ env.SHOWROOM_IMAGE_VARIANT }}-flash-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 30
           path: |
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*.img.xz
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/SHA256SUMS.sha256
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/IMAGE_VERSION.txt
+            infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/IMAGE_VARIANT.txt
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/appliance-validation.txt
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/config.yaml.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/manifest.zst
             infra/pi-image/out/release-${{ env.SHOWROOM_DEVICE_LAYER }}/*sbom*.zst
       - uses: actions/upload-artifact@v4
         with:
-          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-ota-${{ github.run_number }}
+          name: showroom-${{ env.SHOWROOM_DEVICE_LAYER }}-${{ env.SHOWROOM_IMAGE_VARIANT }}-ota-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 30
           path: |
@@ -68,12 +76,22 @@ jobs:
         run: |
           release_dir="infra/pi-image/out/release-${SHOWROOM_DEVICE_LAYER}"
           tag="showroom-${SHOWROOM_DEVICE_LAYER}-${SHOWROOM_IMAGE_VERSION}"
-          gh release create "${tag}" \
-            --title "Showroom ${SHOWROOM_DEVICE_LAYER} appliance ${SHOWROOM_IMAGE_VERSION}" \
-            --notes "Validated Raspberry Pi appliance flash image. This release does not initiate an OTA or alter deployed devices." \
+          title="Showroom ${SHOWROOM_DEVICE_LAYER} appliance ${SHOWROOM_IMAGE_VERSION}"
+          notes="Validated Raspberry Pi appliance flash image. This release does not initiate an OTA or alter deployed devices."
+          prerelease=false
+          if [[ "${SHOWROOM_IMAGE_VARIANT}" == "slim" ]]; then
+            tag="showroom-${SHOWROOM_DEVICE_LAYER}-slim-${SHOWROOM_IMAGE_VERSION}"
+            title="Showroom ${SHOWROOM_DEVICE_LAYER} slim appliance ${SHOWROOM_IMAGE_VERSION}"
+            notes="${notes} Slim image: native player only, no X11/Chromium fallback."
+            prerelease=true
+          fi
+          gh release create "${tag}" --prerelease="${prerelease}" \
+            --title "${title}" \
+            --notes "${notes}" \
             "${release_dir}"/*.img.xz \
             "${release_dir}/SHA256SUMS.sha256" \
             "${release_dir}/IMAGE_VERSION.txt" \
+            "${release_dir}/IMAGE_VARIANT.txt" \
             "${release_dir}/appliance-validation.txt" \
             "${release_dir}/config.yaml.zst" \
             "${release_dir}/manifest.zst" \
