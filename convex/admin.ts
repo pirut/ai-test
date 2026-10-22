@@ -3,6 +3,7 @@ import {
   defaultRolloutRings,
   fleetManagedGeneration,
   isFleetManagedDevice,
+  commandQueuePolicy,
   requiresFleetManagedDevice,
   rolloutRingForIndex,
 } from "@showroom/contracts";
@@ -568,6 +569,7 @@ export const listScreens = query({
           currentPlaylistName:
             device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
           manifestVersion: device.manifestVersion ?? null,
+          ...showroom.serializeLinkState(device),
           desiredAgentVersion: device.desiredAgentVersion ?? null,
           desiredPlayerVersion: device.desiredPlayerVersion ?? null,
           agentVersion: device.agentVersion ?? null,
@@ -687,6 +689,7 @@ export const listDeviceCommands = query({
         issuedAt: new Date(command.queuedAt).toISOString(),
         payload: command.payload ?? {},
         status: command.status,
+        startedAt: command.startedAt ? new Date(command.startedAt).toISOString() : null,
         completedAt: command.completedAt ? new Date(command.completedAt).toISOString() : null,
         message: command.resultMessage ?? null,
       }));
@@ -1929,20 +1932,53 @@ export const enqueueDeviceCommand = mutation({
       throw new ConvexError("Flash this device with the fleet appliance before using this command");
     }
 
+    const now = Date.now();
+    const policy = commandQueuePolicy(args.commandType);
+    const waiting = policy.collapseDuplicates || policy.supersedes.length
+      ? await ctx.db
+          .query("deviceCommands")
+          .withIndex("by_device_and_status", (q) => q.eq("deviceId", device._id).eq("status", "queued"))
+          .take(50)
+      : [];
+    for (const command of waiting) {
+      if (policy.supersedes.includes(command.commandType)) {
+        await ctx.db.patch(command._id, {
+          status: "failed",
+          completedAt: now,
+          resultMessage: `Replaced by ${args.commandType.replace(/_/g, " ")} before the screen received it`,
+        });
+      }
+    }
+    const duplicate = policy.collapseDuplicates
+      ? waiting.find((command) =>
+          command.commandType === args.commandType &&
+          (!command.deadlineAt || command.deadlineAt > now))
+      : undefined;
+    if (duplicate) {
+      return {
+        id: duplicate._id,
+        deviceId: device._id,
+        commandType: duplicate.commandType,
+        issuedAt: new Date(duplicate.queuedAt).toISOString(),
+        payload: duplicate.payload ?? {},
+      };
+    }
+
     const commandId = await ctx.db.insert("deviceCommands", {
       organizationId: orgId,
       deviceId: device._id,
       commandType: args.commandType,
       status: "queued",
       payload: args.payload ?? {},
-      queuedAt: Date.now(),
+      queuedAt: now,
+      ...(policy.deadlineMs ? { deadlineAt: now + policy.deadlineMs } : {}),
     });
 
     return {
       id: commandId,
       deviceId: device._id,
       commandType: args.commandType,
-      issuedAt: new Date().toISOString(),
+      issuedAt: new Date(now).toISOString(),
       payload: args.payload ?? {},
     };
   },

@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+
+# Captures the screen for the agent's screenshot upload. The agent runs with a
+# private /tmp, so the result is copied to its expected path here.
+OUTPUT="${1:-/tmp/showroom-screenshot.jpg}"
+NATIVE_MARKER=/run/showroom-kiosk/native-player
+NATIVE_SHOT=/run/showroom-kiosk/screenshot.jpg
+
+if [[ -e "${NATIVE_MARKER}" ]]; then
+  rm -f "${NATIVE_SHOT}"
+  pkill -USR1 -x showroom-player
+  for _ in $(seq 1 40); do
+    if [[ -s "${NATIVE_SHOT}" ]]; then
+      cp "${NATIVE_SHOT}" "${OUTPUT}"
+      exit 0
+    fi
+    sleep 0.25
+  done
+  echo "Native player did not write a screenshot" >&2
+  exit 1
+fi
+
+DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority scrot -q 85 -o "${OUTPUT}"

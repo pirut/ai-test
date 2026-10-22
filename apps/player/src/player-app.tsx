@@ -108,6 +108,13 @@ function resultError(result: PromiseSettledResult<unknown>) {
     : null;
 }
 
+/** Splits a pairing code into two groups so it's easy to read across a room. */
+export function formatClaimCode(code: string) {
+  const clean = code.replace(/\s+/g, "").toUpperCase();
+  if (clean.length !== 6) return clean;
+  return `${clean.slice(0, 3)} ${clean.slice(3)}`;
+}
+
 function orientationStyle(orientation: DeviceManifest["orientation"]) {
   const sideways = orientation === 90 || orientation === 270;
   return {
@@ -125,6 +132,7 @@ export function PlayerApp() {
   const failureCountsRef = useRef(new Map<string, number>());
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [wifiForm, setWifiForm] = useState({ ssid: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
   const [wifiSubmission, setWiFiSubmission] = useState<{
     status: "idle" | "saving" | "error" | "success";
     message?: string;
@@ -330,12 +338,27 @@ export function PlayerApp() {
   }, [activeItem, recoverMedia, state.manifest?.volume, state.mediaNonce]);
 
   if (state.status === "unclaimed") {
+    const claimCode = state.playerStatus?.claimCode;
     return (
       <main className="playerRoot">
-        <section className="fallbackScreen" aria-live="polite">
-          <p className="label">Claim this screen</p>
-          <h1 className="claimCode">{state.playerStatus?.claimCode ?? "••••••"}</h1>
-          <p>Open Digital Curator, enter this code, and the screen will connect automatically.</p>
+        <section className="fallbackScreen pairingScreen" aria-live="polite">
+          <p className="label">Pair this screen</p>
+          <h1 className="claimCode" aria-label={claimCode ? `Pairing code ${claimCode.split("").join(" ")}` : "Pairing code loading"}>
+            {claimCode ? formatClaimCode(claimCode) : "••• •••"}
+          </h1>
+          <ol className="pairingSteps">
+            <li><span>1</span>Open Digital Curator on a phone or computer</li>
+            <li><span>2</span>Go to Screens and choose Add screen</li>
+            <li><span>3</span>Enter this code. The screen connects on its own</li>
+          </ol>
+          <p className="statusLine">
+            <span className={state.wifiStatus?.connected === false ? "statusDot warn" : "statusDot"} aria-hidden="true" />
+            {state.wifiStatus?.connected
+              ? `Online${state.wifiStatus.ssid ? ` via ${state.wifiStatus.ssid}` : ""}`
+              : state.wifiStatus?.connected === false
+                ? "Waiting for network"
+                : "Online"}
+          </p>
         </section>
       </main>
     );
@@ -348,7 +371,7 @@ export function PlayerApp() {
           <div className="setupCard">
             <p className="label">First-time setup</p>
             <h1>Connect to Wi-Fi</h1>
-            <p className="setupCopy">Connect this screen to the network to receive its claim code.</p>
+            <p className="setupCopy">Plug in a keyboard and enter your showroom Wi-Fi. Once connected, this screen shows a pairing code.</p>
             <form
               className="wifiForm"
               onSubmit={async (event) => {
@@ -386,16 +409,25 @@ export function PlayerApp() {
               </label>
               <label className="wifiField">
                 <span>Password</span>
-                <input
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  onChange={(event) => setWifiForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="Wi-Fi password"
-                  required
-                  type="password"
-                  value={wifiForm.password}
-                />
+                <span className="passwordInput">
+                  <input
+                    autoCapitalize="off"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    onChange={(event) => setWifiForm((current) => ({ ...current, password: event.target.value }))}
+                    placeholder="Wi-Fi password"
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={wifiForm.password}
+                  />
+                  <button
+                    className="revealButton"
+                    onClick={() => setShowPassword((value) => !value)}
+                    type="button"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </span>
               </label>
               <button disabled={wifiSubmission.status === "saving"} type="submit">
                 {wifiSubmission.status === "saving" ? "Connecting…" : "Connect screen"}
@@ -424,7 +456,11 @@ export function PlayerApp() {
           <div className="waitingMark" aria-hidden="true" />
           <p className="label">Screen ready</p>
           <h1>{state.status === "loading" ? "Starting player" : "Waiting for content"}</h1>
-          <p>Assign a playlist in Digital Curator. This screen will update automatically.</p>
+          <p>
+            {state.status === "loading"
+              ? "This only takes a moment."
+              : "This screen is paired. Choose a playlist for it in Digital Curator and it will start playing automatically."}
+          </p>
           {state.playerStatus?.lastError ? <p className="technicalError">{state.playerStatus.lastError}</p> : null}
         </section>
       </main>

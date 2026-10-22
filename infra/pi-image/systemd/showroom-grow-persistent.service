@@ -1,0 +1,15 @@
+[Unit]
+Description=Grow the Showroom persistent partition to fill the card
+After=local-fs.target persistent.mount
+Requires=persistent.mount
+Before=showroom-network-onboarding.service showroom-agent.service showroom-kiosk.service
+ConditionPathIsMountPoint=/persistent
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/showroom-grow-persistent
+RemainAfterExit=yes
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

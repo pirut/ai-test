@@ -105,6 +105,8 @@ validate_scripts() {
   local root="$1"
   local scripts=(
     showroom-start-kiosk
+    showroom-kiosk-launch
+    showroom-screenshot
     showroom-diagnostics
     showroom-recovery-screen
     showroom-kiosk-recovery
@@ -113,6 +115,7 @@ validate_scripts() {
     showroom-network-recovery
     showroom-network-onboarding
     showroom-network-setup
+    showroom-grow-persistent
   )
   local script
   for script in "${scripts[@]}"; do
@@ -121,6 +124,7 @@ validate_scripts() {
   done
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
+  bash "${root}/usr/local/bin/showroom-grow-persistent" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${root}/etc/showroom-agent/config.env" \
     bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
@@ -207,6 +211,21 @@ validate_source() {
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^Type=simple$' "kiosk readiness must not depend on a lossy notify handshake"
   require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^ExecStartPost=\+/usr/local/bin/showroom-kiosk-ready$' "kiosk must validate X11 before switching displays"
   require_not_contains "${ROOT_DIR}/systemd/start-kiosk.sh" 'systemd-notify' "kiosk launcher must not use the legacy notify handshake"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^ExecStart=/usr/local/bin/showroom-kiosk-launch$' "kiosk must start through the native/legacy renderer launcher"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^RELEASE_PLAYER=/var/lib/showroom/releases/player/current/bin/showroom-player$' "launcher must prefer the native player from the signed player release"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^LEGACY_KIOSK=/usr/local/bin/showroom-start-kiosk$' "launcher must keep the legacy kiosk as a fallback"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^EXIT_NATIVE_RESTART=75$' "launcher must re-run the native player after an HDMI reconnect"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-launch" '^CRASH_LIMIT=3$' "repeated native crashes must fall back to the legacy kiosk"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk.service" '^NotifyAccess=all$' "the native player arms the kiosk watchdog from under the launcher"
+  require_contains "${ROOT_DIR}/systemd/showroom-kiosk-ready" 'NATIVE_MARKER=/run/showroom-kiosk/native-player' "kiosk readiness must accept the native player"
+  require_contains "${ROOT_DIR}/config/config.env" '^SHOWROOM_SCREENSHOT_COMMAND=/usr/local/bin/showroom-screenshot$' "screenshots must work for both renderers"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- libmpv2$' "native player needs libmpv"
+  require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" '^[[:space:]]+- fonts-dejavu-core$' "native setup screens need an explicit font"
+  require_contains "${ROOT_DIR}/prepare-artifacts.sh" 'bin/showroom-player' "player bundle must include the native player"
+  require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" 'DISPLAY_MODE_PRIMARY="\$\{SHOWROOM_DISPLAY_MODE_PRIMARY:-1920x1080\}"' "kiosk must default to the 1080p media target, not 4K output"
+  require_not_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^    "(volume|orientation)": ' "volume and orientation changes must be applied live, not restart the player"
+  require_contains "${ROOT_DIR}/systemd/start-kiosk.sh" '^apply_mpv_properties\(\) \{$' "kiosk must apply volume and orientation over mpv IPC"
+  require_contains "${ROOT_DIR}/config/config.env" '^SHOWROOM_YTDLP_FORMAT=.*height<=1080\]\[vcodec\^=avc1\]' "YouTube downloads must prefer 1080p H.264 the Pi can play smoothly"
   require_contains "${ROOT_DIR}/config/20-showroom-kernel-console.conf" '^kernel\.printk = 1 4 1 3$' "kernel messages must not corrupt the appliance setup screen"
   require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" '/var/log/Xorg\.0\.log' "diagnostics must inspect root-owned Xorg wrapper logs"
   require_contains "${ROOT_DIR}/systemd/showroom-diagnostics" "grep -Ei 'xorg\|startx\|xf86\|tty7\|vt7" "diagnostics must retain Xorg and virtual-console journal failures"
@@ -224,24 +243,66 @@ validate_source() {
   require_contains "${sudoers}" '/usr/local/bin/showroom-network-setup' "maintenance account cannot safely reopen network setup"
 
   for source_script in \
-    start-kiosk.sh showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
-    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding; do
+    start-kiosk.sh showroom-kiosk-launch showroom-screenshot showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
+    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding showroom-grow-persistent; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
+  bash "${ROOT_DIR}/systemd/showroom-grow-persistent" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
     bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
 
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry showroom-kiosk-ready \
-    showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
-    showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service; do
+    showroom-kiosk-launch showroom-screenshot showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
+    showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service \
+    showroom-grow-persistent showroom-grow-persistent.service; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
   done
 
+  validate_slim_layer
+  require_contains "${build}" 'SHOWROOM_IMAGE_VARIANT:-full' "image builds must default to the full image with the Chromium fallback"
+  require_contains "${workflow}" 'default: full' "the image workflow must default to the full image"
+  local grow_unit="${ROOT_DIR}/systemd/showroom-grow-persistent.service"
+  require_contains "${config}" '^  data_part_size: 1G$' "SD images must ship a small persistent partition that grows on first boot"
+  require_contains "${build}" '^  cm4\|cm5\) DATA_PART_SIZE=12G ;;$' "eMMC images must keep a fixed persistent partition (write-protected partition table)"
+  require_contains "${customize}" '^  showroom-grow-persistent \\$' "post-overlay customize hook must enable persistent partition growth"
+  require_contains "${grow_unit}" '^Requires=persistent\.mount$' "persistent growth must wait for the persistent mount"
+  require_contains "${grow_unit}" '^Before=showroom-network-onboarding\.service showroom-agent\.service showroom-kiosk\.service$' "persistent growth must finish before setup, agent and kiosk start"
+  require_contains "${ROOT_DIR}/systemd/showroom-grow-persistent" '^MIN_GROWN_BYTES=\$\(\(4 \* 1024 \* 1024 \* 1024\)\)$' "persistent growth must leave already-large (deployed 12G) filesystems untouched"
+  for package in cloud-guest-utils e2fsprogs fdisk; do
+    require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" "^[[:space:]]+- ${package}$" "persistent growth needs ${package}"
+  done
+
   pass "source console, SSH, sudo, kiosk, recovery, and install contracts"
+}
+
+# Images built before the slim variant carry no marker and are full images.
+image_variant() {
+  local marker="$1/etc/showroom/image-variant" variant=full
+  [[ -r "${marker}" ]] && variant="$(tr -d '[:space:]' <"${marker}")"
+  [[ "${variant}" == "full" || "${variant}" == "slim" ]] || fail "unknown image variant '${variant}' in ${marker}"
+  if [[ -n "${SHOWROOM_IMAGE_VARIANT:-}" && "${SHOWROOM_IMAGE_VARIANT}" != "${variant}" ]]; then
+    fail "image is marked ${variant} but a ${SHOWROOM_IMAGE_VARIANT} image was built"
+  fi
+  printf '%s\n' "${variant}"
+}
+
+# showroom-slim.yaml must be showroom.yaml without the X11/Chromium kiosk, so
+# both variants carry the same agent, network and player dependencies.
+validate_slim_layer() {
+  local full="${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml"
+  local slim="${ROOT_DIR}/rpi-image-gen/layer/showroom-slim.yaml"
+  local legacy_only='^(chromium|openbox|python3-xdg|scrot|unclutter|xinit|x11-xserver-utils|xserver-xorg|xserver-xorg-legacy)$'
+  local expected actual
+  require_file "${slim}"
+  require_contains "${slim}" '^# X-Env-Layer-Name: showroom-appliance-slim$' "slim layer must have its own name"
+  require_contains "${slim}" '^# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota$' "slim layer must keep Connect OTA and the admin user"
+  expected="$(sed -n 's/^[[:space:]]*- //p' "${full}" | grep -Ev "${legacy_only}" | sort)"
+  actual="$(sed -n 's/^[[:space:]]*- //p' "${slim}" | sort)"
+  [[ "${expected}" == "${actual}" ]] || fail "slim layer packages differ from showroom.yaml minus the X11/Chromium kiosk"
 }
 
 validate_rootfs() {
@@ -249,30 +310,53 @@ validate_rootfs() {
   [[ -d "${root}/etc" ]] || fail "${root} is not a mounted/generated root filesystem"
 
   validate_scripts "${root}"
+  local variant
+  variant="$(image_variant "${root}")"
   require_executable "${root}/usr/local/libexec/showroom-agent"
-  require_executable "${root}/usr/lib/xorg/Xorg.wrap"
   validate_slot_shared_generator "${root}/usr/lib/systemd/system-generators/slot-shared-generator"
   require_file "${root}/etc/rpi-image-gen/slot-shared.d/network-manager.conf"
   require_file "${root}/etc/rpi-image-gen/slot-shared.d/showroom.conf"
-  local xorg_wrap_mode
-  xorg_wrap_mode="$(stat -c '%a' "${root}/usr/lib/xorg/Xorg.wrap")"
-  (( (8#${xorg_wrap_mode} & 04000) != 0 )) || fail "Xorg.wrap is not setuid in the generated image (mode ${xorg_wrap_mode})"
-  [[ "$(stat -c '%u:%g' "${root}/usr/lib/xorg/Xorg.wrap")" == "0:0" ]] || fail "Xorg.wrap must be owned by root"
+  if [[ "${variant}" == "full" ]]; then
+    require_executable "${root}/usr/lib/xorg/Xorg.wrap"
+    local xorg_wrap_mode
+    xorg_wrap_mode="$(stat -c '%a' "${root}/usr/lib/xorg/Xorg.wrap")"
+    (( (8#${xorg_wrap_mode} & 04000) != 0 )) || fail "Xorg.wrap is not setuid in the generated image (mode ${xorg_wrap_mode})"
+    [[ "$(stat -c '%u:%g' "${root}/usr/lib/xorg/Xorg.wrap")" == "0:0" ]] || fail "Xorg.wrap must be owned by root"
+  fi
   require_file "${root}/opt/showroom/player/index.html"
   require_file "${root}/var/lib/showroom/releases/player/1.0.0/index.html"
+  require_executable "${root}/opt/showroom/player/bin/showroom-player"
+  require_executable "${root}/var/lib/showroom/releases/player/1.0.0/bin/showroom-player"
+  compgen -G "${root}/usr/lib/*-linux-gnu/libmpv.so.2" >/dev/null || fail "libmpv.so.2 is missing for the native player"
   [[ -L "${root}/var/lib/showroom/releases/player/current" ]] || fail "active player release symlink is missing"
 
   local executable
+  if [[ "${variant}" == "full" ]]; then
+    for executable in usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter-classic; do
+      require_executable "${root}/${executable}"
+    done
+    if [[ ! -x "${root}/usr/lib/chromium/chromium" && ! -x "${root}/usr/bin/chromium" && ! -x "${root}/usr/bin/chromium-browser" ]]; then
+      fail "Chromium executable is missing"
+    fi
+  else
+    # The slim image has nothing to fall back to, so the native player must
+    # be able to start from the image alone.
+    for executable in usr/lib/chromium/chromium usr/bin/chromium usr/bin/startx usr/lib/xorg/Xorg usr/bin/openbox; do
+      [[ ! -e "${root}/${executable}" ]] || fail "slim image still contains ${executable}"
+    done
+  fi
   for executable in \
-    usr/bin/startx usr/bin/openbox-session usr/bin/xrandr usr/bin/unclutter-classic \
     usr/bin/curl usr/bin/python3 usr/bin/mpv usr/bin/flock usr/bin/chvt usr/bin/nm-online usr/bin/pgrep \
     usr/bin/nmcli usr/bin/nmtui usr/bin/systemctl usr/bin/systemd-analyze usr/bin/systemd-notify usr/bin/journalctl usr/bin/sudo \
     usr/bin/rpi-connect usr/sbin/ip usr/sbin/runuser usr/sbin/sshd usr/sbin/wpa_supplicant sbin/agetty; do
     require_executable "${root}/${executable}"
   done
-  if [[ ! -x "${root}/usr/lib/chromium/chromium" && ! -x "${root}/usr/bin/chromium" && ! -x "${root}/usr/bin/chromium-browser" ]]; then
-    fail "Chromium executable is missing"
-  fi
+
+  for executable in usr/bin/growpart usr/sbin/sfdisk usr/sbin/resize2fs usr/bin/findmnt usr/bin/lsblk; do
+    require_executable "${root}/${executable}"
+  done
+  [[ -L "${root}/etc/systemd/system/multi-user.target.wants/showroom-grow-persistent.service" ]] || \
+    fail "persistent partition growth is not enabled"
 
   require_contains "${root}/etc/systemd/system/getty@tty1.service.d/override.conf" "--autologin ${MAINTENANCE_USER}" "generated tty1 is not auto-login recovery"
   require_contains "${root}/etc/ssh/sshd_config.d/20-showroom.conf" '^PasswordAuthentication no$' "generated SSH policy permits passwords"
@@ -305,8 +389,8 @@ validate_rootfs() {
     [[ " ${maintenance_groups} " == *" ${group} "* ]] || fail "maintenance account lacks required ${group} device permission"
   done
   chroot "${root}" /usr/sbin/runuser -u pi -- /bin/sh -c \
-    'test -x /usr/local/bin/showroom-start-kiosk && test -x /usr/lib/xorg/Xorg.wrap && test -r /opt/showroom/player/index.html' || \
-    fail "pi cannot execute the kiosk/X wrapper or read built-in player assets"
+    'test -x /usr/local/bin/showroom-kiosk-launch && test -x /opt/showroom/player/bin/showroom-player && test -x /usr/local/bin/showroom-start-kiosk && test -x /usr/lib/xorg/Xorg.wrap && test -r /opt/showroom/player/index.html' || \
+    fail "pi cannot execute the kiosk launcher, native player, or X wrapper, or read built-in player assets"
 
   # sshd expects its boot-created privilege-separation directory even for
   # configuration-only validation. The extracted image intentionally has an

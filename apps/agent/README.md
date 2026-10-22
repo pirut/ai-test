@@ -9,6 +9,8 @@ Go system service for Raspberry Pi devices.
 - Download and verify media into the cache
 - Resolve YouTube-backed video assets into cached local MP4 files with `yt-dlp`
 - Serve the player bundle and local manifest on `127.0.0.1:4173`
+- Serve `/local/player/state` (cached playlist with local paths, claim and
+  Wi-Fi state) to the native Pi player in `apps/pi-player`
 - Poll remote commands
 - Send heartbeats and screenshot metadata
 - Restart Chromium or reboot the Pi on approved commands

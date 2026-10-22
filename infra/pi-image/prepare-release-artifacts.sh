@@ -8,8 +8,12 @@ ARTIFACTS_DIR="${ROOT_DIR}/artifacts"
 
 rm -f "${ARTIFACTS_DIR}/player-release.tar.gz"
 
+if [[ ! -x "${ARTIFACTS_DIR}/player/bin/showroom-player" ]]; then
+  echo "WARNING: player bundle has no bin/showroom-player; screens will keep the legacy kiosk" >&2
+fi
+
 tar -C "${ARTIFACTS_DIR}/player" -czf "${ARTIFACTS_DIR}/player-release.tar.gz" .
 
 echo "Prepared release artifacts:"
 echo "  ${ARTIFACTS_DIR}/showroom-agent"
-echo "  ${ARTIFACTS_DIR}/player-release.tar.gz"
+echo "  ${ARTIFACTS_DIR}/player-release.tar.gz (web player + native bin/showroom-player)"

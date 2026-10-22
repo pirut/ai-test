@@ -34,6 +34,28 @@ export function deriveDeviceStatus(device: Pick<Doc<"devices">, "status" | "last
   return "online" as const;
 }
 
+// How far the screen's content and link lag behind the dashboard. Screens on
+// older agents never report lastSyncAt or errors, so those stay null.
+export function serializeLinkState(
+  device: Pick<
+    Doc<"devices">,
+    "manifestVersion" | "desiredManifestVersion" | "lastSyncAt" | "lastAgentError"
+  >,
+) {
+  const desired = device.desiredManifestVersion ?? null;
+  const reported = device.manifestVersion ?? null;
+  return {
+    desiredManifestVersion: desired,
+    contentState: !desired || !reported
+      ? ("unknown" as const)
+      : desired === reported
+        ? ("current" as const)
+        : ("updating" as const),
+    lastSyncAt: device.lastSyncAt ? new Date(device.lastSyncAt).toISOString() : null,
+    lastError: device.lastAgentError ?? null,
+  };
+}
+
 export async function serializeAsset(ctx: Ctx, asset: Doc<"mediaAssets">) {
   const previewUrl =
     asset.storageId ? (await ctx.storage.getUrl(asset.storageId)) ?? asset.previewUrl : asset.previewUrl;
@@ -261,8 +283,10 @@ export async function activateManifestForDevice(
     updatedAt: Date.now(),
   });
 
+  // Leave manifestVersion alone: it is what the screen reports playing, and
+  // the dashboard compares the two to show whether content has reached it.
   await ctx.db.patch(device._id, {
-    manifestVersion,
+    desiredManifestVersion: manifestVersion,
     updatedAt: Date.now(),
   });
 
