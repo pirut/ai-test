@@ -96,3 +96,23 @@ func TestFetchCommandsRequestsLongPoll(t *testing.T) {
 		t.Fatalf("expected a long-poll request, got query %q", query)
 	}
 }
+
+func TestFetchCommandsReadsPublishedManifestVersion(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"commands":[],"manifestVersion":"manifest-2"}`: "manifest-2",
+		`{"commands":[],"manifestVersion":null}`:         "",
+		`{"commands":[]}`:                                "",
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(body))
+		}))
+		batch, err := New(server.URL).FetchCommands(context.Background(), "credential", 0)
+		server.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if batch.ManifestVersion != want {
+			t.Fatalf("%s: expected manifest version %q, got %q", body, want, batch.ManifestVersion)
+		}
+	}
+}
