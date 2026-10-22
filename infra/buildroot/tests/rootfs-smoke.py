@@ -217,6 +217,11 @@ def check_libraries(fs, errors):
                     errors.append(f"{rel_dir}/{name} needs the loader {interp}, which the image does not ship")
                 needed, runpaths = needed_libraries(host)
                 search = list(LIB_DIRS)
+                if ".so" in name:
+                    # A private library (systemd's libsystemd-core) is loaded by
+                    # programs whose RUNPATH names its directory, so its own
+                    # dependencies there are found too.
+                    search.append(rel_dir.strip("/"))
                 for runpath in runpaths:
                     search.append(runpath.replace("$ORIGIN", rel_dir).strip("/"))
                 for lib in needed:
