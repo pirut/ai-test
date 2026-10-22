@@ -3,10 +3,16 @@ import { isFleetManagedDevice } from "@showroom/contracts";
 
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import {
+  canDeliverClaimedCredential,
+  canRefreshCredential,
+  deviceCredentialTtlMs,
+  isCredentialRecordActive,
+  planCredentialRotation,
+} from "./credentialPolicy";
 import { buildManifestForDevice } from "./showroom";
 
 const claimRegistrationTtlMs = 15 * 60_000;
-const deviceCredentialTtlMs = 24 * 60 * 60_000;
 
 function healthIssues(health: any) {
   if (!health || typeof health !== "object") return [] as string[];
@@ -43,22 +49,10 @@ function secondsRemainingUntil(expiresAt: number, now: number) {
   return Math.max(0, Math.ceil((expiresAt - now) / 1000));
 }
 
-function isCredentialRecordActive(
-  record: { expiresAt?: number; revokedAt?: number },
-  now = Date.now(),
-) {
-  if (record.revokedAt) {
-    return false;
-  }
-  if (typeof record.expiresAt !== 'number') {
-    return true;
-  }
-  return record.expiresAt > now;
-}
-
 async function resolveDeviceByCredential(
   ctx: QueryCtx | MutationCtx,
   credential: string,
+  options: { forRefresh?: boolean } = {},
 ) {
   const now = Date.now();
   const secretHash = await hashValue(credential);
@@ -67,7 +61,12 @@ async function resolveDeviceByCredential(
     .withIndex("by_secret_hash", (q) => q.eq("secretHash", secretHash))
     .unique();
 
-  if (!record || !isCredentialRecordActive(record, now)) {
+  const usable = record
+    ? options.forRefresh
+      ? canRefreshCredential(record, now)
+      : isCredentialRecordActive(record, now)
+    : false;
+  if (!record || !usable) {
     return null;
   }
 
@@ -127,13 +126,19 @@ export const getClaimStatus = query({
     if (!registration) {
       throw new ConvexError("Unknown registration");
     }
-    if (typeof registration.expiresAt === "number" && registration.expiresAt <= now) {
-      throw new ConvexError("Claim session expired");
-    }
 
     const tokenHash = await hashValue(args.claimToken);
     if (registration.claimTokenHash !== tokenHash) {
       throw new ConvexError("Invalid claim token");
+    }
+
+    const deliverable = canDeliverClaimedCredential(registration, now);
+    if (
+      !deliverable &&
+      typeof registration.expiresAt === "number" &&
+      registration.expiresAt <= now
+    ) {
+      throw new ConvexError("Claim session expired");
     }
 
     let expiresInSeconds: number | undefined;
@@ -142,7 +147,7 @@ export const getClaimStatus = query({
     }
 
     return {
-      claimed: Boolean(registration.claimedDeviceId && registration.credential),
+      claimed: deliverable,
       deviceId: registration.claimedDeviceId,
       credential: registration.credential,
       expiresInSeconds,
@@ -162,7 +167,7 @@ export const refreshAuth = mutation({
   }),
   handler: async (ctx, args) => {
     const now = Date.now();
-    const device = await resolveDeviceByCredential(ctx, args.credential);
+    const device = await resolveDeviceByCredential(ctx, args.credential, { forRefresh: true });
     if (!device) {
       throw new ConvexError("Unauthorized device");
     }
@@ -175,15 +180,20 @@ export const refreshAuth = mutation({
       .withIndex("by_device", (q) => q.eq("deviceId", device._id))
       .collect();
 
-    for (const record of existing.filter((entry) => !entry.revokedAt)) {
-      await ctx.db.patch(record._id, {
-        revokedAt: now,
-      });
+    // Keep the previous credential alive briefly so a lost response or an
+    // in-flight request does not lock the screen out.
+    for (const record of existing) {
+      const plan = planCredentialRotation(record, now);
+      if (plan.action === "delete") {
+        await ctx.db.delete(record._id);
+      } else if (plan.action === "supersede") {
+        await ctx.db.patch(record._id, plan.patch);
+      }
     }
 
     await ctx.db.insert("deviceCredentials", {
       deviceId: device._id,
-      version: existing.length + 1,
+      version: Math.max(0, ...existing.map((entry) => entry.version)) + 1,
       secretHash,
       issuedAt: now,
       expiresAt,
@@ -227,6 +237,27 @@ export const getManifest = query({
       device,
       device.manifestVersion ?? `manifest-${device._id}`,
     );
+  },
+});
+
+// Subscribed to by the device commands endpoint while a screen long-polls, so a
+// command queued from the dashboard is delivered within about a second.
+// Returns null when the credential is not accepted.
+export const hasQueuedCommands = query({
+  args: {
+    credential: v.string(),
+  },
+  returns: v.union(v.boolean(), v.null()),
+  handler: async (ctx, args) => {
+    const device = await resolveDeviceByCredential(ctx, args.credential);
+    if (!device) {
+      return null;
+    }
+    const queued = await ctx.db
+      .query("deviceCommands")
+      .withIndex("by_device_and_status", (q) => q.eq("deviceId", device._id).eq("status", "queued"))
+      .take(1);
+    return queued.length > 0;
   },
 });
 
