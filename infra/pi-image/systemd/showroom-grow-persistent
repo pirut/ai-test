@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+# Grows the persistent partition and its ext4 filesystem to fill the boot
+# card. Images ship a small persistent partition so flashing writes ~6 GB
+# instead of ~18 GB; this runs early on every boot and does nothing once the
+# filesystem is at least MIN_GROWN_BYTES. That also leaves screens flashed
+# with the older fixed 12 GB layout exactly as they are.
+
+MOUNTPOINT="${SHOWROOM_PERSISTENT_MOUNT:-/persistent}"
+MIN_GROWN_BYTES=$((4 * 1024 * 1024 * 1024))
+STATE_FILE="${MOUNTPOINT}/common/showroom-grow-persistent"
+
+log() {
+  printf 'showroom-grow-persistent: %s\n' "$*" >&2
+}
+
+record() {
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >"${STATE_FILE}" 2>/dev/null || true
+}
+
+fs_bytes() {
+  findmnt -bno SIZE --target "${MOUNTPOINT}"
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  [[ "${MIN_GROWN_BYTES}" -eq 4294967296 ]]
+  echo ok
+  exit 0
+fi
+
+if ! mountpoint -q "${MOUNTPOINT}"; then
+  log "${MOUNTPOINT} is not mounted; nothing to grow"
+  exit 0
+fi
+
+size="$(fs_bytes)"
+if (( size >= MIN_GROWN_BYTES )); then
+  exit 0
+fi
+
+source_device="$(readlink -f "$(findmnt -no SOURCE "${MOUNTPOINT}")")"
+partition="$(basename "${source_device}")"
+if [[ ! -r "/sys/class/block/${partition}/partition" ]]; then
+  log "${source_device} is not a plain partition; leaving it at ${size} bytes"
+  record "skipped: ${source_device} is not a partition"
+  exit 0
+fi
+number="$(cat "/sys/class/block/${partition}/partition")"
+disk="/dev/$(lsblk -no PKNAME "${source_device}" | head -n 1)"
+
+log "growing ${source_device} (partition ${number} of ${disk}) from ${size} bytes"
+status=0
+growpart "${disk}" "${number}" || status=$?
+# growpart exits 1 when the partition already fills the disk.
+if (( status > 1 )); then
+  log "growpart failed with status ${status}; keeping the current size"
+  record "growpart failed (${status}) at ${size} bytes"
+  exit 0
+fi
+
+if ! resize2fs "${source_device}"; then
+  log "resize2fs failed; keeping the current size"
+  record "resize2fs failed at ${size} bytes"
+  exit 0
+fi
+
+size="$(fs_bytes)"
+log "persistent filesystem is now ${size} bytes"
+record "grown to ${size} bytes"

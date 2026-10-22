@@ -69,7 +69,11 @@ if [[ "${renderer}" != "native" && -x "${LEGACY_KIOSK}" ]] && (( $(recent_crashe
   run_legacy
 fi
 
-for _ in $(seq 1 60); do
+# The player copes with a missing agent, so this wait is only a courtesy. Bound
+# it by wall clock so it always finishes well before showroom-kiosk-ready
+# gives up and systemd marks the unit failed.
+agent_wait_deadline=$((SECONDS + 45))
+while (( SECONDS < agent_wait_deadline )); do
   if curl -fsS --max-time 1 http://127.0.0.1:4173/healthz >/dev/null 2>&1; then
     break
   fi

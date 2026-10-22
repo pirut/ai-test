@@ -30,6 +30,7 @@ jobs:
       SHOWROOM_IMAGE_VARIANT: ${{ inputs.image_variant || 'full' }}
       SHOWROOM_RPI_IMAGE_GEN_VERSION: v2.7.0
       SHOWROOM_INSTALL_BUILD_DEPS: "1"
+      SHOWROOM_REQUIRE_NATIVE_PLAYER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,6 +41,9 @@ jobs:
         with:
           go-version: "1.22.x"
           cache: false
+      # The native player (bin/showroom-player) is built into the image and
+      # image validation requires it.
+      - uses: dtolnay/rust-toolchain@stable
       - name: Set immutable image version
         run: echo "SHOWROOM_IMAGE_VERSION=$(date -u +%Y.%m.%d).${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
       - run: npm ci
