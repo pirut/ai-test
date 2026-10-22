@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangle, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -63,7 +62,7 @@ export function RemoveScreenDialog({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="dashboard-theme sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Remove {screen?.name}?</DialogTitle>
           <DialogDescription>
@@ -103,25 +102,5 @@ export function RemoveScreenDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function RemoveScreenButton({ screen }: { screen: ScreenIdentity }) {
-  const [open, setOpen] = useState(false);
-  const router = useRouter();
-
-  return (
-    <>
-      <Button variant="destructive" onClick={() => setOpen(true)}>
-        <Trash2 data-icon="inline-start" />
-        Remove screen
-      </Button>
-      <RemoveScreenDialog
-        screen={screen}
-        open={open}
-        onOpenChange={setOpen}
-        onRemoved={() => router.push("/screens")}
-      />
-    </>
   );
 }

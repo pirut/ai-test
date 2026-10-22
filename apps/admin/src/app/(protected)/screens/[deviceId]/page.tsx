@@ -1,10 +1,20 @@
+import { AlertTriangle, Cable, Cpu, MonitorPlay, Thermometer, Wifi } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { CommandPanel } from "@/components/command-panel";
+import { AutoRefresh } from "@/components/auto-refresh";
+import { CommandStatusBadge } from "@/components/command-status-badge";
 import { PageHeader } from "@/components/page-header";
-import { RemoveScreenButton } from "@/components/remove-screen-dialog";
+import {
+  CommandFeedback,
+  NetworkCard,
+  ScreenActions,
+  ScreenCommandProvider,
+  ScreenPreview,
+} from "@/components/screen-controls";
 import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import {
   getDevice,
@@ -12,7 +22,52 @@ import {
   listCommands,
   listPlaylists,
 } from "@/lib/backend";
-import { formatRelativeTimestamp } from "@/lib/utils";
+import { commandLabel, isCommandPending } from "@/lib/commands";
+import { deviceIssues } from "@/lib/device-health";
+import { cn, formatRelativeTimestamp } from "@/lib/utils";
+
+type Tone = "good" | "warn" | "bad" | "unknown";
+
+const toneClass: Record<Tone, string> = {
+  good: "text-signal",
+  warn: "text-warning",
+  bad: "text-danger",
+  unknown: "text-muted-foreground",
+};
+
+function HealthTile({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: typeof Wifi;
+  label: string;
+  value: string;
+  detail?: string;
+  tone: Tone;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border bg-card px-3 py-3">
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="size-3.5" aria-hidden />
+        {label}
+      </span>
+      <span className={cn("truncate text-sm font-semibold", toneClass[tone])}>{value}</span>
+      {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2 text-sm">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-mono text-xs">{value}</dd>
+    </div>
+  );
+}
 
 export default async function ScreenDetailPage({
   params,
@@ -33,43 +88,92 @@ export default async function ScreenDetailPage({
     listPlaylists(),
   ]);
 
+  const health = device.health;
+  const reporting = device.status === "online" || device.status === "stale";
+  const isManaged = device.fleetManagementState === "managed";
+  const issues = deviceIssues(device).filter((issue) => issue.severity !== "info");
+  const hasPendingCommand = commands.some((command) => isCommandPending(command.status));
+
+  const tiles = [
+    {
+      icon: MonitorPlay,
+      label: "Player",
+      value: !reporting || !health ? "Unknown" : health.playerHealthy ? "Playing" : "Stopped",
+      detail: device.currentPlaylistName ?? "No playlist",
+      tone: (!reporting || !health ? "unknown" : health.playerHealthy ? "good" : "bad") as Tone,
+    },
+    {
+      icon: Cable,
+      label: "Display",
+      value: !reporting || !health ? "Unknown" : health.hdmiConnected ? "Connected" : "Unplugged",
+      detail: "HDMI",
+      tone: (!reporting || !health ? "unknown" : health.hdmiConnected ? "good" : "bad") as Tone,
+    },
+    {
+      icon: Wifi,
+      label: "Network",
+      value: health?.signalPercent != null ? `${health.signalPercent}% signal` : health?.networkInterface === "eth0" ? "Wired" : "Unknown",
+      detail: health?.ssid ?? health?.ipAddress,
+      tone: (!reporting || health?.signalPercent == null
+        ? "unknown"
+        : health.signalPercent < 25 ? "bad" : health.signalPercent < 50 ? "warn" : "good") as Tone,
+    },
+    {
+      icon: Thermometer,
+      label: "Temperature",
+      value: health?.cpuTemperatureC != null ? `${health.cpuTemperatureC.toFixed(0)}°C` : "Unknown",
+      detail: health?.throttledFlags && health.throttledFlags !== "0x0" ? `Throttled ${health.throttledFlags}` : undefined,
+      tone: (!reporting || health?.cpuTemperatureC == null
+        ? "unknown"
+        : health.cpuTemperatureC >= 80 ? "bad" : health.cpuTemperatureC >= 70 ? "warn" : "good") as Tone,
+    },
+  ];
+
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title={device.name}
-        description={`${device.siteName} · configure playback defaults, device identity, and remote commands.`}
-        action={
-          <div className="flex items-center gap-3">
-            <StatusPill status={device.status} label={device.status} />
-            {canAdmin ? <RemoveScreenButton screen={{ id: device.id, name: device.name }} /> : null}
-          </div>
-        }
-      />
+    <ScreenCommandProvider deviceId={device.id}>
+      {/* Poll faster while a command is still on its way so its result shows up promptly. */}
+      <AutoRefresh intervalMs={hasPendingCommand ? 5_000 : 15_000} />
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          back={{ href: "/screens", label: "Screens" }}
+          title={device.name}
+          meta={<StatusPill status={device.status} />}
+          description={
+            <>
+              {device.siteName} · last check-in {formatRelativeTimestamp(device.lastHeartbeatAt)}
+            </>
+          }
+          action={<ScreenActions screen={{ id: device.id, name: device.name }} canAdmin={canAdmin} />}
+        />
+        <CommandFeedback className="-mt-3" />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
-        <div className="space-y-5">
-          <div className="dashboard-surface overflow-hidden rounded-lg">
-            <div className="border-b border-border px-5 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Live preview
-              </p>
-            </div>
-            <div className="relative aspect-[16/9] bg-[var(--surface-high)]">
-              {screenshot ? (
-                <img
-                  alt={device.name}
-                  src={screenshot.publicUrl}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  No screenshot available yet.
-                </div>
-              )}
-            </div>
-          </div>
+        {issues.length ? (
+          <Alert variant={issues.some((issue) => issue.severity === "critical") ? "destructive" : "default"}>
+            <AlertTriangle />
+            <AlertTitle>{issues.map((issue) => issue.label).join(" · ")}</AlertTitle>
+            <AlertDescription>
+              {device.status === "offline"
+                ? "The screen keeps playing its saved content if it lost internet, but it can't receive changes or commands until it reconnects. Check power and network at the site."
+                : "Playback may be interrupted. Try Restart player from the menu, or check the TV and cables at the site."}
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex min-w-0 flex-col gap-6">
+            <ScreenPreview
+              key={screenshot?.capturedAt ?? "none"}
+              name={device.name}
+              initialScreenshot={screenshot ? { publicUrl: screenshot.publicUrl, capturedAt: screenshot.capturedAt } : null}
+              reporting={reporting}
+            />
+
+            <section aria-label="Health" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {tiles.map((tile) => (
+                <HealthTile key={tile.label} {...tile} />
+              ))}
+            </section>
+
             {canAdmin ? (
               <ScreenSettingsPanel
                 device={{
@@ -84,136 +188,95 @@ export default async function ScreenDetailPage({
                 playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
               />
             ) : (
-              <div className="dashboard-surface rounded-lg p-5 text-sm text-muted-foreground">
-                Device settings are read-only for members. Ask an organization admin to change playback defaults.
-              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Settings</CardTitle>
+                  <CardDescription>Only workspace admins can change a screen&apos;s settings.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="divide-y">
+                    <InfoRow label="Orientation" value={`${device.orientation}°`} />
+                    <InfoRow label="Volume" value={`${device.volume}%`} />
+                    <InfoRow label="Time zone" value={device.timezone} />
+                  </dl>
+                </CardContent>
+              </Card>
             )}
-            <CommandPanel
-              canAdmin={canAdmin}
-              deviceId={device.id}
-              fleetManagementState={device.fleetManagementState}
-            />
           </div>
+
+          <aside className="flex min-w-0 flex-col gap-6">
+            <Card id="activity" className="scroll-mt-20">
+              <CardHeader className="border-b">
+                <CardTitle>Activity</CardTitle>
+                <CardDescription>Commands sent to this screen. Results update on their own.</CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                {commands.length === 0 ? (
+                  <p className="px-4 text-sm text-muted-foreground">Nothing sent to this screen yet.</p>
+                ) : (
+                  <ol className="max-h-[420px] divide-y overflow-y-auto">
+                    {commands.map((command) => (
+                      <li key={command.id} className="flex flex-col gap-1 px-4 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm font-medium">{commandLabel(command.commandType)}</span>
+                          <CommandStatusBadge status={command.status} />
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          Sent {formatRelativeTimestamp(command.issuedAt)}
+                          {command.completedAt ? ` · finished ${formatRelativeTimestamp(command.completedAt)}` : null}
+                        </span>
+                        {command.message && command.status === "failed" ? (
+                          <span className="break-words font-mono text-xs text-destructive">{command.message}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </CardContent>
+            </Card>
+
+            {canAdmin ? <NetworkCard isManaged={isManaged} currentSsid={health?.ssid} /> : null}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cpu className="size-4 text-muted-foreground" aria-hidden />
+                  Device details
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!isManaged ? (
+                  <Alert className="mb-3">
+                    <AlertDescription>
+                      This screen runs the older software. It keeps working as-is, but Wi-Fi changes and software
+                      rollouts unlock after its appliance update.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                <dl className="divide-y">
+                  <InfoRow label="Model" value={health?.model ?? device.hardwareProfile ?? "—"} />
+                  <InfoRow label="IP address" value={health?.ipAddress ?? "—"} />
+                  <InfoRow
+                    label="Player"
+                    value={`${device.appVersion ?? "unknown"}${device.desiredPlayerVersion && device.desiredPlayerVersion !== device.appVersion ? ` → ${device.desiredPlayerVersion}` : ""}`}
+                  />
+                  <InfoRow
+                    label="Agent"
+                    value={`${device.agentVersion ?? "unknown"}${device.desiredAgentVersion && device.desiredAgentVersion !== device.agentVersion ? ` → ${device.desiredAgentVersion}` : ""}`}
+                  />
+                  <InfoRow label="OS" value={health?.osVersion ?? "—"} />
+                  <InfoRow label="Boot slot" value={health?.bootSlot ?? "—"} />
+                  <InfoRow label="Content version" value={device.manifestVersion ?? "—"} />
+                  <InfoRow
+                    label="Software"
+                    value={isManaged ? `${device.applianceGeneration ?? "appliance"} · protocol ${device.agentProtocolVersion ?? "?"}` : "Legacy"}
+                  />
+                </dl>
+              </CardContent>
+            </Card>
+          </aside>
         </div>
-
-        <aside className="space-y-5">
-          <div className="dashboard-surface rounded-lg p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Appliance health
-              </p>
-              <StatusPill
-                status={device.fleetManagementState === "legacy"
-                  ? "unclaimed"
-                  : device.health?.playerHealthy && device.health?.hdmiConnected
-                    ? "online"
-                    : "stale"}
-                label={device.fleetManagementState === "legacy"
-                  ? "legacy protected"
-                  : device.health?.playerHealthy && device.health?.hdmiConnected
-                    ? "healthy"
-                    : "attention"}
-              />
-            </div>
-            {device.fleetManagementState === "legacy" ? (
-              <div className="mt-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-3 text-[0.8rem] leading-5 text-warning">
-                Current-device compatibility is active. This screen keeps the legacy command protocol and is excluded from network changes, telemetry retention, and release rollouts until its first appliance heartbeat.
-              </div>
-            ) : null}
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {[
-                { label: "Player", value: device.health?.playerHealthy ? "Healthy" : "No heartbeat" },
-                { label: "HDMI", value: device.health?.hdmiConnected ? "Connected" : "Disconnected" },
-                { label: "CPU", value: device.health?.cpuTemperatureC == null ? "—" : `${device.health.cpuTemperatureC.toFixed(1)}°C` },
-                { label: "Wi-Fi", value: device.health?.signalPercent == null ? "—" : `${device.health.signalPercent}%` },
-                { label: "Boot slot", value: device.health?.bootSlot ?? "—" },
-                { label: "Rollback", value: String(device.health?.rollbackCount ?? 0) },
-              ].map((item) => (
-                <div key={item.label} className="rounded-md border border-border bg-[var(--surface-low)] px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
-                  <p className="mt-1 font-mono text-[0.78rem] text-foreground">{item.value}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 rounded-md border border-border bg-[var(--surface-low)] px-3 py-2.5 text-[0.75rem] text-muted-foreground">
-              Agent {device.agentVersion ?? "unknown"} / desired {device.desiredAgentVersion ?? "current"}<br />
-              Player {device.appVersion ?? "unknown"} / desired {device.desiredPlayerVersion ?? "current"}
-              <br />Fleet {device.fleetManagementState === "managed"
-                ? `${device.applianceGeneration} / protocol ${device.agentProtocolVersion}`
-                : "waiting for flash"}
-            </div>
-          </div>
-
-          <div className="dashboard-surface rounded-lg p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Device profile
-            </p>
-            <div className="mt-4 space-y-4">
-              {[
-                { label: "Site", value: device.siteName },
-                { label: "Timezone", value: device.timezone },
-                { label: "Orientation", value: `${device.orientation}°` },
-                { label: "Volume", value: `${device.volume}%` },
-                {
-                  label: "Current playlist",
-                  value: device.currentPlaylistName ?? "Unassigned",
-                },
-                {
-                  label: "Manifest version",
-                  value: device.manifestVersion ?? "None",
-                },
-                {
-                  label: "Last heartbeat",
-                  value: formatRelativeTimestamp(device.lastHeartbeatAt),
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-md border border-border bg-[var(--surface-low)] px-4 py-3"
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    {item.label}
-                  </p>
-                  <p className="mt-2 font-mono text-sm text-foreground">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="dashboard-surface rounded-lg">
-            <div className="border-b border-border px-5 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Command log
-              </p>
-            </div>
-            {commands.length === 0 ? (
-              <p className="px-5 py-5 text-sm text-muted-foreground">
-                No commands have been issued for this device yet.
-              </p>
-            ) : (
-              <div className="divide-y divide-border">
-                {commands.map((command) => (
-                  <div key={command.id} className="px-5 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-mono text-sm text-foreground">
-                          {command.commandType}
-                        </p>
-                        <p className="mt-1 text-[0.8rem] text-muted-foreground">
-                          {command.status ?? "queued"}
-                        </p>
-                      </div>
-                      <p className="font-mono text-[0.78rem] text-muted-foreground">
-                        {formatRelativeTimestamp(command.issuedAt)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
       </div>
-    </div>
+    </ScreenCommandProvider>
   );
 }

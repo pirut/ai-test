@@ -1,21 +1,36 @@
 import { AddScreenDialog } from "@/components/add-screen-dialog";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
-import { ScreensTable } from "@/components/screens-table";
+import { type ScreenFilter, ScreensTable } from "@/components/screens-table";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import { listDevices } from "@/lib/backend";
 
-export default async function ScreensPage() {
+const filters = new Set<ScreenFilter>(["all", "attention", "online", "stale", "offline", "unclaimed"]);
+
+export default async function ScreensPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; view?: string; layout?: string }>;
+}) {
   const orgId = await requireOrgId();
-  const [devices, session] = await Promise.all([listDevices(orgId), getAuthSession()]);
+  const [devices, session, params] = await Promise.all([listDevices(orgId), getAuthSession(), searchParams]);
+  const canAdmin = session.has({ role: "org:admin" });
+  const requested = (params.view === "attention" ? "attention" : params.status ?? "all") as ScreenFilter;
 
   return (
     <div className="flex flex-col gap-6">
+      <AutoRefresh />
       <PageHeader
         title="Screens"
-        description="Find a screen, inspect its playback and health, or safely remove it from the fleet."
-        action={session.has({ role: "org:admin" }) ? <AddScreenDialog /> : undefined}
+        description="Every display in this workspace. Open one to see what it's playing, change its settings, or send it a command."
+        action={canAdmin ? <AddScreenDialog /> : undefined}
       />
-      <ScreensTable initialDevices={devices} canAdmin={session.has({ role: "org:admin" })} />
+      <ScreensTable
+        canAdmin={canAdmin}
+        devices={devices}
+        initialFilter={filters.has(requested) ? requested : "all"}
+        initialLayout={params.layout === "grid" ? "grid" : "list"}
+      />
     </div>
   );
 }

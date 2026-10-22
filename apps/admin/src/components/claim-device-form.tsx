@@ -73,7 +73,7 @@ export function ClaimDeviceForm({
           action={(fd) => startTransition(() => void handleSubmit(fd))}
         >
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="claimCode" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Claim code</Label>
+            <Label htmlFor="claimCode">Pairing code</Label>
             <Input
               id="claimCode"
               name="claimCode"
@@ -82,16 +82,17 @@ export function ClaimDeviceForm({
               autoCapitalize="characters"
               spellCheck={false}
               maxLength={8}
-              className="font-mono uppercase tracking-[0.3em]"
+              className="h-11 text-center font-mono text-lg uppercase tracking-[0.4em]"
               required
             />
+            <p className="text-xs text-muted-foreground">Shown in large letters on the screen when it&apos;s ready to pair.</p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="name" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Screen name</Label>
+            <Label htmlFor="name">Screen name</Label>
             <Input id="name" name="name" placeholder="Front Window" required />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="siteName" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Site</Label>
+            <Label htmlFor="siteName">Site</Label>
             <Input id="siteName" name="siteName" placeholder="Chelsea showroom" required />
           </div>
           <Button type="submit" className="mt-1 w-full" disabled={step.submitting}>

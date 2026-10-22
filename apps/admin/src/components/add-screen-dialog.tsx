@@ -26,7 +26,7 @@ export function AddScreenDialog() {
         <Plus data-icon="inline-start" />
         Add screen
       </SheetTrigger>
-      <SheetContent className="dashboard-theme w-full p-0 sm:max-w-md">
+      <SheetContent className="w-full p-0 sm:max-w-md">
         <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="text-xl font-semibold">Add a screen</SheetTitle>
           <SheetDescription className="leading-6">
