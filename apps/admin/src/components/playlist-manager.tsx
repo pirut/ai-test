@@ -456,6 +456,8 @@ export function PlaylistManager({
       const k = p.folderId ?? null;
       m.set(k, (m.get(k) ?? 0) + 1);
     }
+    // The root entry is "All playlists", so it counts everything.
+    m.set(null, playlists.length);
     return m;
   }, [playlists]);
 
@@ -465,13 +467,16 @@ export function PlaylistManager({
       const k = a.folderId ?? null;
       m.set(k, (m.get(k) ?? 0) + 1);
     }
+    // The root entry is "All media", so it counts everything.
+    m.set(null, assets.length);
     return m;
   }, [assets]);
 
   const visiblePlaylists = useMemo(() => {
     const q = deferredPlaylistSearch.trim().toLowerCase();
     return sortPlaylists(playlists).filter((p) => {
-      if ((p.folderId ?? null) !== selectedPlaylistFolderId) return false;
+      // "All playlists" lists every playlist; a folder narrows to that folder. Search spans everything.
+      if (!q && selectedPlaylistFolderId !== null && (p.folderId ?? null) !== selectedPlaylistFolderId) return false;
       return !q || p.name.toLowerCase().includes(q);
     });
   }, [deferredPlaylistSearch, playlists, selectedPlaylistFolderId]);
@@ -479,7 +484,8 @@ export function PlaylistManager({
   const visibleAssets = useMemo(() => {
     const q = deferredMediaSearch.trim().toLowerCase();
     return assets.filter((a) => {
-      if ((a.folderId ?? null) !== selectedMediaFolderId) return false;
+      // "All media" lists the whole library; a folder narrows to that folder. Search spans everything.
+      if (!q && selectedMediaFolderId !== null && (a.folderId ?? null) !== selectedMediaFolderId) return false;
       return !q || [a.title, a.fileName, ...a.tags].join(" ").toLowerCase().includes(q);
     });
   }, [assets, deferredMediaSearch, selectedMediaFolderId]);
@@ -1000,6 +1006,7 @@ export function PlaylistManager({
 
   return (
     <DndContext
+      id="playlist-builder-dnd"
       onDragCancel={() => setActiveDrag(null)}
       onDragEnd={handleDragEnd}
       onDragStart={handleDragStart}
@@ -1012,7 +1019,7 @@ export function PlaylistManager({
             {/* Header */}
             <div className="border-b border-white/5 px-4 py-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-sm font-medium text-foreground">
                   Playlists
                 </p>
                 <Button onClick={startNewPlaylist} size="sm" type="button">
@@ -1027,7 +1034,7 @@ export function PlaylistManager({
                   onClick={() => setSelectedPlaylistFolderId(null)}
                   type="button"
                 >
-                  Root
+                  All playlists
                 </button>
                 {playlistFolderTrail.map((folder) => (
                   <span
@@ -1107,8 +1114,10 @@ export function PlaylistManager({
               ) : (
                 <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
                   {playlistSearch.trim()
-                    ? "No matching playlists."
-                    : "No playlists yet."}
+                    ? "No playlists match that search."
+                    : selectedPlaylistFolderId
+                      ? "This folder has no playlists yet."
+                      : "No playlists yet. Use New to make one."}
                 </div>
               )}
             </div>
@@ -1121,7 +1130,7 @@ export function PlaylistManager({
               onClick={() => setShowYoutubeImport((v) => !v)}
               type="button"
             >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <p className="text-sm font-medium text-foreground">
                 Import YouTube playlist
               </p>
               <ChevronDown
@@ -1204,7 +1213,7 @@ export function PlaylistManager({
           <Card className="gap-0 py-0">
             <div className="shrink-0 border-b border-white/5 px-5 py-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-sm font-medium text-foreground">
                   {selectedPlaylistId ? "Editing playlist" : "New playlist"}
                 </p>
                 <div className="flex shrink-0 gap-2">
@@ -1243,13 +1252,13 @@ export function PlaylistManager({
                     onChange={(e) => setMakeDefault(e.target.checked)}
                     type="checkbox"
                   />
-                  Fallback
+                  Workspace default
                 </label>
               </div>
 
               {currentDefault && !makeDefault ? (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  Current fallback: {currentDefault.name}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Screens without their own playlist play {currentDefault.name}.
                 </p>
               ) : null}
 
@@ -1277,7 +1286,7 @@ export function PlaylistManager({
               >
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="font-semibold uppercase tracking-[0.12em]">
+                    <span className="text-sm font-medium text-foreground">
                       Queue
                     </span>
                     <span className="text-muted-foreground/40">&middot;</span>
@@ -1350,7 +1359,7 @@ export function PlaylistManager({
           <aside className="2xl:sticky 2xl:top-[8rem] 2xl:self-start">
             <Card className="gap-0 py-0 2xl:max-h-[calc(100vh-10rem)]">
               <div className="shrink-0 border-b border-white/5 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-sm font-medium text-foreground">
                   Media library
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
@@ -1359,7 +1368,7 @@ export function PlaylistManager({
                     onClick={() => setSelectedMediaFolderId(null)}
                     type="button"
                   >
-                    Root
+                    All media
                   </button>
                   {mediaFolderTrail.map((folder) => (
                     <span
@@ -1491,8 +1500,10 @@ export function PlaylistManager({
                 ) : (
                   <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
                     {mediaSearch.trim()
-                      ? "No matching media."
-                      : "No media in this folder."}
+                      ? "No media matches that search."
+                      : selectedMediaFolderId
+                        ? "This folder is empty."
+                        : "No media yet. Upload some on the Media page first."}
                   </div>
                 )}
               </div>

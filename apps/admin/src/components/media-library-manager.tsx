@@ -409,12 +409,9 @@ export function MediaLibraryManager({
   const visibleAssets = useMemo(() => {
     const query = deferredSearch.trim().toLowerCase();
     return assets.filter((asset) => {
-      if ((asset.folderId ?? null) !== selectedFolderId) {
-        return false;
-      }
-
+      // Search spans the whole library; browsing shows one folder at a time.
       if (!query) {
-        return true;
+        return (asset.folderId ?? null) === selectedFolderId;
       }
 
       return [asset.title, asset.fileName, ...asset.tags]
@@ -442,11 +439,11 @@ export function MediaLibraryManager({
     activeDropFolderId === undefined
       ? null
       : activeDropFolderId === null
-        ? "Root library"
+        ? "Library"
         : folderMap.get(activeDropFolderId)?.name ?? "Folder";
   const currentFolderName = selectedFolderId
     ? folderMap.get(selectedFolderId)?.name ?? "Folder"
-    : "Root library";
+    : "Library";
   const currentFolderCount = folderAssetCounts.get(selectedFolderId ?? null) ?? 0;
 
   const collisionDetection = useMemo<CollisionDetection>(
@@ -978,6 +975,7 @@ export function MediaLibraryManager({
 
   return (
     <DndContext
+      id="media-library-dnd"
       collisionDetection={collisionDetection}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
@@ -1002,15 +1000,11 @@ export function MediaLibraryManager({
             <div className="space-y-4 p-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-md border border-border bg-background px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Assets
-                  </div>
+                  <div className="text-xs text-muted-foreground">Files</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{assets.length}</div>
                 </div>
                 <div className="rounded-md border border-border bg-background px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Folders
-                  </div>
+                  <div className="text-xs text-muted-foreground">Folders</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{folders.length}</div>
                 </div>
               </div>
@@ -1048,7 +1042,7 @@ export function MediaLibraryManager({
                 onRename={(folder) => void renameFolder(folder)}
                 onSelect={setSelectedFolderId}
                 itemCounts={folderAssetCounts}
-                rootLabel="Root library"
+                rootLabel="Library"
                 selectedFolderId={selectedFolderId}
               />
             </div>
@@ -1098,7 +1092,7 @@ export function MediaLibraryManager({
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Root items stay visible here until you move them into a folder.
+                  Files that aren&apos;t in a folder show here.
                 </p>
               )}
             </div>
@@ -1115,7 +1109,7 @@ export function MediaLibraryManager({
                     onClick={() => setSelectedFolderId(null)}
                     type="button"
                   >
-                    Root library
+                    Library
                   </button>
                   {folderTrail.map((folder) => (
                     <span key={folder.id} className="inline-flex min-w-0 items-center gap-2">
@@ -1241,8 +1235,8 @@ export function MediaLibraryManager({
           ) : null}
 
           <div className="px-5 py-3">
-            <div className="hidden border-b border-border/75 pb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_112px_132px] md:pl-[122px]">
-              <span>Asset</span>
+            <div className="hidden border-b border-border/75 pb-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_112px_132px] md:pl-[122px]">
+              <span>File</span>
               <span>Source</span>
               <span>Size</span>
             </div>
@@ -1271,8 +1265,12 @@ export function MediaLibraryManager({
               <div className="rounded-md border border-dashed border-border px-6 py-12 text-center">
                 <p className="text-sm text-muted-foreground">
                   {search.trim()
-                    ? "No matching assets in this folder."
-                    : "This folder is empty."}
+                    ? "Nothing in the library matches that search."
+                    : assets.length === 0
+                      ? "No media yet. Upload photos or videos, or add a YouTube link, from the panel on the right."
+                      : selectedFolderId
+                        ? "This folder is empty. Drag files here from another folder, or upload into it."
+                        : `Nothing at the top level. Your ${assets.length} file${assets.length === 1 ? " is" : "s are"} in folders on the left.`}
                 </p>
               </div>
             )}
@@ -1303,7 +1301,7 @@ export function MediaLibraryManager({
                           {asset.title}
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {asset.folderId ? folderMap.get(asset.folderId)?.name : "Root library"}
+                          {asset.folderId ? folderMap.get(asset.folderId)?.name : "Library"}
                         </div>
                       </div>
                     </div>
@@ -1390,7 +1388,7 @@ export function MediaLibraryManager({
                     <dd className="truncate text-foreground">
                       {selectedAsset.folderId
                         ? folderMap.get(selectedAsset.folderId)?.name
-                        : "Root library"}
+                        : "Library"}
                     </dd>
                   </div>
                   {formatDimensions(selectedAsset) ? (

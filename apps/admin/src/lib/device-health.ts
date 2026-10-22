@@ -46,6 +46,11 @@ export function deviceIssues(device: DeviceSummary): DeviceIssue[] {
     }
   }
 
+  if (device.status === "online" || device.status === "stale") {
+    if (device.lastError) issues.push({ label: "Screen reported an error", severity: "warning" });
+    else if (device.contentState === "updating") issues.push({ label: "Updating content", severity: "info" });
+  }
+
   if (device.status !== "unclaimed" && !device.currentPlaylistName) {
     issues.push({ label: "No playlist", severity: "warning" });
   }
@@ -73,3 +78,9 @@ export function countByStatus(devices: DeviceSummary[]) {
   for (const device of devices) counts[device.status] += 1;
   return counts;
 }
+
+export const contentStateLabels = {
+  current: "Up to date",
+  updating: "Updating",
+  unknown: "Unknown",
+} as const;

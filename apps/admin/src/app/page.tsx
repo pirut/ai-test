@@ -13,7 +13,6 @@ import { redirect } from "next/navigation";
 import {
   HeroShowcase,
   InlineArrowLink,
-  LogoCloud,
   PublicCtaRow,
   PublicFooter,
   PublicNav,
@@ -90,7 +89,7 @@ export default async function LandingPage() {
             Curate your digital assets with precision.
           </h1>
           <p className="mt-8 max-w-3xl text-lg leading-8 text-[#c2c6d6] sm:text-xl">
-            Screen is a cinematic control surface for showroom fleets: media
+            Digital Curator is a control surface for showroom fleets: media
             library, playlist sequencing, release timing, screenshots, and
             remote commands in one editorial dark-mode workspace.
           </p>
@@ -101,7 +100,6 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <LogoCloud />
 
       <section id="features" className="bg-[#0e0e0e] px-6 py-28">
         <div className="mx-auto max-w-7xl">
@@ -144,7 +142,7 @@ export default async function LandingPage() {
               The process
             </div>
             <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              How Screen works
+              How Digital Curator works
             </h2>
             <div className="mt-5 h-1 w-20 bg-[#adc6ff]" />
           </div>
@@ -311,33 +309,9 @@ export default async function LandingPage() {
 
       <section className="bg-[#0e0e0e] px-6 py-28">
         <div className="mx-auto max-w-5xl">
-          <div className="relative">
-            <span className="absolute -left-3 -top-10 text-8xl text-[#adc6ff]/10 sm:-left-10 sm:text-9xl">
-              “
-            </span>
-            <blockquote className="relative">
-              <p className="text-3xl font-light italic leading-tight text-white sm:text-4xl">
-                Screen has completely transformed how we present our digital vision. It does not feel like another dashboard. It feels like the workspace finally respects the work.
-              </p>
-              <footer className="mt-10 flex items-center gap-4">
-                <div className="size-12 overflow-hidden rounded-full bg-[#353534]">
-                  <Image
-                    src="/marketing/testimonial-portrait.png"
-                    alt="Portrait used for the testimonial area."
-                    width={512}
-                    height={512}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <div>
-                  <cite className="not-italic font-bold text-white">Julian Thorne</cite>
-                  <div className="mt-1 text-[11px] uppercase tracking-[0.24em] text-[#c2c6d6]">
-                    Creative director, Nexa Design
-                  </div>
-                </div>
-              </footer>
-            </blockquote>
-          </div>
+          <p className="text-3xl font-light leading-tight text-white sm:text-4xl">
+            Every screen reports what it is playing, how healthy it is, and whether your last change arrived, so you know the showroom looks right without walking the floor.
+          </p>
         </div>
       </section>
 

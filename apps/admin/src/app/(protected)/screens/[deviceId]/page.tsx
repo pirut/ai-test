@@ -1,4 +1,4 @@
-import { AlertTriangle, Cable, Cpu, MonitorPlay, Thermometer, Wifi } from "lucide-react";
+import { AlertTriangle, Cable, Cpu, MonitorPlay, RefreshCw, Thermometer, Wifi } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -23,7 +23,7 @@ import {
   listPlaylists,
 } from "@/lib/backend";
 import { commandLabel, isCommandPending } from "@/lib/commands";
-import { deviceIssues } from "@/lib/device-health";
+import { contentStateLabels, deviceIssues } from "@/lib/device-health";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
 
 type Tone = "good" | "warn" | "bad" | "unknown";
@@ -119,6 +119,15 @@ export default async function ScreenDetailPage({
         : health.signalPercent < 25 ? "bad" : health.signalPercent < 50 ? "warn" : "good") as Tone,
     },
     {
+      icon: RefreshCw,
+      label: "Content",
+      value: !reporting ? "Unknown" : device.lastError ? "Error" : contentStateLabels[device.contentState ?? "unknown"],
+      detail: device.lastSyncAt ? `Synced ${formatRelativeTimestamp(device.lastSyncAt)}` : undefined,
+      tone: (!reporting || !device.contentState || device.contentState === "unknown"
+        ? "unknown"
+        : device.lastError ? "warn" : device.contentState === "current" ? "good" : "warn") as Tone,
+    },
+    {
       icon: Thermometer,
       label: "Temperature",
       value: health?.cpuTemperatureC != null ? `${health.cpuTemperatureC.toFixed(0)}°C` : "Unknown",
@@ -152,6 +161,9 @@ export default async function ScreenDetailPage({
             <AlertTriangle />
             <AlertTitle>{issues.map((issue) => issue.label).join(" · ")}</AlertTitle>
             <AlertDescription>
+              {device.lastError ? (
+                <span className="mb-1 block break-words font-mono text-xs">Last error from the screen: {device.lastError}</span>
+              ) : null}
               {device.status === "offline"
                 ? "The screen keeps playing its saved content if it lost internet, but it can't receive changes or commands until it reconnects. Check power and network at the site."
                 : "Playback may be interrupted. Try Restart player from the menu, or check the TV and cables at the site."}
@@ -168,7 +180,7 @@ export default async function ScreenDetailPage({
               reporting={reporting}
             />
 
-            <section aria-label="Health" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <section aria-label="Health" className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-5">
               {tiles.map((tile) => (
                 <HealthTile key={tile.label} {...tile} />
               ))}
@@ -223,6 +235,7 @@ export default async function ScreenDetailPage({
                         </div>
                         <span className="text-xs text-muted-foreground">
                           Sent {formatRelativeTimestamp(command.issuedAt)}
+                          {command.startedAt && !command.completedAt ? ` · started ${formatRelativeTimestamp(command.startedAt)}` : null}
                           {command.completedAt ? ` · finished ${formatRelativeTimestamp(command.completedAt)}` : null}
                         </span>
                         {command.message && command.status === "failed" ? (
@@ -266,7 +279,10 @@ export default async function ScreenDetailPage({
                   />
                   <InfoRow label="OS" value={health?.osVersion ?? "—"} />
                   <InfoRow label="Boot slot" value={health?.bootSlot ?? "—"} />
-                  <InfoRow label="Content version" value={device.manifestVersion ?? "—"} />
+                  <InfoRow
+                    label="Content version"
+                    value={`${device.manifestVersion ?? "—"}${device.desiredManifestVersion && device.desiredManifestVersion !== device.manifestVersion ? ` → ${device.desiredManifestVersion}` : ""}`}
+                  />
                   <InfoRow
                     label="Software"
                     value={isManaged ? `${device.applianceGeneration ?? "appliance"} · protocol ${device.agentProtocolVersion ?? "?"}` : "Legacy"}
