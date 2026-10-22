@@ -78,7 +78,7 @@ func Load() Config {
 		YouTubeDownloadTimeout:  getduration("SHOWROOM_YOUTUBE_DOWNLOAD_TIMEOUT", "15m"),
 		ScreenshotCommand:       getenv("SHOWROOM_SCREENSHOT_COMMAND", "scrot -q 85 -o /tmp/showroom-screenshot.jpg"),
 		YouTubeDLBinary:         getenv("SHOWROOM_YTDLP_BINARY", "yt-dlp"),
-		YouTubeFormat:           getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo*[height<=2160]+bestaudio/best[height<=2160]/best"),
+		YouTubeFormat:           getenv("SHOWROOM_YTDLP_FORMAT", "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<=1080][vcodec^=avc1]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"),
 		YouTubeDLManagedURL:     getenv("SHOWROOM_YTDLP_MANAGED_URL", "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp"),
 		YouTubeDLManagedSHA256:  getenv("SHOWROOM_YTDLP_MANAGED_SHA256", "495be29ff4d9d4e9be7eabdfef225221e5d5282e77f2f505abc6dca80349f3fd"),
 		YouTubeDLManagedVersion: getenv("SHOWROOM_YTDLP_MANAGED_VERSION", "2026.07.04"),
