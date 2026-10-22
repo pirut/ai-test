@@ -51,6 +51,7 @@ const deviceDetailSchema = deviceSummarySchema.extend({
 
 const adminCommandSchema = deviceCommandSchema.extend({
   status: z.enum(["queued", "in_progress", "succeeded", "failed"]).optional(),
+  startedAt: z.string().nullable().optional(),
   completedAt: z.string().nullable().optional(),
   message: z.string().nullable().optional(),
 });
@@ -682,43 +683,73 @@ export async function getCommandsForCredential(credential: string | null) {
   }
 }
 
-// Resolves as soon as the screen has a queued command, its credential stops
-// being accepted, the wait elapses, or the screen disconnects. Uses a Convex
-// subscription, so an idle screen costs one open subscription rather than a
-// stream of polls.
-export async function waitForDeviceCommands(
+type DeviceSignal = { queued: boolean; manifestVersion: string | null };
+
+function mockDeviceSignal(credential: string): DeviceSignal | null {
+  const device = mock.authenticateDevice(credential);
+  if (!device) return null;
+  return {
+    queued: mock.getCommandsForDevice(device.id).length > 0,
+    manifestVersion: mock.getManifestForDevice(device.id)?.manifestVersion ?? null,
+  };
+}
+
+// The content version the dashboard has published to this screen, so the
+// commands endpoint can tell a newer agent to sync without waiting for its
+// next poll.
+export async function getDesiredManifestVersion(credential: string) {
+  if (!hasConvexBackend()) {
+    return mockDeviceSignal(credential)?.manifestVersion ?? null;
+  }
+  const signal = (await publicConvexQuery(api.device.getDeviceSignal, { credential })) as DeviceSignal | null;
+  return signal?.manifestVersion ?? null;
+}
+
+// Resolves as soon as the screen has a queued command, new content is
+// published to it, its credential stops being accepted, the wait elapses, or
+// the screen disconnects. Returns the last content version seen (undefined if
+// none arrived). Uses a Convex subscription, so an idle screen costs one open
+// subscription rather than a stream of polls.
+export async function waitForDeviceSignal(
   credential: string,
   waitMs: number,
   signal?: AbortSignal,
-) {
+): Promise<string | null | undefined> {
   if (waitMs <= 0 || signal?.aborted) {
-    return;
+    return undefined;
   }
 
   if (!hasConvexBackend()) {
     const deadline = Date.now() + waitMs;
+    const initial = mockDeviceSignal(credential);
+    let latest = initial;
     while (Date.now() < deadline && !signal?.aborted) {
-      const device = mock.authenticateDevice(credential);
-      if (!device || mock.getCommandsForDevice(device.id).length > 0) return;
+      latest = mockDeviceSignal(credential);
+      if (!latest || latest.queued || latest.manifestVersion !== initial?.manifestVersion) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    return;
+    return latest?.manifestVersion;
   }
 
   if (!env.convexUrl || typeof WebSocket === "undefined") {
-    return;
+    return undefined;
   }
 
   const client = new ConvexClient(env.convexUrl);
   try {
-    await new Promise<void>((resolve) => {
+    return await new Promise<string | null | undefined>((resolve) => {
+      let initialVersion: string | null | undefined;
+      let latestVersion: string | null | undefined;
       const timer = setTimeout(finish, waitMs);
       signal?.addEventListener("abort", finish, { once: true });
       client.onUpdate(
-        api.device.hasQueuedCommands,
+        api.device.getDeviceSignal,
         { credential },
-        (queued) => {
-          if (queued !== false) finish();
+        (update) => {
+          if (!update) return finish();
+          latestVersion = update.manifestVersion;
+          if (initialVersion === undefined) initialVersion = update.manifestVersion;
+          if (update.queued || update.manifestVersion !== initialVersion) finish();
         },
         () => finish(),
       );
@@ -726,7 +757,7 @@ export async function waitForDeviceCommands(
       function finish() {
         clearTimeout(timer);
         signal?.removeEventListener("abort", finish);
-        resolve();
+        resolve(latestVersion);
       }
     });
   } finally {

@@ -223,10 +223,18 @@ func (c *Client) FetchManifest(ctx context.Context, credential string) (*DeviceM
 	return &payload.Manifest, nil
 }
 
+// CommandBatch is one answer from the commands endpoint. ManifestVersion is
+// the content the dashboard last published to this screen; it is empty when
+// the server does not report it.
+type CommandBatch struct {
+	Commands        []DeviceCommand `json:"commands"`
+	ManifestVersion string          `json:"manifestVersion"`
+}
+
 // FetchCommands returns queued commands. With a positive wait the server may
-// hold the request open until a command is queued (long polling); servers that
-// do not support it answer immediately.
-func (c *Client) FetchCommands(ctx context.Context, credential string, wait time.Duration) ([]DeviceCommand, error) {
+// hold the request open until a command is queued or new content is published
+// (long polling); servers that do not support it answer immediately.
+func (c *Client) FetchCommands(ctx context.Context, credential string, wait time.Duration) (*CommandBatch, error) {
 	endpoint := c.baseURL + "/api/device/commands"
 	if seconds := int(wait / time.Second); seconds > 0 {
 		endpoint += "?waitSeconds=" + strconv.Itoa(seconds)
@@ -237,13 +245,20 @@ func (c *Client) FetchCommands(ctx context.Context, credential string, wait time
 	}
 	request.Header.Set("Authorization", "Bearer "+credential)
 
+	// A null manifestVersion decodes as "", the same as an older server that
+	// leaves the field out.
 	var payload struct {
-		Commands []DeviceCommand `json:"commands"`
+		Commands        []DeviceCommand `json:"commands"`
+		ManifestVersion *string         `json:"manifestVersion"`
 	}
 	if err := c.doJSON(request, &payload); err != nil {
 		return nil, err
 	}
-	return payload.Commands, nil
+	batch := &CommandBatch{Commands: payload.Commands}
+	if payload.ManifestVersion != nil {
+		batch.ManifestVersion = *payload.ManifestVersion
+	}
+	return batch, nil
 }
 
 func (c *Client) PostHeartbeat(ctx context.Context, credential string, payload map[string]interface{}) error {

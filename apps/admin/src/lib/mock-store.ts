@@ -875,7 +875,8 @@ export function compileManifests(orgId: string) {
       generatedAt: new Date().toISOString(),
       manifestVersion: version,
     };
-    device.manifestVersion = version;
+    device.desiredManifestVersion = version;
+    device.contentState = device.manifestVersion === version ? "current" : "updating";
   }
 
   return {
@@ -965,6 +966,16 @@ export function recordHeartbeat(deviceId: string, payload: Record<string, unknow
 
   device.status = "online";
   device.lastHeartbeatAt = new Date().toISOString();
+  if (parsedPayload.manifestVersion) {
+    device.manifestVersion = parsedPayload.manifestVersion;
+    if (device.desiredManifestVersion) {
+      device.contentState = device.desiredManifestVersion === device.manifestVersion ? "current" : "updating";
+    }
+  }
+  if (parsedPayload.sync) {
+    device.lastSyncAt = parsedPayload.sync.lastSyncAt ?? device.lastSyncAt ?? null;
+    device.lastError = parsedPayload.sync.lastError || null;
+  }
   if (parsedPayload.appliance && isFleetManagedDevice({
     applianceGeneration: parsedPayload.appliance.generation,
     agentProtocolVersion: parsedPayload.appliance.protocolVersion,

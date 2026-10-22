@@ -16,6 +16,7 @@ export function serializeScreenDetail(
     screenshotUrl: device.screenshotUrl ?? null,
     currentPlaylistName: device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
     manifestVersion: device.manifestVersion ?? null,
+    ...showroom.serializeLinkState(device),
     desiredAgentVersion: device.desiredAgentVersion ?? null,
     desiredPlayerVersion: device.desiredPlayerVersion ?? null,
     agentVersion: device.agentVersion ?? null,
