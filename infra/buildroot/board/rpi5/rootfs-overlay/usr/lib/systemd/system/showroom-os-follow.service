@@ -1,0 +1,15 @@
+[Unit]
+Description=Install the newest build of the development OS channel
+Documentation=file:///usr/libexec/showroom/showroom-os-follow
+# Only development images carry a channel; field images never follow one.
+ConditionPathExists=/etc/showroom/os-channel.env
+Wants=network-online.target
+After=network-online.target showroom-os-commit.service rauc.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/showroom/showroom-os-follow
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle

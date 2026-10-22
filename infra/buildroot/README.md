@@ -84,8 +84,60 @@ and writes to `infra/buildroot/out`; the flash image, the OS bundle and
 `SHA256SUMS` end up in `out/images`.
 
 The **Showroom OS (Buildroot) image** workflow runs the same build on pull
-requests that touch this directory and uploads the image as an artifact. It
-never publishes a release.
+requests that touch this directory and on `main`, smoke-tests the root
+filesystem and uploads the image as an artifact. Once publishing is set up
+(below) it also puts every development build on the dev channel.
+
+Rebuilding in the same output directory is incremental: after the first build,
+`SHOWROOM_SKIP_ARTIFACTS=1 ./infra/buildroot/build.sh` takes a few minutes for
+a change to the overlay, the board scripts or one package
+(`make -C infra/buildroot/.buildroot-2026.02.3 O=$PWD/infra/buildroot/out <package>-rebuild all`).
+
+## Iterating without reflashing
+
+Flash a test screen once with a development image; after that nothing needs a
+card reader.
+
+| Change | Loop | Time |
+| --- | --- | --- |
+| Player or agent | `./infra/pi-image/dev-push.sh root@<test screen>` builds them and swaps them in over SSH | seconds |
+| Anything in the image | push to a branch; CI builds, smoke-tests and publishes to the dev channel; the test screen installs it into its spare slot, health-checks it and keeps it or falls back | CI time, then about 5 minutes |
+| Field release | manual workflow run with `signing: production` and `publish_stable` | CI time |
+
+**Development images** are CI builds signed with the development keys. They
+carry `/etc/showroom/os-channel.env`, so `showroom-os-follow` checks the dev
+channel every few minutes and installs any new build through RAUC, exactly
+like an OS update (A/B slot, trial boot, `showroom-os-commit`). A build that
+does not come up healthy falls back and is never retried. Their
+`PRETTY_NAME` ends in "dev". Field images have no channel and only trust the
+production key, so they can never install a development bundle.
+
+`dev-push.sh` only touches test screens: development images, or a screen
+where someone ran `sudo touch /var/lib/showroom/dev-device`. It installs the
+build as a `dev-<time>` release beside the signed ones, so the next signed
+release replaces it; `dev-push.sh <screen> --revert` goes back at once. It
+needs SSH to the screen (Tailscale SSH, or any SSH on a bench screen).
+
+**Smoke test.** `tests/rootfs-smoke.py <image>` checks a built root filesystem
+without hardware: every binary's libraries and loader, glibc symbol versions
+of the agent and player (built outside Buildroot), the programs of every
+systemd unit, script interpreters, enabled units and the links to the built-in
+agent and player. It runs in CI before anything is published.
+
+### Setting up publishing (once)
+
+```bash
+./infra/buildroot/setup-image-publishing.sh            # images repo, dev keys, publishing token
+./infra/buildroot/setup-image-publishing.sh --production   # also the production keys
+```
+
+It creates the public images repository (`pirut/showroom-os`), stores the
+development signing keys and a token that can write to that repository as
+secrets of this repository. The next CI build publishes to
+`https://github.com/pirut/showroom-os/releases/tag/dev`; flash
+`showroom-os-rpi5-dev.img.xz` from there onto the test screen. Stable releases
+appear at
+`https://github.com/pirut/showroom-os/releases/latest/download/showroom-os-rpi5.img.xz`.
 
 ## Signing keys
 
@@ -94,12 +146,13 @@ never publishes a release.
 ```
 
 `ca.cert.pem` is baked into the image; screens only accept bundles signed
-under it. Builds without `SHOWROOM_RAUC_CERT` and `SHOWROOM_RAUC_KEY` make
-throwaway keys in `out/rauc-dev-keys`, so their bundles only install on images
-from the same build. For production, keep `ca.key.pem` offline and store
-`ca.cert.pem`, `signing.cert.pem` and `signing.key.pem` as the repository
-secrets `SHOWROOM_RAUC_CA_CERT`, `SHOWROOM_RAUC_SIGNING_CERT` and
-`SHOWROOM_RAUC_SIGNING_KEY`, then run the workflow with `signing: production`.
+under it. Local builds without `SHOWROOM_RAUC_CERT` and `SHOWROOM_RAUC_KEY`
+make throwaway keys in `out/rauc-dev-keys`, so their bundles only install on
+images from the same output directory. CI uses the development keys from the
+`SHOWROOM_RAUC_DEV_*` secrets, or the production keys (`SHOWROOM_RAUC_CA_CERT`,
+`SHOWROOM_RAUC_SIGNING_CERT`, `SHOWROOM_RAUC_SIGNING_KEY`) for a manual run
+with `signing: production`; `setup-image-publishing.sh` creates both. Keep the
+production `ca.key.pem` offline.
 
 App releases keep using the existing Ed25519 key (`infra/pi-image/release-public.base64`).
 
@@ -109,6 +162,8 @@ App releases keep using the existing Ed25519 key (`infra/pi-image/release-public
 sudo ./infra/buildroot/tests/tryboot-backend.sh   # A/B state machine, in a mount namespace
 ./infra/buildroot/tests/post-image-dry-run.sh     # card layout and signed bundle, with stand-in inputs
 ./infra/buildroot/tests/check-defconfig.sh        # every defconfig option resolves as written
+./infra/buildroot/tests/os-follow.sh              # development OS channel follower
+./infra/buildroot/tests/rootfs-smoke.py out/images/rootfs.erofs   # a built image
 ```
 
 The build itself fails if FFmpeg lost the `hevc_v4l2request` decoder (for
@@ -119,18 +174,16 @@ example after a Buildroot bump changes the FFmpeg version under
 
 On one spare Pi 5, not a showroom screen:
 
-1. Flash `showroom-os-rpi5-<version>.img.xz` with Raspberry Pi Imager
+1. Flash `showroom-os-rpi5-dev.img.xz` from the dev channel with Raspberry Pi Imager
    (Use custom, no OS customisation).
 2. Wi-Fi setup appears on the screen; pair the screen as usual.
 3. Check a 1080p and a 4K HEVC video play smoothly with sound over HDMI, and
    that `vcgencmd get_throttled` and screenshots work in the dashboard.
-4. Build a second version with the same keys, download its `.raucb` on the
-   maintenance console (Ctrl+Alt+F1) with `curl -o /tmp/os.raucb <url>`,
-   install it with `sudo /usr/libexec/showroom/showroom-os-install /tmp/os.raucb`
-   and `sudo /usr/libexec/showroom/showroom-reboot`, and confirm the screen
-   comes back on the other slot and `sudo rauc status` shows it committed.
-5. Pull power during the trial boot of a third version and confirm it comes
-   back on the previous slot.
+4. Use a development image from the dev channel. Push any change to a
+   branch; within a few minutes of the build finishing the screen installs it,
+   comes back on the other slot, and `sudo rauc status` shows it committed.
+5. Pull power during the trial boot of a later build and confirm it comes
+   back on the previous slot (and does not retry that build).
 
 ## Moving an existing screen over
 

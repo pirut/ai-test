@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the development OS channel for a new build
+ConditionPathExists=/etc/showroom/os-channel.env
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=3min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -1,30 +1,43 @@
 name: Showroom OS (Buildroot) image
 
-# Builds the experimental Buildroot image for new Pi 5 screens. It never
-# publishes a release or contacts deployed screens: the image and the signed
-# OS update bundle are workflow artifacts only.
+# Builds Showroom OS for Raspberry Pi 5 screens and smoke-tests its root
+# filesystem. When the publishing secrets are set (see
+# infra/buildroot/setup-image-publishing.sh), development builds go to the
+# rolling "dev" release of the public images repository, which test screens
+# running a development image install by themselves. Screens in the field
+# never follow it: they carry no channel and trust only the production key.
+# A stable release is published only from a manual run with production
+# signing and "publish stable" ticked.
 on:
   pull_request:
     paths:
       - "infra/buildroot/**"
       - "infra/pi-image/systemd/**"
       - "infra/pi-image/config/**"
-      - "apps/agent/**"
-      - "apps/pi-player/**"
       - ".github/workflows/buildroot-image.yml"
   push:
     branches: [main]
     paths:
       - "infra/buildroot/**"
+      - "infra/pi-image/systemd/**"
+      - "infra/pi-image/config/**"
+      - "apps/agent/**"
+      - "apps/pi-player/**"
+      - "apps/player/**"
       - ".github/workflows/buildroot-image.yml"
   workflow_dispatch:
     inputs:
       signing:
-        description: Sign the OS bundle with the production RAUC keys (repository secrets) instead of throwaway ones
+        description: Sign with the production keys (an image for real screens) instead of the development keys (an image for test screens)
         required: true
         default: development
         type: choice
         options: [development, production]
+      publish_stable:
+        description: With production signing, publish the image as the latest stable release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -35,6 +48,7 @@ concurrency:
 
 env:
   SHOWROOM_BUILDROOT_VERSION: 2026.02.3
+  SHOWROOM_IMAGES_REPO: ${{ vars.SHOWROOM_IMAGES_REPO || 'pirut/showroom-os' }}
 
 jobs:
   checks:
@@ -46,9 +60,11 @@ jobs:
         run: |
           shellcheck infra/buildroot/*.sh infra/buildroot/board/rpi5/*.sh infra/buildroot/tests/*.sh \
             infra/buildroot/board/rpi5/rootfs-overlay/usr/libexec/showroom/* \
-            infra/pi-image/systemd/showroom-update-guard
+            infra/pi-image/systemd/showroom-update-guard infra/pi-image/dev-push.sh
       - name: A/B tryboot backend
         run: sudo ./infra/buildroot/tests/tryboot-backend.sh
+      - name: Development OS channel
+        run: ./infra/buildroot/tests/os-follow.sh
       - name: Card layout and signed bundle
         run: ./infra/buildroot/tests/post-image-dry-run.sh
       - name: Defconfig resolves as written
@@ -77,40 +93,63 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-unknown-linux-gnu
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross build-essential file wget cpio unzip rsync bc
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross build-essential file wget cpio unzip rsync bc erofs-utils
       - run: npm ci
       - name: Image version
         run: echo "SHOWROOM_IMAGE_VERSION=$(date -u +%Y.%m.%d).${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
-      - name: Production RAUC keys
-        if: github.event_name == 'workflow_dispatch' && inputs.signing == 'production'
+      - name: Signing keys
         env:
-          RAUC_CA_CERT: ${{ secrets.SHOWROOM_RAUC_CA_CERT }}
-          RAUC_SIGNING_CERT: ${{ secrets.SHOWROOM_RAUC_SIGNING_CERT }}
-          RAUC_SIGNING_KEY: ${{ secrets.SHOWROOM_RAUC_SIGNING_KEY }}
+          SIGNING: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'development' }}
+          PROD_CA_CERT: ${{ secrets.SHOWROOM_RAUC_CA_CERT }}
+          PROD_SIGNING_CERT: ${{ secrets.SHOWROOM_RAUC_SIGNING_CERT }}
+          PROD_SIGNING_KEY: ${{ secrets.SHOWROOM_RAUC_SIGNING_KEY }}
+          DEV_CA_CERT: ${{ secrets.SHOWROOM_RAUC_DEV_CA_CERT }}
+          DEV_SIGNING_CERT: ${{ secrets.SHOWROOM_RAUC_DEV_SIGNING_CERT }}
+          DEV_SIGNING_KEY: ${{ secrets.SHOWROOM_RAUC_DEV_SIGNING_KEY }}
+          IMAGES_TOKEN: ${{ secrets.SHOWROOM_IMAGES_TOKEN }}
         run: |
-          if [[ -z "${RAUC_CA_CERT}" || -z "${RAUC_SIGNING_CERT}" || -z "${RAUC_SIGNING_KEY}" ]]; then
-            echo "Production signing needs the SHOWROOM_RAUC_CA_CERT, SHOWROOM_RAUC_SIGNING_CERT and SHOWROOM_RAUC_SIGNING_KEY secrets" >&2
-            exit 1
-          fi
           keys="${RUNNER_TEMP}/rauc"
           mkdir -p "${keys}"
           umask 077
-          printf '%s\n' "${RAUC_CA_CERT}" >"${keys}/ca.cert.pem"
-          printf '%s\n' "${RAUC_SIGNING_CERT}" >"${keys}/signing.cert.pem"
-          printf '%s\n' "${RAUC_SIGNING_KEY}" >"${keys}/signing.key.pem"
-          {
-            echo "SHOWROOM_RAUC_KEYRING=${keys}/ca.cert.pem"
-            echo "SHOWROOM_RAUC_CERT=${keys}/signing.cert.pem"
-            echo "SHOWROOM_RAUC_KEY=${keys}/signing.key.pem"
-          } >>"${GITHUB_ENV}"
+          write_keys() {
+            printf '%s\n' "$1" >"${keys}/ca.cert.pem"
+            printf '%s\n' "$2" >"${keys}/signing.cert.pem"
+            printf '%s\n' "$3" >"${keys}/signing.key.pem"
+            {
+              echo "SHOWROOM_RAUC_KEYRING=${keys}/ca.cert.pem"
+              echo "SHOWROOM_RAUC_CERT=${keys}/signing.cert.pem"
+              echo "SHOWROOM_RAUC_KEY=${keys}/signing.key.pem"
+            } >>"${GITHUB_ENV}"
+          }
+          if [[ "${SIGNING}" == production ]]; then
+            if [[ -z "${PROD_CA_CERT}" || -z "${PROD_SIGNING_CERT}" || -z "${PROD_SIGNING_KEY}" ]]; then
+              echo "Production signing needs the SHOWROOM_RAUC_CA_CERT, SHOWROOM_RAUC_SIGNING_CERT and SHOWROOM_RAUC_SIGNING_KEY secrets (setup-image-publishing.sh --production)" >&2
+              exit 1
+            fi
+            write_keys "${PROD_CA_CERT}" "${PROD_SIGNING_CERT}" "${PROD_SIGNING_KEY}"
+            echo "SHOWROOM_PUBLISH=stable" >>"${GITHUB_ENV}"
+          elif [[ -n "${DEV_CA_CERT}" && -n "${DEV_SIGNING_CERT}" && -n "${DEV_SIGNING_KEY}" ]]; then
+            write_keys "${DEV_CA_CERT}" "${DEV_SIGNING_CERT}" "${DEV_SIGNING_KEY}"
+            # The image follows the dev channel; only builds that can publish to it set one.
+            if [[ -n "${IMAGES_TOKEN}" ]]; then
+              echo "SHOWROOM_OS_CHANNEL_URL=https://github.com/${SHOWROOM_IMAGES_REPO}/releases/download/dev/latest.json" >>"${GITHUB_ENV}"
+              echo "SHOWROOM_PUBLISH=dev" >>"${GITHUB_ENV}"
+            fi
+          else
+            echo "No development signing secrets; this build uses throwaway keys and is not published (see infra/buildroot/setup-image-publishing.sh)"
+          fi
       - name: Buildroot download and compiler caches
         uses: actions/cache@v4
         with:
           path: |
             infra/buildroot/.dl
             ~/.buildroot-ccache
-          key: buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-${{ hashFiles('infra/buildroot/configs/*', 'infra/buildroot/patches/**', 'infra/buildroot/package/**') }}
-          restore-keys: buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-
+          # A new entry every run, so the compiler cache keeps up with the
+          # sources; older entries are evicted by GitHub.
+          key: buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-${{ hashFiles('infra/buildroot/configs/*', 'infra/buildroot/patches/**', 'infra/buildroot/package/**') }}-${{ github.run_id }}
+          restore-keys: |
+            buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-${{ hashFiles('infra/buildroot/configs/*', 'infra/buildroot/patches/**', 'infra/buildroot/package/**') }}-
+            buildroot-${{ env.SHOWROOM_BUILDROOT_VERSION }}-
       - name: Build
         run: ./infra/buildroot/build.sh
       - name: Sizes
@@ -125,3 +164,17 @@ jobs:
             infra/buildroot/out/images/*.raucb
             infra/buildroot/out/images/SHA256SUMS
             infra/buildroot/out/images/IMAGE_SIZES.txt
+      - name: Root filesystem smoke test
+        run: python3 infra/buildroot/tests/rootfs-smoke.py "${SHOWROOM_BUILDROOT_OUTPUT}/images/rootfs.erofs"
+      - name: Publish to the dev channel
+        if: env.SHOWROOM_PUBLISH == 'dev'
+        env:
+          GH_TOKEN: ${{ secrets.SHOWROOM_IMAGES_TOKEN }}
+        run: |
+          ./infra/buildroot/publish.sh dev
+          echo "Published to the [dev channel](https://github.com/${SHOWROOM_IMAGES_REPO}/releases/tag/dev)" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Publish the stable release
+        if: env.SHOWROOM_PUBLISH == 'stable' && github.event_name == 'workflow_dispatch' && inputs.publish_stable
+        env:
+          GH_TOKEN: ${{ secrets.SHOWROOM_IMAGES_TOKEN }}
+        run: ./infra/buildroot/publish.sh stable

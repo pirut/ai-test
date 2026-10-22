@@ -9,5 +9,6 @@ enable showroom-update-guard.service
 enable showroom-network-recovery.service
 enable showroom-network-onboarding.service
 enable showroom-os-commit.service
+enable showroom-os-follow.timer
 # showroom-os-commit decides when a new slot is good, after a health check.
 disable rauc-mark-good.service

@@ -10,6 +10,8 @@
 #   SHOWROOM_IMAGE_VERSION        version written to /etc/os-release
 #   SHOWROOM_RAUC_KEYRING         PEM CA certificate that signs OS bundles
 #   SHOWROOM_RELEASE_PUBLIC_KEY   optional; defaults to release-public.base64
+#   SHOWROOM_OS_CHANNEL_URL       optional, development images only: the OS
+#                                 channel a test screen follows (showroom-os-follow)
 set -euo pipefail
 
 TARGET="${1:?target directory is required}"
@@ -44,6 +46,14 @@ install -D -m 0755 "${ARTIFACTS}/showroom-agent" "${TARGET}/usr/local/libexec/sh
 rm -rf "${TARGET}/opt/showroom/player"
 mkdir -p "${TARGET}/opt/showroom/player"
 cp -a "${ARTIFACTS}/player/." "${TARGET}/opt/showroom/player/"
+
+# The built-in versions as release 1.0.0, like the Raspberry Pi OS image
+# seeds /var/lib/showroom/releases. showroom-data-layout points the
+# persistent "current" links here on first boot; the agent needs them to
+# install and roll back signed app releases.
+install -d "${TARGET}/usr/lib/showroom/releases/agent/1.0.0" "${TARGET}/usr/lib/showroom/releases/player"
+ln -sfn /usr/local/libexec/showroom-agent "${TARGET}/usr/lib/showroom/releases/agent/1.0.0/showroom-agent"
+ln -sfn /opt/showroom/player "${TARGET}/usr/lib/showroom/releases/player/1.0.0"
 
 # Appliance scripts and units, unchanged from the Raspberry Pi OS image. The
 # legacy Chromium kiosk (start-kiosk.sh) is left out: there is no X11 here.
@@ -92,6 +102,20 @@ install -D -m 0644 "${KEYRING}" "${TARGET}/etc/rauc/keyring.pem"
 # Mount points on the read-only root.
 mkdir -p "${TARGET}/data" "${TARGET}/var/lib/showroom" "${TARGET}/etc/NetworkManager/system-connections"
 
+# Development images follow an OS channel so a test screen gets every new
+# build without reflashing. Field images have no channel file.
+rm -f "${TARGET}/etc/showroom/os-channel.env"
+variant=""
+variant_id=field
+if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
+  [[ "${SHOWROOM_OS_CHANNEL_URL}" =~ ^https://[A-Za-z0-9._~:/?#@!$\&*+,\;=%-]+$ ]] \
+    || fail "SHOWROOM_OS_CHANNEL_URL must be an https URL"
+  install -d "${TARGET}/etc/showroom"
+  printf 'SHOWROOM_OS_CHANNEL_URL=%s\n' "${SHOWROOM_OS_CHANNEL_URL}" >"${TARGET}/etc/showroom/os-channel.env"
+  variant=" dev"
+  variant_id=dev
+fi
+
 # Identity reported in heartbeats (the agent sends PRETTY_NAME).
 buildroot_version="$(sed -n 's/^VERSION_ID=//p' "${TARGET}/usr/lib/os-release" 2>/dev/null | tr -d '"')"
 rm -f "${TARGET}/etc/os-release"
@@ -102,7 +126,8 @@ ID_LIKE=buildroot
 VERSION_ID=${VERSION}
 IMAGE_ID=showroom-rpi5
 IMAGE_VERSION=${VERSION}
-PRETTY_NAME="Showroom OS ${VERSION} (Buildroot ${buildroot_version:-unknown})"
+VARIANT_ID=${variant_id}
+PRETTY_NAME="Showroom OS ${VERSION}${variant} (Buildroot ${buildroot_version:-unknown})"
 EOF
 ln -sfn ../usr/lib/os-release "${TARGET}/etc/os-release"
 install -d "${TARGET}/etc/showroom"
