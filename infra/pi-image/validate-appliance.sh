@@ -115,6 +115,7 @@ validate_scripts() {
     showroom-network-recovery
     showroom-network-onboarding
     showroom-network-setup
+    showroom-grow-persistent
   )
   local script
   for script in "${scripts[@]}"; do
@@ -123,6 +124,7 @@ validate_scripts() {
   done
   bash "${root}/usr/local/bin/showroom-diagnostics" --self-test >/dev/null
   bash "${root}/usr/local/bin/showroom-recovery-screen" --self-test >/dev/null
+  bash "${root}/usr/local/bin/showroom-grow-persistent" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${root}/etc/showroom-agent/config.env" \
     bash "${root}/usr/local/bin/showroom-network-onboarding" --self-test >/dev/null
@@ -242,11 +244,12 @@ validate_source() {
 
   for source_script in \
     start-kiosk.sh showroom-kiosk-launch showroom-screenshot showroom-kiosk-ready showroom-diagnostics showroom-recovery-screen \
-    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding; do
+    showroom-kiosk-recovery showroom-kiosk-retry showroom-network-recovery showroom-network-onboarding showroom-grow-persistent; do
     bash -n "${ROOT_DIR}/systemd/${source_script}"
   done
   bash "${ROOT_DIR}/systemd/showroom-diagnostics" --self-test >/dev/null
   bash "${ROOT_DIR}/systemd/showroom-recovery-screen" --self-test >/dev/null
+  bash "${ROOT_DIR}/systemd/showroom-grow-persistent" --self-test >/dev/null
   env -u SHOWROOM_API_BASE_URL \
     SHOWROOM_CONFIG_FILE="${ROOT_DIR}/config/config.env" \
     bash "${ROOT_DIR}/systemd/showroom-network-onboarding" --self-test >/dev/null
@@ -254,13 +257,24 @@ validate_source() {
   for installed in \
     showroom-diagnostics showroom-recovery-screen showroom-kiosk-recovery showroom-kiosk-retry showroom-kiosk-ready \
     showroom-kiosk-launch showroom-screenshot showroom-network-onboarding showroom-network-setup showroom-kiosk-recovery.service \
-    showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service; do
+    showroom-kiosk-retry.service showroom-kiosk-retry.timer showroom-network-onboarding.service \
+    showroom-grow-persistent showroom-grow-persistent.service; do
     require_contains "${prepare}" "${installed}" "rootfs preparation does not install ${installed}"
   done
 
   validate_slim_layer
   require_contains "${build}" 'SHOWROOM_IMAGE_VARIANT:-full' "image builds must default to the full image with the Chromium fallback"
   require_contains "${workflow}" 'default: full' "the image workflow must default to the full image"
+  local grow_unit="${ROOT_DIR}/systemd/showroom-grow-persistent.service"
+  require_contains "${config}" '^  data_part_size: 1G$' "SD images must ship a small persistent partition that grows on first boot"
+  require_contains "${build}" '^  cm4\|cm5\) DATA_PART_SIZE=12G ;;$' "eMMC images must keep a fixed persistent partition (write-protected partition table)"
+  require_contains "${customize}" '^  showroom-grow-persistent \\$' "post-overlay customize hook must enable persistent partition growth"
+  require_contains "${grow_unit}" '^Requires=persistent\.mount$' "persistent growth must wait for the persistent mount"
+  require_contains "${grow_unit}" '^Before=showroom-network-onboarding\.service showroom-agent\.service showroom-kiosk\.service$' "persistent growth must finish before setup, agent and kiosk start"
+  require_contains "${ROOT_DIR}/systemd/showroom-grow-persistent" '^MIN_GROWN_BYTES=\$\(\(4 \* 1024 \* 1024 \* 1024\)\)$' "persistent growth must leave already-large (deployed 12G) filesystems untouched"
+  for package in cloud-guest-utils e2fsprogs fdisk; do
+    require_contains "${ROOT_DIR}/rpi-image-gen/layer/showroom.yaml" "^[[:space:]]+- ${package}$" "persistent growth needs ${package}"
+  done
 
   pass "source console, SSH, sudo, kiosk, recovery, and install contracts"
 }
@@ -337,6 +351,12 @@ validate_rootfs() {
     usr/bin/rpi-connect usr/sbin/ip usr/sbin/runuser usr/sbin/sshd usr/sbin/wpa_supplicant sbin/agetty; do
     require_executable "${root}/${executable}"
   done
+
+  for executable in usr/bin/growpart usr/sbin/sfdisk usr/sbin/resize2fs usr/bin/findmnt usr/bin/lsblk; do
+    require_executable "${root}/${executable}"
+  done
+  [[ -L "${root}/etc/systemd/system/multi-user.target.wants/showroom-grow-persistent.service" ]] || \
+    fail "persistent partition growth is not enabled"
 
   require_contains "${root}/etc/systemd/system/getty@tty1.service.d/override.conf" "--autologin ${MAINTENANCE_USER}" "generated tty1 is not auto-login recovery"
   require_contains "${root}/etc/ssh/sshd_config.d/20-showroom.conf" '^PasswordAuthentication no$' "generated SSH policy permits passwords"

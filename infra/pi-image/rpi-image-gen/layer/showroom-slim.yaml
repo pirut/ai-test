@@ -14,7 +14,10 @@
 mmdebstrap:
   packages:
     - ca-certificates
+    - cloud-guest-utils
     - curl
+    - e2fsprogs
+    - fdisk
     - ffmpeg
     - fonts-dejavu-core
     - iputils-ping
