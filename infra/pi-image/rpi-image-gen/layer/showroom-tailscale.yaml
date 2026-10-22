@@ -1,0 +1,22 @@
+# METABEGIN
+# X-Env-Layer-Name: showroom-tailscale
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Category: net
+# X-Env-Layer-Desc: Tailscale from Tailscale's signed Debian repository, for
+#  remote SSH to screens over the fleet tailnet. Nothing joins until the
+#  dashboard hands out an auth key; see showroom-tailscale-join.
+# X-Env-Layer-Requires: sys-build-base
+# METAEND
+---
+mmdebstrap:
+  mirrors:
+    - deb https://pkgs.tailscale.com/stable/debian trixie main
+  setup-hooks:
+    - |-
+      set -eu
+      mkdir -p "$1/etc/apt/trusted.gpg.d"
+      curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg -o "$1/etc/apt/trusted.gpg.d/tailscale.gpg"
+      chmod 0644 "$1/etc/apt/trusted.gpg.d/tailscale.gpg"
+      cp -p "$1/etc/apt/trusted.gpg.d/tailscale.gpg" "$IGconf_sys_apt_keydir/"
+  packages:
+    - tailscale
