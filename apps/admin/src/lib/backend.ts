@@ -689,7 +689,7 @@ function mockDeviceSignal(credential: string): DeviceSignal | null {
   const device = mock.authenticateDevice(credential);
   if (!device) return null;
   return {
-    queued: mock.getCommandsForDevice(device.id).length > 0,
+    queued: mock.hasQueuedCommands(device.id),
     manifestVersion: mock.getManifestForDevice(device.id)?.manifestVersion ?? null,
   };
 }
