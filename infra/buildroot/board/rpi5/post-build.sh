@@ -72,6 +72,16 @@ for unit in \
   install -D -m 0644 "${SYSTEMD_SRC}/${unit}" "${TARGET}/etc/systemd/system/${unit}"
 done
 
+# Buildroot's tailscale package links /usr/sbin/tailscaled to ../bin, but
+# with systemd /usr/sbin is /usr/bin, so that replaces the daemon with a link
+# to itself. Put the binary back.
+if [[ -L "${TARGET}/usr/bin/tailscaled" ]]; then
+  tailscaled="$(find "${BUILD_DIR}" -maxdepth 3 -path '*/tailscale-*/bin/tailscaled' -type f | head -n 1)"
+  [[ -n "${tailscaled}" ]] || fail "tailscaled was not built"
+  rm -f "${TARGET}/usr/bin/tailscaled"
+  install -m 0755 "${tailscaled}" "${TARGET}/usr/bin/tailscaled"
+fi
+
 # Remote SSH over Tailscale and the setup hotspot's captive DNS, from the
 # Raspberry Pi OS image once they are there.
 if [[ -f "${SYSTEMD_SRC}/showroom-tailscale-join" ]]; then
