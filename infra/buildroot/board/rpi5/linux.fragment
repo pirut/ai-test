@@ -19,3 +19,8 @@ CONFIG_DM_VERITY=y
 # Hardware watchdog for systemd's RuntimeWatchdogSec.
 CONFIG_WATCHDOG=y
 CONFIG_BCM2835_WDT=y
+
+# Modules uncompressed: the image's kmod has no decompressors and EROFS
+# compresses the root filesystem anyway. Wi-Fi, display, HEVC decode and HDMI
+# audio are all modules.
+# CONFIG_MODULE_COMPRESS is not set

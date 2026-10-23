@@ -8,7 +8,8 @@
 Catches the mistakes that otherwise only show on a screen: a binary or
 library that needs a library the image does not ship, a systemd unit whose
 program is missing, a script whose interpreter is missing, a unit that is not
-enabled, and broken links to the built-in agent and player.
+enabled, kernel modules the screen cannot load, and broken links to the
+built-in agent and player.
 """
 
 import argparse
@@ -61,6 +62,9 @@ ENABLED_UNITS = [
     "tailscaled.service",
 ]
 DISABLED_UNITS = ["rauc-mark-good.service", "systemd-networkd.service"]
+# Drivers built as modules that a screen cannot work without: Wi-Fi, display,
+# HEVC decode and HDMI audio.
+REQUIRED_MODULES = ["brcmfmac", "cfg80211", "vc4", "rpi-hevc-dec", "snd-soc-hdmi-codec"]
 
 
 class Rootfs:
@@ -334,6 +338,34 @@ def check_files(fs, errors):
             errors.append(f"VARIANT_ID={variant} does not match the OS channel file being {'present' if channel else 'absent'}")
 
 
+def check_modules(fs, errors):
+    base = fs.resolve("/usr/lib/modules")
+    versions = sorted(os.listdir(base)) if base and os.path.isdir(base) else []
+    if len(versions) != 1:
+        errors.append(f"expected modules for one kernel in /usr/lib/modules, found {versions or 'none'}")
+        return
+    moddir = os.path.join(base, versions[0])
+    if not os.path.isfile(os.path.join(moddir, "modules.dep")):
+        errors.append(f"/usr/lib/modules/{versions[0]}/modules.dep is missing")
+    found, compressed = {}, []
+    for dirpath, _, names in os.walk(moddir):
+        for name in names:
+            stem, _, suffix = name.partition(".ko")
+            if not _:
+                continue
+            found[stem.replace("_", "-")] = name
+            if suffix:
+                compressed.append(name)
+    # The image's libkmod has no decompressors and the kernel does not
+    # decompress modules itself, so a compressed module never loads.
+    if compressed:
+        errors.append(f"{len(compressed)} kernel modules are compressed (for example {compressed[0]}) and cannot "
+                      "be loaded; keep CONFIG_MODULE_COMPRESS off (EROFS compresses them already)")
+    for module in REQUIRED_MODULES:
+        if module not in found:
+            errors.append(f"kernel module {module} is missing")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("source", nargs="?", help="rootfs.erofs, .img or .img.xz")
@@ -352,6 +384,7 @@ def main():
         check_enabled(fs, errors)
         check_files(fs, errors)
         check_foreign(fs, errors)
+        check_modules(fs, errors)
         # Extracted files keep their modes; make sure cleanup can remove them.
         for dirpath, dirnames, _ in os.walk(workdir):
             for name in dirnames:
@@ -364,7 +397,7 @@ def main():
     if errors:
         print(f"rootfs-smoke: {len(errors)} problem(s) in the root filesystem", file=sys.stderr)
         return 1
-    print(f"rootfs-smoke: {checked} ELF files, units, scripts and app links look right")
+    print(f"rootfs-smoke: {checked} ELF files, units, scripts, kernel modules and app links look right")
     return 0
 
 
