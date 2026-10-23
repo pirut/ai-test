@@ -50,6 +50,7 @@ REQUIRED_FILES = [
     "etc/showroom-agent/config.env",
     "usr/lib/os-release",
     "usr/lib/showroom/releases/player/1.0.0/index.html",
+    "etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf",
 ]
 ENABLED_UNITS = [
     "NetworkManager.service",
@@ -326,7 +327,8 @@ def check_files(fs, errors):
         with open(config, encoding="utf-8") as handle:
             text = handle.read()
         for key in ["SHOWROOM_SYSTEM_UPDATE_COMMAND=/usr/libexec/showroom/showroom-os-install",
-                    "SHOWROOM_REBOOT_COMMAND=/usr/libexec/showroom/showroom-reboot"]:
+                    "SHOWROOM_REBOOT_COMMAND=/usr/libexec/showroom/showroom-reboot",
+                    "SHOWROOM_SETUP_HOTSPOT=1"]:
             if key not in text.splitlines():
                 errors.append(f"config.env lacks {key}")
     channel = fs.resolve("/etc/showroom/os-channel.env")
