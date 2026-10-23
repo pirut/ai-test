@@ -93,6 +93,16 @@ show_failure_help() {
   printf 'Ethernet can be connected at any time.\n\n'
 }
 
+# Images with the setup hotspot hand first-time Wi-Fi to the screen itself:
+# the player lists networks and the agent opens a hotspot with a phone setup
+# page. Blocking here would keep that screen from ever appearing, so only a
+# technician's explicit showroom-network-setup still uses the console.
+SETUP_HOTSPOT="$(read_config_value SHOWROOM_SETUP_HOTSPOT || true)"
+if (( FORCE_SETUP == 0 )) && [[ "${SETUP_HOTSPOT}" =~ ^(1|true|yes|on)$ ]]; then
+  mark_complete
+  exit 0
+fi
+
 # Wired or pre-provisioned NetworkManager connections commission without any
 # keyboard interaction, but only after the actual control plane is reachable.
 show_header

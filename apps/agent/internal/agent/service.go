@@ -164,6 +164,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
+	go server.RunWiFiSetup(ctx)
 	go s.runPollLoop(ctx)
 	go s.runHeartbeatLoop(ctx)
 	go s.runScreenshotLoop(ctx)

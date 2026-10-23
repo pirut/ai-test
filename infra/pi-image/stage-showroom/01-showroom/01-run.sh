@@ -23,6 +23,7 @@ yaml_escape() {
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-agent.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-agent.service"
 install -D -m 0644 "${SHOWROOM_DIR}/systemd/showroom-kiosk.service" "${ROOTFS_DIR}/etc/systemd/system/showroom-kiosk.service"
 install -D -m 0644 "${SHOWROOM_DIR}/config/config.env" "${ROOTFS_DIR}/etc/showroom-agent/config.env"
+install -D -m 0644 "${SHOWROOM_DIR}/config/showroom-setup-dnsmasq.conf" "${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf"
 install -D -m 0644 "${SHOWROOM_DIR}/config/Xwrapper.config" "${ROOTFS_DIR}/etc/X11/Xwrapper.config"
 install -D -m 0644 "${SHOWROOM_DIR}/config/99-modesetting.conf" "${ROOTFS_DIR}/etc/X11/xorg.conf.d/99-modesetting.conf"
 install -D -m 0755 "${SHOWROOM_DIR}/systemd/start-kiosk.sh" "${ROOTFS_DIR}/usr/local/bin/showroom-start-kiosk"
