@@ -1,0 +1,13 @@
+[Unit]
+Description=Commit or roll back a Showroom OS update
+After=showroom-agent.service showroom-kiosk.service
+RequiresMountsFor=/data /var/lib/showroom
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/showroom/showroom-os-commit
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

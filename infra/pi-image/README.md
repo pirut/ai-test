@@ -160,14 +160,36 @@ release center.
 
 ## First boot
 
-Before the agent or player can start on a fresh flash, tty1 presents a full-screen
-NetworkManager Wi-Fi selector. A technician chooses the SSID and enters its
-password locally; no site or fleet Wi-Fi password is embedded in the image. The
-appliance verifies a default route and the Digital Curator control plane before
-continuing into enrollment. Ethernet or an already provisioned connection passes
-the same check automatically. The completion marker and root-only NetworkManager
-profiles live on the persistent partition, so the prompt does not recur after an
-A/B update or a temporary outage.
+A fresh flash goes straight to the player. If the screen has no network, it
+shows the Wi-Fi setup screen, which offers two ways in:
+
+- **Phone.** After 30 seconds offline the agent opens a setup hotspot named
+  `Showroom-XXXX` (the last four characters of the Wi-Fi MAC) with a random
+  password. The screen shows a QR code for it. Scanning the code joins the
+  hotspot and the phone opens the setup page at `10.42.0.1` (every DNS name on
+  the hotspot resolves there, so phones treat it as a sign-in page). The page
+  lists nearby networks; picking one closes the hotspot and joins it. If the
+  password was wrong the hotspot comes back within about a minute and the
+  screen and page say why.
+- **Keyboard.** The screen lists nearby networks. Arrow keys and Enter pick
+  one, a password is asked only for secured networks, and "Other network…"
+  takes a hidden name.
+
+No site or fleet Wi-Fi password is embedded in the image. Ethernet or an
+already provisioned connection skips all of this. The hotspot only runs while
+the screen is unclaimed and has no claim code, so a screen in service never
+opens it, and saved networks are retried every few minutes while nobody is
+using the setup page. This needs `SHOWROOM_SETUP_HOTSPOT=1` in
+`/etc/showroom-agent/config.env`, `dnsmasq-base`, and
+`/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf`; images built
+before this have none of them and keep the console selector below.
+
+Images without `SHOWROOM_SETUP_HOTSPOT=1` instead show a full-screen
+NetworkManager Wi-Fi selector on tty1 before the agent or player starts, and
+verify a default route and the Digital Curator control plane before continuing
+into enrollment. The completion marker and root-only NetworkManager profiles
+live on the persistent partition, so the prompt does not recur after an A/B
+update or a temporary outage.
 
 The Pi 5 image uses NetworkManager with `wpa_supplicant`, not `iwd`. Raspberry
 Pi's BCM43455 firmware delegates WPA3/SAE authentication in a way that is known

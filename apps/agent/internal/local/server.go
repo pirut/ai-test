@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -16,10 +17,25 @@ import (
 type Server struct {
 	config config.Config
 	store  *state.Store
+	wifi   *wifiSetup
 }
 
 func NewServer(cfg config.Config, store *state.Store) *Server {
-	return &Server{config: cfg, store: store}
+	server := &Server{config: cfg, store: store}
+	server.wifi = newWiFiSetup(nmcli{}, cfg.SetupHotspot, server.needsWiFiSetup)
+	return server
+}
+
+// needsWiFiSetup is true while the screen has never reached the service: it
+// is unclaimed and has no claim code yet.
+func (s *Server) needsWiFiSetup() bool {
+	status := s.store.PlayerStatus()
+	return !status.Claimed && status.ClaimCode == ""
+}
+
+// RunWiFiSetup runs the setup hotspot when the image enables it.
+func (s *Server) RunWiFiSetup(ctx context.Context) {
+	s.wifi.Run(ctx)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -32,6 +48,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/local/player/state", s.handlePlayerState)
 	mux.HandleFunc("/local/wifi/status", s.handleWiFiStatus)
 	mux.HandleFunc("/local/wifi/configure", s.handleWiFiConfigure)
+	mux.HandleFunc("/local/wifi/networks", s.handleWiFiNetworks)
 	mux.HandleFunc("/assets/", s.handleAsset)
 	mux.HandleFunc("/", s.handlePlayer)
 	return mux

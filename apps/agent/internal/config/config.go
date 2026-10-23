@@ -25,6 +25,7 @@ type Config struct {
 	RestartPlayerCommand    string
 	RestartAgentCommand     string
 	RebootCommand           string
+	SystemUpdateCommand     string
 	BlankScreenCommand      string
 	UnblankScreenCommand    string
 	ReleasePublicKey        string
@@ -33,6 +34,10 @@ type Config struct {
 	CacheMaxBytes           int64
 	PlayerHealthInterval    time.Duration
 	PlayerStaleAfter        time.Duration
+	// SetupHotspot lets an unclaimed, offline screen open its own Wi-Fi
+	// network so a phone can pick the venue's Wi-Fi. Off unless the image
+	// turns it on, so screens flashed before it keep their behavior.
+	SetupHotspot bool
 }
 
 func getint64(key string, fallback int64) int64 {
@@ -53,6 +58,14 @@ func getenv(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func getbool(key string) bool {
+	switch getenv(key, "") {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func getduration(key string, fallback string) time.Duration {
@@ -85,6 +98,7 @@ func Load() Config {
 		RestartPlayerCommand:    getenv("SHOWROOM_RESTART_PLAYER_COMMAND", "systemctl restart showroom-kiosk.service"),
 		RestartAgentCommand:     getenv("SHOWROOM_RESTART_AGENT_COMMAND", "systemctl restart showroom-agent.service"),
 		RebootCommand:           getenv("SHOWROOM_REBOOT_COMMAND", "shutdown -r now"),
+		SystemUpdateCommand:     getenv("SHOWROOM_SYSTEM_UPDATE_COMMAND", ""),
 		BlankScreenCommand:      getenv("SHOWROOM_BLANK_COMMAND", "vcgencmd display_power 0"),
 		UnblankScreenCommand:    getenv("SHOWROOM_UNBLANK_COMMAND", "vcgencmd display_power 1"),
 		ReleasePublicKey:        getenv("SHOWROOM_RELEASE_PUBLIC_KEY", ""),
@@ -93,5 +107,6 @@ func Load() Config {
 		CacheMaxBytes:           getint64("SHOWROOM_CACHE_MAX_BYTES", 8<<30),
 		PlayerHealthInterval:    getduration("SHOWROOM_PLAYER_HEALTH_INTERVAL", "15s"),
 		PlayerStaleAfter:        getduration("SHOWROOM_PLAYER_STALE_AFTER", "45s"),
+		SetupHotspot:            getbool("SHOWROOM_SETUP_HOTSPOT"),
 	}
 }

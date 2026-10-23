@@ -36,19 +36,24 @@ type hydrationFailure struct {
 	nextAttempt time.Time
 }
 
-func applianceDescriptor() map[string]interface{} {
+func applianceDescriptor(systemBundles bool) map[string]interface{} {
+	capabilities := []string{
+		"appliance_telemetry",
+		"app_slot_rollback",
+		"leased_commands",
+		"network_rotation",
+		"signed_releases",
+		"staged_rollouts",
+		"transactional_content",
+	}
+	if systemBundles {
+		// Installs signed A/B OS bundles sent as a release's systemUrl.
+		capabilities = append(capabilities, "system_bundles")
+	}
 	return map[string]interface{}{
 		"generation":      "showroom-appliance-v2",
 		"protocolVersion": 2,
-		"capabilities": []string{
-			"appliance_telemetry",
-			"app_slot_rollback",
-			"leased_commands",
-			"network_rotation",
-			"signed_releases",
-			"staged_rollouts",
-			"transactional_content",
-		},
+		"capabilities":    capabilities,
 	}
 }
 
@@ -159,6 +164,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
+	go server.RunWiFiSetup(ctx)
 	go s.runPollLoop(ctx)
 	go s.runHeartbeatLoop(ctx)
 	go s.runScreenshotLoop(ctx)
@@ -1197,7 +1203,7 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 		"currentAssetId":    current.CurrentAssetID,
 		"currentPlaylistId": current.CurrentPlaylistID,
 		"lastSeenAt":        time.Now().UTC().Format(time.RFC3339),
-		"appliance":         applianceDescriptor(),
+		"appliance":         applianceDescriptor(strings.TrimSpace(s.config.SystemUpdateCommand) != ""),
 		"health":            current.Health,
 	}
 

@@ -4,6 +4,7 @@ import {
   type ManifestPlaylistItem,
   deviceManifestSchema,
 } from "@showroom/contracts";
+import { WiFiSetup, type WiFiStatus } from "./wifi-setup";
 
 type PlayerStatus = {
   claimed: boolean;
@@ -12,14 +13,6 @@ type PlayerStatus = {
   manifestVersion?: string;
   lastSyncAt?: string;
   lastError?: string;
-};
-
-type WiFiStatus = {
-  supported: boolean;
-  connected: boolean;
-  interface?: string;
-  ssid?: string;
-  error?: string;
 };
 
 type PlaybackState = {
@@ -50,16 +43,6 @@ async function loadManifest() {
 async function loadWiFiStatus() {
   const response = await fetch("/local/wifi/status", { cache: "no-store" });
   if (!response.ok) throw new Error("Unable to load Wi-Fi status");
-  return (await response.json()) as WiFiStatus;
-}
-
-async function configureWiFi(ssid: string, password: string) {
-  const response = await fetch("/local/wifi/configure", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ssid, password }),
-  });
-  if (!response.ok) throw new Error(await response.text());
   return (await response.json()) as WiFiStatus;
 }
 
@@ -122,11 +105,6 @@ export function PlayerApp() {
   const recoveryPendingRef = useRef(false);
   const failureCountsRef = useRef(new Map<string, number>());
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const [wifiForm, setWifiForm] = useState({ ssid: "", password: "" });
-  const [wifiSubmission, setWiFiSubmission] = useState<{
-    status: "idle" | "saving" | "error" | "success";
-    message?: string;
-  }>({ status: "idle" });
   const [state, setState] = useState<PlaybackState>({
     manifest: null,
     playlist: [],
@@ -138,6 +116,7 @@ export function PlayerApp() {
     mediaNonce: 0,
   });
 
+  const settingUp = state.status === "wifi-setup";
   const activeItem = state.playlist.length
     ? state.playlist[state.index % state.playlist.length]
     : null;
@@ -226,12 +205,14 @@ export function PlayerApp() {
     };
 
     void refresh();
-    const interval = window.setInterval(refresh, 15_000);
+    // First-time setup polls faster so the network list and hotspot details
+    // stay current.
+    const interval = window.setInterval(refresh, settingUp ? 5_000 : 15_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [refreshNonce]);
+  }, [refreshNonce, settingUp]);
 
   useEffect(() => {
     if (!activeItem || activeItem.assetType === "video") return;
@@ -332,77 +313,11 @@ export function PlayerApp() {
 
   if (state.status === "wifi-setup") {
     return (
-      <main className="playerRoot">
-        <section className="setupScreen">
-          <div className="setupCard">
-            <p className="label">First-time setup</p>
-            <h1>Connect to Wi-Fi</h1>
-            <p className="setupCopy">Connect this screen to the network to receive its claim code.</p>
-            <form
-              className="wifiForm"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                setWiFiSubmission({ status: "saving", message: "Connecting…" });
-                try {
-                  const nextStatus = await configureWiFi(wifiForm.ssid, wifiForm.password);
-                  setWiFiSubmission({
-                    status: "success",
-                    message: nextStatus.connected
-                      ? `Connected to ${nextStatus.ssid ?? wifiForm.ssid}. Waiting for claim code…`
-                      : "Credentials saved. Waiting for the network…",
-                  });
-                  window.setTimeout(() => setRefreshNonce((value) => value + 1), 1_500);
-                } catch (error) {
-                  setWiFiSubmission({
-                    status: "error",
-                    message: error instanceof Error ? error.message : "Unable to connect to Wi-Fi",
-                  });
-                }
-              }}
-            >
-              <label className="wifiField">
-                <span>Wi-Fi name</span>
-                <input
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  onChange={(event) => setWifiForm((current) => ({ ...current, ssid: event.target.value }))}
-                  placeholder="Network name"
-                  required
-                  type="text"
-                  value={wifiForm.ssid}
-                />
-              </label>
-              <label className="wifiField">
-                <span>Password</span>
-                <input
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  onChange={(event) => setWifiForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="Wi-Fi password"
-                  required
-                  type="password"
-                  value={wifiForm.password}
-                />
-              </label>
-              <button disabled={wifiSubmission.status === "saving"} type="submit">
-                {wifiSubmission.status === "saving" ? "Connecting…" : "Connect screen"}
-              </button>
-            </form>
-            <div className="setupMeta" aria-live="polite">
-              <span>{state.wifiStatus?.supported ? "Wireless hardware ready" : "Wireless setup unavailable"}</span>
-              {state.playerStatus?.lastError ? <span>{state.playerStatus.lastError}</span> : null}
-              {state.wifiStatus?.error ? <span>{state.wifiStatus.error}</span> : null}
-              {wifiSubmission.message ? (
-                <span className={wifiSubmission.status === "error" ? "setupMessage error" : "setupMessage"}>
-                  {wifiSubmission.message}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      </main>
+      <WiFiSetup
+        lastError={state.playerStatus?.lastError}
+        onSubmitted={() => setRefreshNonce((value) => value + 1)}
+        wifiStatus={state.wifiStatus}
+      />
     );
   }
 
