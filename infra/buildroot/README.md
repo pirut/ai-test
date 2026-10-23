@@ -19,6 +19,9 @@ first-boot Wi-Fi setup on tty1, recovery screen, update guard, maintenance
 console and its sudo rules, watchdog and journal limits). The agent and the
 player bundle are the same artifacts `prepare-artifacts.sh` builds for signed
 app releases, so app releases install and roll back exactly as today.
+Tailscale and dnsmasq are in the image already; the Tailscale join script
+and the setup hotspot's DNS file are picked up from `infra/pi-image` as soon
+as they exist there.
 
 Differences, all in `board/rpi5`:
 
@@ -31,7 +34,8 @@ Differences, all in `board/rpi5`:
 | HEVC decode | Raspberry Pi's FFmpeg | the same patches on Buildroot's FFmpeg 6.1.5 (`patches/ffmpeg`) |
 | yt-dlp | Python zipapp | standalone arm64 binary, downloaded and checksummed by the agent |
 | Legacy Chromium kiosk | fallback | not installed |
-| Remote shell | Raspberry Pi Connect | none yet |
+| Remote shell | Raspberry Pi Connect | Tailscale SSH (`showroom-tailscale-join`), node key on the data partition |
+| Setup hotspot DNS | `dnsmasq-base` | Buildroot's dnsmasq, same `dnsmasq-shared.d` file |
 
 ## Card layout
 

@@ -37,7 +37,8 @@ REQUIRED_EXECUTABLES = [
     "usr/lib/showroom/releases/player/1.0.0/bin/showroom-player",
 ]
 # Commands the appliance scripts call, looked up on PATH.
-REQUIRED_COMMANDS = ["rauc", "jq", "curl", "nmcli", "vcgencmd", "sfdisk", "partx", "systemctl", "sudo", "bash"]
+REQUIRED_COMMANDS = ["rauc", "jq", "curl", "nmcli", "vcgencmd", "sfdisk", "partx", "systemctl", "sudo", "bash",
+                     "tailscale", "tailscaled", "dnsmasq"]
 PATH_DIRS = ["usr/local/bin", "usr/bin", "bin", "usr/sbin", "sbin"]
 # Built outside Buildroot (Go and Rust), so their glibc symbol versions are
 # checked against the image's libraries.
@@ -57,6 +58,7 @@ ENABLED_UNITS = [
     "showroom-os-commit.service",
     "showroom-os-follow.timer",
     "showroom-network-onboarding.service",
+    "tailscaled.service",
 ]
 DISABLED_UNITS = ["rauc-mark-good.service", "systemd-networkd.service"]
 

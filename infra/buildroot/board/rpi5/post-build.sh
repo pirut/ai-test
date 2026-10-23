@@ -72,6 +72,19 @@ for unit in \
   install -D -m 0644 "${SYSTEMD_SRC}/${unit}" "${TARGET}/etc/systemd/system/${unit}"
 done
 
+# Remote SSH over Tailscale and the setup hotspot's captive DNS, from the
+# Raspberry Pi OS image once they are there.
+if [[ -f "${SYSTEMD_SRC}/showroom-tailscale-join" ]]; then
+  install -D -m 0755 "${SYSTEMD_SRC}/showroom-tailscale-join" "${TARGET}/usr/local/bin/showroom-tailscale-join"
+  for unit in showroom-tailscale-join.service showroom-tailscale-join.timer; do
+    install -D -m 0644 "${SYSTEMD_SRC}/${unit}" "${TARGET}/etc/systemd/system/${unit}"
+  done
+fi
+if [[ -f "${CONFIG_SRC}/showroom-setup-dnsmasq.conf" ]]; then
+  install -D -m 0644 "${CONFIG_SRC}/showroom-setup-dnsmasq.conf" \
+    "${TARGET}/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf"
+fi
+
 install -D -m 0644 "${CONFIG_SRC}/getty-tty1-override.conf" "${TARGET}/etc/systemd/system/getty@tty1.service.d/override.conf"
 install -D -m 0644 "${CONFIG_SRC}/20-showroom-console.sh" "${TARGET}/etc/profile.d/20-showroom-console.sh"
 install -D -m 0644 "${CONFIG_SRC}/20-showroom-kernel-console.conf" "${TARGET}/etc/sysctl.d/20-showroom-kernel-console.conf"
@@ -100,7 +113,8 @@ printf 'SHOWROOM_SYSTEM_UPDATE_COMMAND=/usr/libexec/showroom/showroom-os-install
 install -D -m 0644 "${KEYRING}" "${TARGET}/etc/rauc/keyring.pem"
 
 # Mount points on the read-only root.
-mkdir -p "${TARGET}/data" "${TARGET}/var/lib/showroom" "${TARGET}/etc/NetworkManager/system-connections"
+mkdir -p "${TARGET}/data" "${TARGET}/var/lib/showroom" "${TARGET}/var/lib/tailscale" \
+  "${TARGET}/etc/NetworkManager/system-connections"
 
 # Development images follow an OS channel so a test screen gets every new
 # build without reflashing. Field images have no channel file.

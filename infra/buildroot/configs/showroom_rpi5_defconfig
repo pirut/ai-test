@@ -95,6 +95,10 @@ BR2_PACKAGE_LIBCURL_CURL=y
 BR2_PACKAGE_IPROUTE2=y
 BR2_PACKAGE_IPUTILS=y
 BR2_PACKAGE_NET_TOOLS=y
+# dnsmasq for NetworkManager's shared (setup hotspot) connections, and
+# Tailscale for remote SSH to screens (its kernel options come with it).
+BR2_PACKAGE_DNSMASQ=y
+BR2_PACKAGE_TAILSCALE=y
 
 # Userland the appliance scripts call (bash scripts written for Debian)
 BR2_PACKAGE_BASH=y
