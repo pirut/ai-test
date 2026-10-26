@@ -39,6 +39,11 @@ for slot in A B; do
   [[ "${slot}" == B ]] && root=06
   sed -e "s/@ROOT_PARTUUID@/${DISK_ID}-${root}/" -e "s/@SLOT@/${slot}/" \
     "${BOARD_DIR}/cmdline.txt.in" >"${STAGE}/cmdline-${slot}.txt"
+  # Development images show boot messages on the screen, so a test screen
+  # that fails to start says why.
+  if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
+    sed -i 's/ console=tty3 quiet loglevel=3 / console=tty1 /' "${STAGE}/cmdline-${slot}.txt"
+  fi
 done
 cp "${BOARD_DIR}/autoboot.txt" "${STAGE}/autoboot.txt"
 
