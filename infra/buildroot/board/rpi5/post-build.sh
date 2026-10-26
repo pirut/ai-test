@@ -138,6 +138,12 @@ if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
   printf 'SHOWROOM_OS_CHANNEL_URL=%s\n' "${SHOWROOM_OS_CHANNEL_URL}" >"${TARGET}/etc/showroom/os-channel.env"
   variant=" dev"
   variant_id=dev
+  # No hardware watchdog on test screens (see post-image.sh).
+  install -d "${TARGET}/etc/systemd/system.conf.d"
+  printf '[Manager]\nRuntimeWatchdogSec=off\nRebootWatchdogSec=off\n' \
+    >"${TARGET}/etc/systemd/system.conf.d/90-showroom-dev.conf"
+else
+  rm -f "${TARGET}/etc/systemd/system.conf.d/90-showroom-dev.conf"
 fi
 
 # Identity reported in heartbeats (the agent sends PRETTY_NAME).

@@ -56,7 +56,14 @@ for overlay in "${BINARIES_DIR}"/rpi-firmware/overlays/vc4-kms-v3d*.dtbo \
   overlays+=("rpi-firmware/overlays/$(basename "${overlay}")")
 done
 
-boot_files=("Image" "rpi-firmware/config.txt")
+# Development images leave the hardware watchdog off, so a hang stays on the
+# screen with its last messages instead of restarting the Pi.
+cp "${BINARIES_DIR}/rpi-firmware/config.txt" "${STAGE}/config.txt"
+if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
+  sed -i '/^kernel_watchdog_timeout=/d' "${STAGE}/config.txt"
+fi
+
+boot_files=("Image" "showroom/config.txt")
 for dtb in "${BINARIES_DIR}"/*.dtb; do
   boot_files+=("$(basename "${dtb}")")
 done

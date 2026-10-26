@@ -57,6 +57,15 @@ grep -q 'root=PARTUUID=53484f57-05 ' <<<"${cmdline}" || fail "slot A cmdline.txt
 grep -q 'rauc.slot=A ' <<<"${cmdline}" || fail "slot A cmdline.txt does not name slot A"
 mtype -i "${IMAGES}/boot.vfat" ::/cmdline-B.txt | grep -q 'root=PARTUUID=53484f57-06 rootfstype=erofs ro rootwait rauc.slot=B ' \
   || fail "cmdline-B.txt does not boot partition 6"
+config="$(mtype -i "${IMAGES}/boot.vfat" ::/config.txt)"
+grep -q '^dtoverlay=vc4-kms-v3d' <<<"${config}" || fail "config.txt is missing from the boot partition"
+if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
+  ! grep -q '^kernel_watchdog_timeout=' <<<"${config}" || fail "development config.txt arms the watchdog"
+  grep -q ' console=tty1 ' <<<"${cmdline}" || fail "development cmdline.txt hides boot messages"
+else
+  grep -q '^kernel_watchdog_timeout=20' <<<"${config}" || fail "config.txt lacks the watchdog"
+  grep -q ' quiet ' <<<"${cmdline}" || fail "cmdline.txt is not quiet"
+fi
 mdir -b -i "${IMAGES}/boot.vfat" ::/overlays | grep -q vc4-kms-v3d-pi5.dtbo || fail "vc4-kms-v3d-pi5 overlay missing"
 if mdir -b -i "${IMAGES}/boot.vfat" ::/overlays | grep -q hifiberry; then
   fail "unused overlays were not pruned"
