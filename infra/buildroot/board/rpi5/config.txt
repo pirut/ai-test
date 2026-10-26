@@ -13,5 +13,7 @@ dtoverlay=vc4-kms-v3d
 max_framebuffers=2
 disable_fw_kms_setup=1
 
-# Reset the Pi if the kernel stops feeding the hardware watchdog.
-kernel_watchdog_timeout=20
+# Reset the Pi if the kernel stops feeding the hardware watchdog. The Pi's
+# watchdog counts at most 15 seconds; its driver keeps only the low bits of a
+# longer timeout, so 20 seconds would become 4.
+kernel_watchdog_timeout=15

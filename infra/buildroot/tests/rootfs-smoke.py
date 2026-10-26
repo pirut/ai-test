@@ -331,6 +331,15 @@ def check_files(fs, errors):
                     "SHOWROOM_SETUP_HOTSPOT=1"]:
             if key not in text.splitlines():
                 errors.append(f"config.env lacks {key}")
+    # The Pi's hardware watchdog counts at most 15 seconds; a longer timeout
+    # wraps to a few seconds and resets the Pi.
+    watchdog = fs.resolve("/etc/systemd/system.conf.d/20-showroom-watchdog.conf")
+    if watchdog:
+        with open(watchdog, encoding="utf-8") as handle:
+            if "RuntimeWatchdogSec=15s" not in handle.read().splitlines():
+                errors.append("20-showroom-watchdog.conf does not set RuntimeWatchdogSec=15s")
+    else:
+        errors.append("/etc/systemd/system.conf.d/20-showroom-watchdog.conf is missing")
     channel = fs.resolve("/etc/showroom/os-channel.env")
     os_release = fs.resolve("/usr/lib/os-release")
     if os_release:

@@ -100,8 +100,11 @@ install -D -m 0644 "${CONFIG_SRC}/20-showroom-console.sh" "${TARGET}/etc/profile
 install -D -m 0644 "${CONFIG_SRC}/20-showroom-kernel-console.conf" "${TARGET}/etc/sysctl.d/20-showroom-kernel-console.conf"
 install -D -m 0440 "${CONFIG_SRC}/showroom-maintenance.sudoers" "${TARGET}/etc/sudoers.d/020-showroom-maintenance"
 install -D -m 0440 "${BR2_EXTERNAL_SHOWROOM_PATH}/board/rpi5/showroom-os.sudoers" "${TARGET}/etc/sudoers.d/021-showroom-os"
-install -D -m 0644 "${OVERLAY_SRC}/etc/systemd/system.conf.d/20-showroom-watchdog.conf" \
-  "${TARGET}/etc/systemd/system.conf.d/20-showroom-watchdog.conf"
+# The Pi's hardware watchdog counts at most 15 seconds (see config.txt).
+install -d "${TARGET}/etc/systemd/system.conf.d"
+sed 's/^RuntimeWatchdogSec=.*/RuntimeWatchdogSec=15s/' \
+  "${OVERLAY_SRC}/etc/systemd/system.conf.d/20-showroom-watchdog.conf" \
+  >"${TARGET}/etc/systemd/system.conf.d/20-showroom-watchdog.conf"
 install -D -m 0644 "${OVERLAY_SRC}/etc/systemd/journald.conf.d/20-showroom-limits.conf" \
   "${TARGET}/etc/systemd/journald.conf.d/20-showroom-limits.conf"
 

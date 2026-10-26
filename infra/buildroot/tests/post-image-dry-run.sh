@@ -63,7 +63,7 @@ if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
   ! grep -q '^kernel_watchdog_timeout=' <<<"${config}" || fail "development config.txt arms the watchdog"
   grep -q ' console=tty1 ' <<<"${cmdline}" || fail "development cmdline.txt hides boot messages"
 else
-  grep -q '^kernel_watchdog_timeout=20' <<<"${config}" || fail "config.txt lacks the watchdog"
+  grep -q '^kernel_watchdog_timeout=15' <<<"${config}" || fail "config.txt lacks the watchdog"
   grep -q ' quiet ' <<<"${cmdline}" || fail "cmdline.txt is not quiet"
 fi
 mdir -b -i "${IMAGES}/boot.vfat" ::/overlays | grep -q vc4-kms-v3d-pi5.dtbo || fail "vc4-kms-v3d-pi5 overlay missing"

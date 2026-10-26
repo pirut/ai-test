@@ -1,8 +1,12 @@
 #!/bin/bash
 # Grows the data partition to the end of the card on first boot, so the flash
-# image itself stays small; x-systemd.growfs then grows the filesystem. It
-# never fails, because /data requires it: a card that cannot grow still boots
-# with the data partition it was flashed with.
+# image itself stays small, and restarts the Pi so the kernel reads the new
+# partition table; x-systemd.growfs then grows the filesystem. Changing the
+# table of the running card makes udev re-announce its partitions, which
+# stopped the check and mount of /data on a Pi 5 and left the screen without
+# its agent and player; a restart is the one reliable way past that. It never
+# fails, because /data requires it: a card that cannot grow still boots with
+# the data partition it was flashed with.
 set -uo pipefail
 
 log() {
@@ -37,5 +41,14 @@ if ! echo ', +' | sfdisk --no-reread --no-tell-kernel -N "${number}" "${disk}"; 
   log "could not grow partition ${number}"
   exit 0
 fi
-partx -u --nr "${number}" "${disk}" || log "the kernel did not pick up the new size; it will after the next reboot"
+# Restart only when the table on the card really changed, so a card whose
+# table cannot change does not restart on every boot.
+new_end="$(partx -g -o END -n "${number}" "${disk}" 2>/dev/null | tr -d ' ')"
+if [[ ! "${new_end}" =~ ^[0-9]+$ ]] || (( new_end + 1 <= end )); then
+  log "partition ${number} did not grow"
+  exit 0
+fi
+log "restarting so the kernel reads the new partition table"
+sync
+systemctl --no-block reboot
 exit 0
