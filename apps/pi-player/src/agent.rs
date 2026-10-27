@@ -112,6 +112,10 @@ pub struct PlayerState {
     pub items: Vec<Item>,
     #[serde(default)]
     pub wifi: Option<WifiStatus>,
+    /// QR modules for the dashboard link that adds this screen with its code
+    /// filled in. Older agents send none.
+    #[serde(default)]
+    pub claim_qr: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

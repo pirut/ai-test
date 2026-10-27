@@ -4,7 +4,7 @@ import {
   type ManifestPlaylistItem,
   deviceManifestSchema,
 } from "@showroom/contracts";
-import { WiFiSetup, type WiFiStatus } from "./wifi-setup";
+import { QrCode, WiFiSetup, type WiFiStatus } from "./wifi-setup";
 
 type PlayerStatus = {
   claimed: boolean;
@@ -13,6 +13,8 @@ type PlayerStatus = {
   manifestVersion?: string;
   lastSyncAt?: string;
   lastError?: string;
+  /** Dashboard link that adds this screen with its code filled in, as QR modules. */
+  claimQr?: string[];
 };
 
 type PlaybackState = {
@@ -116,7 +118,7 @@ export function PlayerApp() {
     mediaNonce: 0,
   });
 
-  const settingUp = state.status === "wifi-setup";
+  const settingUp = state.status === "wifi-setup" || state.status === "unclaimed";
   const activeItem = state.playlist.length
     ? state.playlist[state.index % state.playlist.length]
     : null;
@@ -205,8 +207,8 @@ export function PlayerApp() {
     };
 
     void refresh();
-    // First-time setup polls faster so the network list and hotspot details
-    // stay current.
+    // First-time setup and pairing poll faster so the network list, hotspot
+    // details and the switch to playback after pairing show up quickly.
     const interval = window.setInterval(refresh, settingUp ? 5_000 : 15_000);
     return () => {
       cancelled = true;
@@ -302,11 +304,26 @@ export function PlayerApp() {
   if (state.status === "unclaimed") {
     return (
       <main className="playerRoot">
-        <section className="fallbackScreen" aria-live="polite">
-          <p className="label">Claim this screen</p>
-          <h1 className="claimCode">{state.playerStatus?.claimCode ?? "••••••"}</h1>
-          <p>Open Digital Curator, enter this code, and the screen will connect automatically.</p>
-        </section>
+        {state.playerStatus?.claimCode && state.playerStatus.claimQr?.length ? (
+          <section className="fallbackScreen claimWithQr" aria-live="polite">
+            <div>
+              <p className="label">Claim this screen</p>
+              <h1 className="claimCode">{state.playerStatus.claimCode}</h1>
+              <p>Scan the square with your phone, or type this code into Digital Curator.</p>
+              <p>The screen connects on its own once it is added.</p>
+            </div>
+            <figure className="claimQr">
+              <QrCode label="Add this screen in Digital Curator" rows={state.playerStatus.claimQr} />
+              <figcaption>Scan to add this screen</figcaption>
+            </figure>
+          </section>
+        ) : (
+          <section className="fallbackScreen" aria-live="polite">
+            <p className="label">Claim this screen</p>
+            <h1 className="claimCode">{state.playerStatus?.claimCode ?? "••••••"}</h1>
+            <p>Open Digital Curator, enter this code, and the screen will connect automatically.</p>
+          </section>
+        )}
       </main>
     );
   }

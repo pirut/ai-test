@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
+	"github.com/jrbussard/showroom-signage/apps/agent/internal/state"
 )
 
 type fakeNM struct {
@@ -309,5 +313,74 @@ func TestPortalRedirectsProbesAndAcceptsConnect(t *testing.T) {
 	routes.ServeHTTP(accepted, httptest.NewRequest(http.MethodPost, "http://10.42.0.1/api/connect", strings.NewReader(`{"ssid":"Lobby"}`)))
 	if accepted.Code != http.StatusAccepted {
 		t.Fatalf("open network = %d", accepted.Code)
+	}
+}
+
+func TestOnlineNotifiesSoPairingStartsAtOnce(t *testing.T) {
+	h := newSetupHarness(true)
+	online := make(chan struct{}, 4)
+	h.setup.onOnline = func() { online <- struct{}{} }
+	h.advance(0)
+	h.advance(hotspotGrace)
+
+	if err := h.setup.connect(context.Background(), wifiConfigureRequest{SSID: "Lobby"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-online:
+	case <-time.After(time.Second):
+		t.Fatal("joining Wi-Fi did not start pairing")
+	}
+
+	// Already online: later ticks stay quiet.
+	h.advance(5 * time.Second)
+	select {
+	case <-online:
+		t.Fatal("notified again without a new connection")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Ethernet after an offline spell also counts.
+	h.nm.summary.wifi.connected = false
+	h.advance(5 * time.Second)
+	h.nm.summary.wired = true
+	h.advance(5 * time.Second)
+	select {
+	case <-online:
+	case <-time.After(time.Second):
+		t.Fatal("coming online over Ethernet did not start pairing")
+	}
+}
+
+func TestPairingScreenGetsADashboardLinkWithTheCode(t *testing.T) {
+	store, err := state.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Update(func(next *state.DeviceState) { next.ClaimCode = "K7Q2XM" })
+	server := NewServer(config.Config{APIBaseURL: "https://screen.example.com/"}, store)
+
+	response := httptest.NewRecorder()
+	server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/local/status", nil))
+	var status struct {
+		ClaimCode string   `json:"claimCode"`
+		ClaimURL  string   `json:"claimUrl"`
+		ClaimQR   []string `json:"claimQr"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.ClaimCode != "K7Q2XM" || status.ClaimURL != "https://screen.example.com/screens?claim=K7Q2XM" || len(status.ClaimQR) < 21 {
+		t.Fatalf("status = %+v", status)
+	}
+
+	native := server.playerState(func() wifiStatus { return wifiStatus{} })
+	if native.ClaimURL != status.ClaimURL || len(native.ClaimQR) != len(status.ClaimQR) {
+		t.Fatalf("player state link = %q", native.ClaimURL)
+	}
+
+	_ = store.Update(func(next *state.DeviceState) { next.Credential = "credential" })
+	if claimed := server.playerState(func() wifiStatus { return wifiStatus{} }); claimed.ClaimURL != "" {
+		t.Fatal("a paired screen still offered a pairing link")
 	}
 }

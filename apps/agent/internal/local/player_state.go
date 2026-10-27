@@ -26,6 +26,10 @@ type nativePlayerState struct {
 	PendingItems    int                `json:"pendingItems"`
 	Items           []nativePlayerItem `json:"items"`
 	WiFi            *wifiStatus        `json:"wifi,omitempty"`
+	// ClaimURL opens the dashboard with the pairing code filled in;
+	// ClaimQR is the same link as QR modules for the pairing screen.
+	ClaimURL string   `json:"claimUrl,omitempty"`
+	ClaimQR  []string `json:"claimQr,omitempty"`
 }
 
 type nativePlayerItem struct {
@@ -51,6 +55,9 @@ func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
 		ClaimCode: status.ClaimCode,
 		LastError: status.LastError,
 		Items:     []nativePlayerItem{},
+	}
+	if !status.Claimed {
+		result.ClaimURL, result.ClaimQR = s.claimLink(status.ClaimCode)
 	}
 
 	manifest, err := s.loadManifest()

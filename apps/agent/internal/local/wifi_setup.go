@@ -73,6 +73,10 @@ type wifiSetup struct {
 	phoneActiveAt time.Time
 	portal        *http.Server
 	startPortal   func(handler http.Handler) (*http.Server, error)
+	// onOnline runs when the screen gets a network, so pairing can start
+	// at once instead of on its next poll.
+	onOnline  func()
+	wasOnline bool
 }
 
 func newWiFiSetup(nm networkManager, hotspotEnabled bool, needsSetup func() bool) *wifiSetup {
@@ -118,7 +122,12 @@ func (m *wifiSetup) tick(ctx context.Context) {
 		return
 	}
 	now := m.now()
-	if devices.online() || !m.needsSetup() {
+	online := devices.online()
+	if online && !m.wasOnline {
+		m.notifyOnline()
+	}
+	m.wasOnline = online
+	if online || !m.needsSetup() {
 		m.offlineSince = time.Time{}
 		if m.active {
 			log.Printf("wifi setup: online, closing setup hotspot")
@@ -232,8 +241,16 @@ func (m *wifiSetup) connect(ctx context.Context, request wifiConfigureRequest) e
 	}
 	if err == nil {
 		m.offlineSince = time.Time{}
+		m.wasOnline = true
+		m.notifyOnline()
 	}
 	return err
+}
+
+func (m *wifiSetup) notifyOnline() {
+	if m.onOnline != nil {
+		go m.onOnline()
+	}
 }
 
 func friendlyConnectError(ssid string, err error) error {

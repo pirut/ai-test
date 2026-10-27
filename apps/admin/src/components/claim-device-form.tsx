@@ -7,7 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-export function ClaimDeviceForm({ embedded = false, onClaimed }: { embedded?: boolean; onClaimed?: () => void }) {
+export function ClaimDeviceForm({
+  embedded = false,
+  onClaimed,
+  initialClaimCode,
+}: {
+  embedded?: boolean;
+  onClaimed?: () => void;
+  /** Filled in when the screen's scan-to-add QR code opened this page. */
+  initialClaimCode?: string;
+}) {
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   async function handleSubmit(formData: FormData) {
@@ -48,7 +57,7 @@ export function ClaimDeviceForm({ embedded = false, onClaimed }: { embedded?: bo
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="claimCode" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Claim code</Label>
-          <Input id="claimCode" name="claimCode" placeholder="123456" required />
+          <Input id="claimCode" name="claimCode" placeholder="123456" required defaultValue={initialClaimCode} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="name" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Screen name</Label>

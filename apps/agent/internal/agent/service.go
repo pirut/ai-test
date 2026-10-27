@@ -65,6 +65,9 @@ type Service struct {
 	hydrationMu       sync.Mutex
 	hydrationFailures map[string]hydrationFailure
 	now               func() time.Time
+	// pollTrigger runs a poll now, for example when first-time Wi-Fi setup
+	// just got the screen online and it is waiting for a pairing code.
+	pollTrigger chan struct{}
 }
 
 func New(cfg config.Config) (*Service, error) {
@@ -95,6 +98,7 @@ func New(cfg config.Config) (*Service, error) {
 		store:             store,
 		start:             time.Now(),
 		hydrationFailures: make(map[string]hydrationFailure),
+		pollTrigger:       make(chan struct{}, 1),
 		now:               time.Now,
 	}, nil
 }
@@ -164,6 +168,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
+	server.OnWiFiOnline(s.pollNow)
 	go server.RunWiFiSetup(ctx)
 	go s.runPollLoop(ctx)
 	go s.runHeartbeatLoop(ctx)
@@ -543,19 +548,55 @@ func (s *Service) runPollLoop(ctx context.Context) {
 		log.Printf("initial poll failed: %v", err)
 	}
 
-	ticker := time.NewTicker(s.config.PollInterval)
-	defer ticker.Stop()
-
 	for {
+		timer := time.NewTimer(s.pollDelay())
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
-			if err := s.poll(ctx); err != nil {
-				log.Printf("poll failed: %v", err)
-			}
+		case <-timer.C:
+		case <-s.pollTrigger:
+			timer.Stop()
+		}
+		if err := s.poll(ctx); err != nil {
+			log.Printf("poll failed: %v", err)
 		}
 	}
+}
+
+func (s *Service) pollNow() {
+	select {
+	case s.pollTrigger <- struct{}{}:
+	default:
+	}
+}
+
+// Unpaired screens poll faster: someone is standing at the screen waiting for
+// its pairing code, or for it to react after they typed the code in. Paired
+// screens keep the configured interval.
+const (
+	pairingCodePollInterval  = 3 * time.Second
+	pairingClaimPollInterval = 5 * time.Second
+	pairingRequestTimeout    = 15 * time.Second
+)
+
+func (s *Service) pollDelay() time.Duration {
+	interval := s.config.PollInterval
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	current := s.store.Snapshot()
+	if current.Credential != "" {
+		return interval
+	}
+	fast := pairingClaimPollInterval
+	if current.ClaimCode == "" {
+		fast = pairingCodePollInterval
+	}
+	if fast < interval {
+		return fast
+	}
+	return interval
 }
 
 func (s *Service) runHeartbeatLoop(ctx context.Context) {
@@ -640,6 +681,10 @@ func shouldExposeManifestSyncError(manifestPath string) bool {
 }
 
 func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState) error {
+	// A request stuck on a network that just went away must not hold up the
+	// next try for the HTTP client's full timeout.
+	ctx, cancel := context.WithTimeout(ctx, pairingRequestTimeout)
+	defer cancel()
 	if current.DeviceSessionID == "" || current.ClaimToken == "" {
 		registration, err := s.client.RegisterTemporary(ctx)
 		if err != nil {
