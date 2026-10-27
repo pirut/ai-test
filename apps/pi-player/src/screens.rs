@@ -24,6 +24,8 @@ pub enum Screen {
     WifiSetup,
     Claim {
         code: Option<String>,
+        /// Scan-to-pair QR modules, empty when the agent sends none.
+        qr: Vec<String>,
     },
     Waiting {
         downloading: bool,
@@ -47,7 +49,15 @@ pub fn choose(state: Option<&PlayerState>) -> Screen {
             return Screen::WifiSetup;
         }
         if !state.claimed {
-            return Screen::Claim { code: claim_code };
+            let qr = if claim_code.is_some() {
+                state.claim_qr.clone()
+            } else {
+                Vec::new()
+            };
+            return Screen::Claim {
+                code: claim_code,
+                qr,
+            };
         }
         return Screen::Waiting {
             downloading: false,
@@ -122,26 +132,7 @@ pub fn render(
             text(960, 470, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
             text(960, 550, 72, TEXT, "\\b1", "Starting player"),
         ],
-        Screen::Claim { code } => vec![
-            background(),
-            text(960, 330, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
-            text(
-                960,
-                500,
-                200,
-                TEXT,
-                "\\b1\\fsp24",
-                code.as_deref().unwrap_or("••••••"),
-            ),
-            text(
-                960,
-                680,
-                38,
-                MUTED,
-                "",
-                "Open Digital Curator, enter this code, and the screen will connect automatically.",
-            ),
-        ],
+        Screen::Claim { code, qr } => claim_lines(code.as_deref(), qr),
         Screen::Waiting { downloading, error } => {
             let mut lines = vec![
                 background(),
@@ -248,6 +239,65 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
     if let Some((message, color)) = status {
         lines.push(text(960, 1010, 30, color, "", &truncate(&message, 110)));
     }
+    lines
+}
+
+fn claim_lines(code: Option<&str>, qr: &[String]) -> Vec<String> {
+    let code = code.unwrap_or("••••••");
+    if qr.is_empty() {
+        return vec![
+            background(),
+            text(960, 330, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
+            text(960, 500, 200, TEXT, "\\b1\\fsp24", code),
+            text(
+                960,
+                680,
+                38,
+                MUTED,
+                "",
+                "Open Digital Curator, enter this code, and the screen will connect automatically.",
+            ),
+        ];
+    }
+    // The phone that just set up Wi-Fi is in hand: scanning beats typing.
+    let mut lines = vec![
+        background(),
+        text(660, 300, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
+        text(660, 470, 170, TEXT, "\\b1\\fsp20", code),
+        text(
+            660,
+            640,
+            36,
+            MUTED,
+            "",
+            "Scan the square on the right with your phone,",
+        ),
+        text(
+            660,
+            690,
+            36,
+            MUTED,
+            "",
+            "or type this code into Digital Curator.",
+        ),
+        text(
+            660,
+            780,
+            30,
+            MUTED,
+            "",
+            "The screen connects on its own once it is added.",
+        ),
+    ];
+    let size = qr_lines(&mut lines, qr, 1240, 300, 440);
+    lines.push(text(
+        1240 + size / 2,
+        300 + size + 50,
+        30,
+        TEXT,
+        "\\b1",
+        "Scan to add this screen",
+    ));
     lines
 }
 
@@ -564,10 +614,12 @@ mod tests {
         assert_eq!(choose(Some(&current)), Screen::WifiSetup);
 
         current.claim_code = Some("ABC123".into());
+        current.claim_qr = vec!["101".into()];
         assert_eq!(
             choose(Some(&current)),
             Screen::Claim {
-                code: Some("ABC123".into())
+                code: Some("ABC123".into()),
+                qr: vec!["101".into()],
             }
         );
 
@@ -577,7 +629,13 @@ mod tests {
             connected: true,
             ..Default::default()
         });
-        assert_eq!(choose(Some(&current)), Screen::Claim { code: None });
+        assert_eq!(
+            choose(Some(&current)),
+            Screen::Claim {
+                code: None,
+                qr: Vec::new(),
+            }
+        );
     }
 
     #[test]
@@ -611,6 +669,7 @@ mod tests {
         let events = render(
             &Screen::Claim {
                 code: Some("XY12".into()),
+                qr: Vec::new(),
             },
             &WifiForm::default(),
             None,
@@ -619,6 +678,20 @@ mod tests {
         .unwrap();
         assert!(events.contains("XY12"));
         assert!(events.contains("CLAIM THIS SCREEN"));
+        assert!(!events.contains("Scan to add"));
+
+        let events = render(
+            &Screen::Claim {
+                code: Some("XY12".into()),
+                qr: vec!["101".into(), "010".into(), "101".into()],
+            },
+            &WifiForm::default(),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(events.contains("XY12"));
+        assert!(events.contains("Scan to add this screen"));
     }
 
     #[test]

@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 
-export function AddScreenDialog() {
-  const [open, setOpen] = useState(false);
+export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: string } = {}) {
+  // A screen's scan-to-add QR code links here with ?claim=CODE.
+  const [open, setOpen] = useState(Boolean(initialClaimCode));
   const router = useRouter();
 
   return (
@@ -37,7 +38,9 @@ export function AddScreenDialog() {
         <div className="p-6">
           <ClaimDeviceForm
             embedded
+            initialClaimCode={initialClaimCode}
             onClaimed={() => {
+              router.replace("/screens");
               router.refresh();
               setOpen(false);
             }}

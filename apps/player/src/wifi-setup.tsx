@@ -45,7 +45,7 @@ async function rescanNetworks() {
   return ((await response.json()) as { networks: WiFiNetwork[] }).networks;
 }
 
-function QrCode({ rows, label }: { rows: string[]; label: string }) {
+export function QrCode({ rows, label }: { rows: string[]; label: string }) {
   const quiet = 3;
   const size = rows.length + quiet * 2;
   const path = rows

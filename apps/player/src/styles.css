@@ -233,3 +233,9 @@ body,
   .setupColumns { grid-template-columns: 1fr; }
   .phoneSetup { padding-right: 0; border-right: 0; }
 }
+
+.claimWithQr { grid-template-columns: minmax(0, 38rem) auto; place-content: center; align-items: center; gap: clamp(2rem, 6vw, 6rem); }
+.claimWithQr .claimQr { margin: 0; display: grid; gap: 1rem; justify-items: center; }
+.claimWithQr .claimQr .wifiQr { width: clamp(12rem, 24vw, 22rem); }
+.claimWithQr figcaption { font-weight: 650; }
+.claimWithQr p:not(.label) { margin-top: 0.75rem !important; }

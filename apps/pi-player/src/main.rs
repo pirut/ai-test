@@ -789,6 +789,13 @@ fn main() {
         let screen = match name.as_str() {
             "claim" => Screen::Claim {
                 code: Some("K7Q2XM".into()),
+                qr: (0..29)
+                    .map(|y| {
+                        (0..29)
+                            .map(|x| if (x * 7 + y * 3) % 5 < 2 { '1' } else { '0' })
+                            .collect()
+                    })
+                    .collect(),
             },
             "waiting" => Screen::Waiting {
                 downloading: false,
