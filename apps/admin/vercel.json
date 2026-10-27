@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then cd ../.. && npx convex deploy --typecheck=disable --cmd 'npm run build --workspace @showroom/admin'; else npm run build; fi"
+}
