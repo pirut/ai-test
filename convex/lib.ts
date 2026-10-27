@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { isCredentialRecordActive } from "./credentialPolicy";
 
 export const CLAIM_REGISTRATION_TTL_MS = 15 * 60_000;
 export const DEVICE_CREDENTIAL_TTL_MS = 24 * 60 * 60_000;
@@ -28,18 +29,7 @@ export function secondsRemainingUntil(expiresAt: number, now: number) {
   return Math.max(0, Math.ceil((expiresAt - now) / 1000));
 }
 
-export function isCredentialRecordActive(
-  record: { expiresAt?: number; revokedAt?: number },
-  now = Date.now(),
-) {
-  if (record.revokedAt) {
-    return false;
-  }
-  if (typeof record.expiresAt !== "number") {
-    return true;
-  }
-  return record.expiresAt > now;
-}
+export { isCredentialRecordActive };
 
 function extractClaim(identity: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {

@@ -1,12 +1,19 @@
 import { ConvexError, v } from "convex/values";
 import { isFleetManagedDevice } from "@showroom/contracts";
 
+import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import {
+  canDeliverClaimedCredential,
+  canRefreshCredential,
+  deviceCredentialTtlMs,
+  isCredentialRecordActive,
+  planCredentialRotation,
+} from "./credentialPolicy";
 import { buildManifestForDevice } from "./showroom";
 
 const claimRegistrationTtlMs = 15 * 60_000;
-const deviceCredentialTtlMs = 24 * 60 * 60_000;
 
 function healthIssues(health: any) {
   if (!health || typeof health !== "object") return [] as string[];
@@ -43,22 +50,10 @@ function secondsRemainingUntil(expiresAt: number, now: number) {
   return Math.max(0, Math.ceil((expiresAt - now) / 1000));
 }
 
-function isCredentialRecordActive(
-  record: { expiresAt?: number; revokedAt?: number },
-  now = Date.now(),
-) {
-  if (record.revokedAt) {
-    return false;
-  }
-  if (typeof record.expiresAt !== 'number') {
-    return true;
-  }
-  return record.expiresAt > now;
-}
-
 async function resolveDeviceByCredential(
   ctx: QueryCtx | MutationCtx,
   credential: string,
+  options: { forRefresh?: boolean } = {},
 ) {
   const now = Date.now();
   const secretHash = await hashValue(credential);
@@ -67,7 +62,12 @@ async function resolveDeviceByCredential(
     .withIndex("by_secret_hash", (q) => q.eq("secretHash", secretHash))
     .unique();
 
-  if (!record || !isCredentialRecordActive(record, now)) {
+  const usable = record
+    ? options.forRefresh
+      ? canRefreshCredential(record, now)
+      : isCredentialRecordActive(record, now)
+    : false;
+  if (!record || !usable) {
     return null;
   }
 
@@ -127,13 +127,19 @@ export const getClaimStatus = query({
     if (!registration) {
       throw new ConvexError("Unknown registration");
     }
-    if (typeof registration.expiresAt === "number" && registration.expiresAt <= now) {
-      throw new ConvexError("Claim session expired");
-    }
 
     const tokenHash = await hashValue(args.claimToken);
     if (registration.claimTokenHash !== tokenHash) {
       throw new ConvexError("Invalid claim token");
+    }
+
+    const deliverable = canDeliverClaimedCredential(registration, now);
+    if (
+      !deliverable &&
+      typeof registration.expiresAt === "number" &&
+      registration.expiresAt <= now
+    ) {
+      throw new ConvexError("Claim session expired");
     }
 
     let expiresInSeconds: number | undefined;
@@ -142,7 +148,7 @@ export const getClaimStatus = query({
     }
 
     return {
-      claimed: Boolean(registration.claimedDeviceId && registration.credential),
+      claimed: deliverable,
       deviceId: registration.claimedDeviceId,
       credential: registration.credential,
       expiresInSeconds,
@@ -162,7 +168,7 @@ export const refreshAuth = mutation({
   }),
   handler: async (ctx, args) => {
     const now = Date.now();
-    const device = await resolveDeviceByCredential(ctx, args.credential);
+    const device = await resolveDeviceByCredential(ctx, args.credential, { forRefresh: true });
     if (!device) {
       throw new ConvexError("Unauthorized device");
     }
@@ -175,15 +181,20 @@ export const refreshAuth = mutation({
       .withIndex("by_device", (q) => q.eq("deviceId", device._id))
       .collect();
 
-    for (const record of existing.filter((entry) => !entry.revokedAt)) {
-      await ctx.db.patch(record._id, {
-        revokedAt: now,
-      });
+    // Keep the previous credential alive briefly so a lost response or an
+    // in-flight request does not lock the screen out.
+    for (const record of existing) {
+      const plan = planCredentialRotation(record, now);
+      if (plan.action === "delete") {
+        await ctx.db.delete(record._id);
+      } else if (plan.action === "supersede") {
+        await ctx.db.patch(record._id, plan.patch);
+      }
     }
 
     await ctx.db.insert("deviceCredentials", {
       deviceId: device._id,
-      version: existing.length + 1,
+      version: Math.max(0, ...existing.map((entry) => entry.version)) + 1,
       secretHash,
       issuedAt: now,
       expiresAt,
@@ -225,8 +236,50 @@ export const getManifest = query({
     return buildManifestForDevice(
       ctx,
       device,
-      device.manifestVersion ?? `manifest-${device._id}`,
+      device.desiredManifestVersion ?? device.manifestVersion ?? `manifest-${device._id}`,
     );
+  },
+});
+
+async function activeManifestVersion(ctx: QueryCtx, device: Doc<"devices">) {
+  const manifest = (
+    await ctx.db
+      .query("compiledManifests")
+      .withIndex("by_device_and_active", (q) => q.eq("deviceId", device._id).eq("isActive", true))
+      .order("desc")
+      .take(1)
+  )[0];
+  return manifest?.version ?? device.desiredManifestVersion ?? null;
+}
+
+// What a long-polling screen waits on: a queued command, or new content
+// published from the dashboard. The commands endpoint hands manifestVersion to
+// the screen so a newer agent can sync right away instead of on its next poll.
+// Returns null when the credential is not accepted.
+export const getDeviceSignal = query({
+  args: {
+    credential: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      queued: v.boolean(),
+      manifestVersion: v.union(v.string(), v.null()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const device = await resolveDeviceByCredential(ctx, args.credential);
+    if (!device) {
+      return null;
+    }
+    const queued = await ctx.db
+      .query("deviceCommands")
+      .withIndex("by_device_and_status", (q) => q.eq("deviceId", device._id).eq("status", "queued"))
+      .take(1);
+    return {
+      queued: queued.length > 0,
+      manifestVersion: await activeManifestVersion(ctx, device),
+    };
   },
 });
 
@@ -249,8 +302,16 @@ export const claimCommands = mutation({
       .take(10);
 
     if (!isFleetManagedDevice(device)) {
+      const deliverable = [];
+      for (const command of queued) {
+        if (command.deadlineAt && command.deadlineAt <= now) {
+          await ctx.db.patch(command._id, { status: "failed", completedAt: now, resultMessage: "Command expired before delivery" });
+        } else {
+          deliverable.push(command);
+        }
+      }
       await Promise.all(
-        queued.map(async (command) => {
+        deliverable.map(async (command) => {
           await ctx.db.patch(command._id, {
             status: "in_progress",
             startedAt: now,
@@ -268,7 +329,7 @@ export const claimCommands = mutation({
           }
         }),
       );
-      return queued.map((command) => ({
+      return deliverable.map((command) => ({
         id: command._id,
         deviceId: device._id,
         commandType: command.commandType,
@@ -385,6 +446,10 @@ export const recordHeartbeat = mutation({
       ? reportedAppliance.capabilities
       : device.capabilities;
     const health = managed ? args.payload.health : undefined;
+    // Newer agents report their sync state; older ones send nothing and the
+    // stored values are left as they were.
+    const sync = args.payload.sync;
+    const lastSyncAt = typeof sync?.lastSyncAt === "string" ? Date.parse(sync.lastSyncAt) : NaN;
     await ctx.db.insert("deviceHeartbeats", {
       organizationId: device.organizationId,
       deviceId: device._id,
@@ -463,6 +528,10 @@ export const recordHeartbeat = mutation({
         args.payload.currentPlaylistId,
       ) ?? device.currentPlaylistName,
       lastHeartbeatAt: now,
+      ...(Number.isFinite(lastSyncAt) ? { lastSyncAt } : {}),
+      ...(sync && typeof sync === "object"
+        ? { lastAgentError: typeof sync.lastError === "string" && sync.lastError ? sync.lastError.slice(0, 500) : undefined }
+        : {}),
       updatedAt: now,
     });
 
@@ -579,7 +648,11 @@ export const recordCommandResult = mutation({
             ? Date.parse(args.payload.completedAt)
             : Date.now()
           : command.completedAt,
-      leaseExpiresAt: undefined,
+      // A screen that reports "in_progress" is still working on a long command
+      // (a release download, a large sync). Extend its lease so the command is
+      // not handed out again mid-run; any final status ends the lease.
+      leaseExpiresAt:
+        args.payload.status === "in_progress" ? Date.now() + 15 * 60_000 : undefined,
       payload:
         command.commandType === "update_network" && args.payload.status !== "in_progress"
           ? { redacted: true, ssid: command.payload?.ssid }

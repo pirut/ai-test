@@ -12,10 +12,10 @@ export default async function SchedulesPage() {
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Schedules"
-        description="Time-based playlist windows with explicit priority and device targeting."
+        description="Play a different playlist at certain times. When windows overlap, the higher priority wins."
       />
       <ScheduleManager
         devices={devices.map((device) => ({ id: device.id, name: device.name }))}

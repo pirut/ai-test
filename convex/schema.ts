@@ -101,7 +101,12 @@ export default defineSchema({
     timezone: v.string(),
     orientation: v.number(),
     volume: v.number(),
+    // manifestVersion is what the screen last reported it is playing;
+    // desiredManifestVersion is the content the dashboard last published to it.
     manifestVersion: v.optional(v.string()),
+    desiredManifestVersion: v.optional(v.string()),
+    lastSyncAt: v.optional(v.number()),
+    lastAgentError: v.optional(v.string()),
     lastHeartbeatAt: v.optional(v.number()),
     lastSeenIp: v.optional(v.string()),
     appVersion: v.optional(v.string()),
@@ -135,6 +140,7 @@ export default defineSchema({
     issuedAt: v.number(),
     expiresAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
+    supersededAt: v.optional(v.number()),
   })
     .index("by_secret_hash", ["secretHash"])
     .index("by_device", ["deviceId"]),

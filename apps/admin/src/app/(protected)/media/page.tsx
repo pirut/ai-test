@@ -8,8 +8,11 @@ export default async function MediaPage() {
   const [media, folders] = await Promise.all([listMediaAssets(), listMediaFolders()]);
 
   return (
-    <div className="space-y-8">
-      <PageHeader title="Media library" />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Media library"
+        description="Images, videos and YouTube links your playlists draw from. Screens download what they need and keep playing it offline."
+      />
       <MediaLibraryManager initialAssets={media} initialFolders={folders} />
     </div>
   );

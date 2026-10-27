@@ -232,7 +232,7 @@ impl WifiForm {
             Ok((connected, ssid)) => {
                 let name = ssid.unwrap_or_else(|| self.ssid.clone());
                 let message = if connected {
-                    format!("Connected to {name}. Waiting for claim code…")
+                    format!("Connected to {name}. Waiting for a pairing code…")
                 } else {
                     "Credentials saved. Waiting for the network…".to_string()
                 };

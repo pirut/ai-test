@@ -64,6 +64,35 @@ export function requiresFleetManagedDevice(commandType: CommandType) {
   return commandType === "update_release" || commandType === "update_network";
 }
 
+// How the control plane queues a dashboard command. Quick actions expire if a
+// screen stays offline, so an hour-old "restart" or "screenshot" never fires
+// out of the blue when it reconnects. Repeated clicks collapse into the one
+// command already waiting, and blank/unblank replace each other so the last
+// click wins.
+export type CommandQueuePolicy = {
+  deadlineMs?: number;
+  collapseDuplicates: boolean;
+  supersedes: CommandType[];
+};
+
+const quickCommandDeadlineMs = 10 * 60_000;
+
+export function commandQueuePolicy(commandType: CommandType): CommandQueuePolicy {
+  switch (commandType) {
+    case "sync_now":
+    case "take_screenshot":
+    case "restart_player":
+    case "reboot_device":
+      return { deadlineMs: quickCommandDeadlineMs, collapseDuplicates: true, supersedes: [] };
+    case "blank_screen":
+      return { collapseDuplicates: true, supersedes: ["unblank_screen"] };
+    case "unblank_screen":
+      return { collapseDuplicates: true, supersedes: ["blank_screen"] };
+    default:
+      return { collapseDuplicates: false, supersedes: [] };
+  }
+}
+
 export const sha256Schema = z
   .string()
   .trim()
@@ -214,6 +243,12 @@ export const heartbeatPayloadSchema = z.object({
     playerRestarts: z.number().int().nonnegative().optional(),
     rollbackCount: z.number().int().nonnegative().optional(),
   }).optional(),
+  // Sent by newer agents only. A malformed value is dropped rather than
+  // rejecting the whole heartbeat, so the screen still shows as online.
+  sync: z.object({
+    lastSyncAt: z.string().optional(),
+    lastError: z.string().optional(),
+  }).optional().catch(undefined),
 });
 
 export const screenshotUploadPayloadSchema = z.object({
@@ -278,6 +313,13 @@ export const deviceSummarySchema = z.object({
   capabilities: z.array(z.string()),
   applianceActivatedAt: z.string().datetime().nullable(),
   health: heartbeatPayloadSchema.shape.health.nullable().optional(),
+  // "current" once the screen reports the content last published to it,
+  // "updating" while it is still fetching it, "unknown" for screens that have
+  // not reported a version yet.
+  contentState: z.enum(["current", "updating", "unknown"]).optional(),
+  desiredManifestVersion: z.string().nullable().optional(),
+  lastSyncAt: z.string().nullable().optional(),
+  lastError: z.string().nullable().optional(),
 });
 
 export const libraryFolderSchema = z.object({

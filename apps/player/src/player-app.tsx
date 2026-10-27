@@ -15,6 +15,8 @@ type PlayerStatus = {
   lastError?: string;
   /** Dashboard link that adds this screen with its code filled in, as QR modules. */
   claimQr?: string[];
+  online?: boolean;
+  lastCloudContactAt?: string;
 };
 
 type PlaybackState = {
@@ -89,6 +91,13 @@ function resultError(result: PromiseSettledResult<unknown>) {
   return result.status === "rejected" && result.reason instanceof Error
     ? result.reason.message
     : null;
+}
+
+/** Splits a pairing code into two groups so it's easy to read across a room. */
+export function formatClaimCode(code: string) {
+  const clean = code.replace(/\s+/g, "").toUpperCase();
+  if (clean.length !== 6) return clean;
+  return `${clean.slice(0, 3)} ${clean.slice(3)}`;
 }
 
 function orientationStyle(orientation: DeviceManifest["orientation"]) {
@@ -171,13 +180,22 @@ export function PlayerApp() {
           const wifiStatus = nextWiFi ?? current.wifiStatus;
           const manifest = fetchedManifest ?? current.manifest;
 
+          if (playerStatus && !playerStatus.claimed) {
+            // An unpaired screen (new, or removed from its account) shows
+            // pairing, never content left over from a previous owner.
+            return {
+              ...current,
+              manifest: null,
+              playlist: [],
+              index: 0,
+              playerStatus,
+              wifiStatus,
+              status:
+                !wifiStatus?.connected && !playerStatus.claimCode ? "wifi-setup" : "unclaimed",
+            };
+          }
+
           if (!manifest) {
-            if (playerStatus && !playerStatus.claimed && !wifiStatus?.connected && !playerStatus.claimCode) {
-              return { ...current, playerStatus, wifiStatus, status: "wifi-setup" };
-            }
-            if (playerStatus && !playerStatus.claimed) {
-              return { ...current, playerStatus, wifiStatus, status: "unclaimed" };
-            }
             return {
               ...current,
               playerStatus,
@@ -302,26 +320,53 @@ export function PlayerApp() {
   }, [activeItem, recoverMedia, state.manifest?.volume, state.mediaNonce]);
 
   if (state.status === "unclaimed") {
+    const claimCode = state.playerStatus?.claimCode;
+    const claimQr = state.playerStatus?.claimQr;
+    const code = (
+      <h1 className="claimCode" aria-label={claimCode ? `Pairing code ${claimCode.split("").join(" ")}` : "Pairing code loading"}>
+        {claimCode ? formatClaimCode(claimCode) : "••• •••"}
+      </h1>
+    );
+    const statusLine = (
+      <p className="statusLine">
+        <span className={state.wifiStatus?.connected === false ? "statusDot warn" : "statusDot"} aria-hidden="true" />
+        {state.wifiStatus?.connected
+          ? `Online${state.wifiStatus.ssid ? ` via ${state.wifiStatus.ssid}` : ""}`
+          : state.wifiStatus?.connected === false
+            ? "Waiting for network"
+            : "Online"}
+      </p>
+    );
     return (
       <main className="playerRoot">
-        {state.playerStatus?.claimCode && state.playerStatus.claimQr?.length ? (
-          <section className="fallbackScreen claimWithQr" aria-live="polite">
+        {claimCode && claimQr?.length ? (
+          <section className="fallbackScreen pairingScreen claimWithQr" aria-live="polite">
             <div>
-              <p className="label">Claim this screen</p>
-              <h1 className="claimCode">{state.playerStatus.claimCode}</h1>
-              <p>Scan the square with your phone, or type this code into Digital Curator.</p>
-              <p>The screen connects on its own once it is added.</p>
+              <p className="label">Pair this screen</p>
+              {code}
+              <ol className="pairingSteps">
+                <li><span>1</span>Scan the square with your phone camera</li>
+                <li><span>2</span>Sign in to Digital Curator and choose Add screen</li>
+                <li><span>3</span>The screen connects on its own</li>
+              </ol>
+              <p className="pairingAlt">No phone? Open Screens in Digital Curator, choose Add screen and enter the code.</p>
+              {statusLine}
             </div>
             <figure className="claimQr">
-              <QrCode label="Add this screen in Digital Curator" rows={state.playerStatus.claimQr} />
+              <QrCode label="Add this screen in Digital Curator" rows={claimQr} />
               <figcaption>Scan to add this screen</figcaption>
             </figure>
           </section>
         ) : (
-          <section className="fallbackScreen" aria-live="polite">
-            <p className="label">Claim this screen</p>
-            <h1 className="claimCode">{state.playerStatus?.claimCode ?? "••••••"}</h1>
-            <p>Open Digital Curator, enter this code, and the screen will connect automatically.</p>
+          <section className="fallbackScreen pairingScreen" aria-live="polite">
+            <p className="label">Pair this screen</p>
+            {code}
+            <ol className="pairingSteps">
+              <li><span>1</span>Open Digital Curator on a phone or computer</li>
+              <li><span>2</span>Go to Screens and choose Add screen</li>
+              <li><span>3</span>Enter this code. The screen connects on its own</li>
+            </ol>
+            {statusLine}
           </section>
         )}
       </main>
@@ -345,7 +390,11 @@ export function PlayerApp() {
           <div className="waitingMark" aria-hidden="true" />
           <p className="label">Screen ready</p>
           <h1>{state.status === "loading" ? "Starting player" : "Waiting for content"}</h1>
-          <p>Assign a playlist in Digital Curator. This screen will update automatically.</p>
+          <p>
+            {state.status === "loading"
+              ? "This only takes a moment."
+              : "This screen is paired. Choose a playlist for it in Digital Curator and it will start playing automatically."}
+          </p>
           {state.playerStatus?.lastError ? <p className="technicalError">{state.playerStatus.lastError}</p> : null}
         </section>
       </main>
@@ -386,7 +435,8 @@ export function PlayerApp() {
         )}
       </div>
 
-      {state.status === "offline" ? (
+      {state.status === "offline" ||
+      (state.playerStatus?.claimed && state.playerStatus.online === false) ? (
         <div className="playerStatus" role="status">Offline · playing saved content</div>
       ) : null}
       {state.playbackError ? (

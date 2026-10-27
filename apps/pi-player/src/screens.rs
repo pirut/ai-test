@@ -90,6 +90,16 @@ pub fn escape(text: &str) -> String {
     escaped
 }
 
+/// Splits a six-character pairing code into two groups so it reads across a room.
+pub fn format_claim_code(code: &str) -> String {
+    let clean: String = code.split_whitespace().collect::<String>().to_uppercase();
+    if clean.chars().count() != 6 {
+        return escape(&clean);
+    }
+    let (first, second) = clean.split_at(clean.char_indices().nth(3).map(|(i, _)| i).unwrap_or(3));
+    escape(&format!("{first} {second}"))
+}
+
 fn truncate(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
@@ -132,7 +142,7 @@ pub fn render(
             text(960, 470, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
             text(960, 550, 72, TEXT, "\\b1", "Starting player"),
         ],
-        Screen::Claim { code, qr } => claim_lines(code.as_deref(), qr),
+        Screen::Claim { code, qr } => claim_lines(code.as_deref(), qr, wifi),
         Screen::Waiting { downloading, error } => {
             let mut lines = vec![
                 background(),
@@ -196,7 +206,7 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
             36,
             MUTED,
             "",
-            "Choose this screen's network to receive its claim code.",
+            "Choose this screen's network to get a pairing code.",
         ));
         560
     };
@@ -242,57 +252,93 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
     lines
 }
 
-fn claim_lines(code: Option<&str>, qr: &[String]) -> Vec<String> {
-    let code = code.unwrap_or("••••••");
+fn claim_lines(code: Option<&str>, qr: &[String], wifi: Option<&WifiStatus>) -> Vec<String> {
+    let code = code
+        .map(format_claim_code)
+        .unwrap_or_else(|| "••• •••".to_string());
+    let status = match wifi {
+        Some(wifi) if wifi.connected => match wifi.ssid.as_deref().filter(|s| !s.is_empty()) {
+            Some(ssid) => format!("Online via {}", truncate(ssid, 40)),
+            None => "Online".to_string(),
+        },
+        Some(_) => "Waiting for network".to_string(),
+        None => "Online".to_string(),
+    };
     if qr.is_empty() {
         return vec![
             background(),
-            text(960, 330, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
-            text(960, 500, 200, TEXT, "\\b1\\fsp24", code),
+            text(960, 250, 30, ACCENT, "\\b1\\fsp4", "PAIR THIS SCREEN"),
+            text(960, 410, 200, TEXT, "\\b1\\fsp24", &code),
             text(
                 960,
-                680,
+                590,
                 38,
                 MUTED,
                 "",
-                "Open Digital Curator, enter this code, and the screen will connect automatically.",
+                "1   Open Digital Curator on a phone or computer",
             ),
+            text(
+                960,
+                650,
+                38,
+                MUTED,
+                "",
+                "2   Go to Screens and choose Add screen",
+            ),
+            text(
+                960,
+                710,
+                38,
+                MUTED,
+                "",
+                "3   Enter this code. The screen connects on its own",
+            ),
+            text(960, 820, 28, MUTED, "", &status),
         ];
     }
     // The phone that just set up Wi-Fi is in hand: scanning beats typing.
     let mut lines = vec![
         background(),
-        text(660, 300, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
-        text(660, 470, 170, TEXT, "\\b1\\fsp20", code),
+        text(660, 250, 30, ACCENT, "\\b1\\fsp4", "PAIR THIS SCREEN"),
+        text(660, 410, 170, TEXT, "\\b1\\fsp20", &code),
         text(
             660,
-            640,
+            590,
             36,
             MUTED,
             "",
-            "Scan the square on the right with your phone,",
+            "1   Scan the square with your phone camera",
         ),
         text(
             660,
-            690,
+            650,
             36,
             MUTED,
             "",
-            "or type this code into Digital Curator.",
+            "2   Sign in to Digital Curator and choose Add screen",
         ),
         text(
             660,
-            780,
-            30,
+            710,
+            36,
             MUTED,
             "",
-            "The screen connects on its own once it is added.",
+            "3   The screen connects on its own",
         ),
+        text(
+            660,
+            800,
+            28,
+            MUTED,
+            "",
+            "No phone? Open Screens in Digital Curator, choose Add screen and enter the code.",
+        ),
+        text(660, 880, 28, MUTED, "", &status),
     ];
-    let size = qr_lines(&mut lines, qr, 1240, 300, 440);
+    let size = qr_lines(&mut lines, qr, 1240, 280, 440);
     lines.push(text(
         1240 + size / 2,
-        300 + size + 50,
+        280 + size + 50,
         30,
         TEXT,
         "\\b1",
@@ -677,7 +723,8 @@ mod tests {
         )
         .unwrap();
         assert!(events.contains("XY12"));
-        assert!(events.contains("CLAIM THIS SCREEN"));
+        assert!(events.contains("PAIR THIS SCREEN"));
+        assert!(events.contains("Go to Screens and choose Add screen"));
         assert!(!events.contains("Scan to add"));
 
         let events = render(
@@ -692,6 +739,8 @@ mod tests {
         .unwrap();
         assert!(events.contains("XY12"));
         assert!(events.contains("Scan to add this screen"));
+        assert!(events.contains("Scan the square with your phone camera"));
+        assert_eq!(format_claim_code("k7p4qx"), "K7P 4QX");
     }
 
     #[test]
