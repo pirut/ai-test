@@ -349,6 +349,19 @@ def check_files(fs, errors):
             errors.append(f"VARIANT_ID={variant} does not match the OS channel file being {'present' if channel else 'absent'}")
 
 
+def check_hotspot(fs, errors):
+    # NetworkManager runs the first-time setup hotspot through wpa_supplicant,
+    # which refuses access-point mode unless it was built with it.
+    paths = [f"/{d}/wpa_supplicant" for d in PATH_DIRS]
+    binary = next((fs.resolve(p) for p in paths if fs.executable(p)), None)
+    if not binary:
+        return
+    with open(binary, "rb") as handle:
+        if b"AP mode support not included in the build" in handle.read():
+            errors.append("wpa_supplicant lacks AP mode, so the setup hotspot cannot start; "
+                          "set BR2_PACKAGE_WPA_SUPPLICANT_AP_SUPPORT=y")
+
+
 def check_modules(fs, errors):
     base = fs.resolve("/usr/lib/modules")
     versions = sorted(os.listdir(base)) if base and os.path.isdir(base) else []
@@ -395,6 +408,7 @@ def main():
         check_enabled(fs, errors)
         check_files(fs, errors)
         check_foreign(fs, errors)
+        check_hotspot(fs, errors)
         check_modules(fs, errors)
         # Extracted files keep their modes; make sure cleanup can remove them.
         for dirpath, dirnames, _ in os.walk(workdir):
