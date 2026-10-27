@@ -69,6 +69,8 @@ jobs:
         run: ./infra/buildroot/tests/post-image-dry-run.sh
       - name: Defconfig resolves as written
         run: ./infra/buildroot/tests/check-defconfig.sh
+      - name: FFmpeg patch gives every pixel format a descriptor
+        run: python3 infra/buildroot/tests/check-ffmpeg-patch.py
 
   image:
     needs: checks
