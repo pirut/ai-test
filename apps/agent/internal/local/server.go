@@ -33,6 +33,13 @@ func (s *Server) needsWiFiSetup() bool {
 	return !status.Claimed && status.ClaimCode == ""
 }
 
+// OnWiFiOnline sets what runs when first-time setup gets the screen online.
+func (s *Server) OnWiFiOnline(fn func()) {
+	s.wifi.mu.Lock()
+	s.wifi.onOnline = fn
+	s.wifi.mu.Unlock()
+}
+
 // RunWiFiSetup runs the setup hotspot when the image enables it.
 func (s *Server) RunWiFiSetup(ctx context.Context) {
 	s.wifi.Run(ctx)

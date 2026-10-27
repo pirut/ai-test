@@ -311,3 +311,39 @@ func TestPortalRedirectsProbesAndAcceptsConnect(t *testing.T) {
 		t.Fatalf("open network = %d", accepted.Code)
 	}
 }
+
+func TestOnlineNotifiesSoPairingStartsAtOnce(t *testing.T) {
+	h := newSetupHarness(true)
+	online := make(chan struct{}, 4)
+	h.setup.onOnline = func() { online <- struct{}{} }
+	h.advance(0)
+	h.advance(hotspotGrace)
+
+	if err := h.setup.connect(context.Background(), wifiConfigureRequest{SSID: "Lobby"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-online:
+	case <-time.After(time.Second):
+		t.Fatal("joining Wi-Fi did not start pairing")
+	}
+
+	// Already online: later ticks stay quiet.
+	h.advance(5 * time.Second)
+	select {
+	case <-online:
+		t.Fatal("notified again without a new connection")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Ethernet after an offline spell also counts.
+	h.nm.summary.wifi.connected = false
+	h.advance(5 * time.Second)
+	h.nm.summary.wired = true
+	h.advance(5 * time.Second)
+	select {
+	case <-online:
+	case <-time.After(time.Second):
+		t.Fatal("coming online over Ethernet did not start pairing")
+	}
+}
