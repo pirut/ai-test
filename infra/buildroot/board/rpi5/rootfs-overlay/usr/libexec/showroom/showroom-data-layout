@@ -8,6 +8,7 @@ install -d -m 0755 /data/showroom /data/showroom/cache /data/showroom/state /dat
 install -d -m 0700 /data/network /data/network/system-connections
 install -d -m 0755 /data/rauc
 install -d -m 0700 /data/tailscale
+install -d -m 0755 /data/timesync
 install -d -m 2755 -g systemd-journal /data/journal
 
 # Signed app releases switch releases/<kind>/current between versions and

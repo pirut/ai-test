@@ -127,7 +127,13 @@ install -D -m 0644 "${KEYRING}" "${TARGET}/etc/rauc/keyring.pem"
 
 # Mount points on the read-only root.
 mkdir -p "${TARGET}/data" "${TARGET}/var/lib/showroom" "${TARGET}/var/lib/tailscale" \
-  "${TARGET}/etc/NetworkManager/system-connections"
+  "${TARGET}/var/lib/systemd/timesync" "${TARGET}/etc/NetworkManager/system-connections"
+
+# The Pi has no battery-backed clock and boots at 1970. systemd moves the
+# clock forward to this file's time at boot, so TLS certificates are valid
+# before the first time sync (a later boot starts from the last synchronized
+# time on the data partition instead).
+touch "${TARGET}/usr/lib/clock-epoch"
 
 # Development images follow an OS channel so a test screen gets every new
 # build without reflashing. Field images have no channel file.

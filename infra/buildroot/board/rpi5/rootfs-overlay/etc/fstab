@@ -8,3 +8,4 @@ LABEL=showroom-data  /data  ext4  rw,noatime,commit=30,x-systemd.growfs,x-system
 /data/journal  /var/log/journal  none  bind,x-systemd.requires=showroom-data-layout.service  0  0
 /data/network/system-connections  /etc/NetworkManager/system-connections  none  bind,x-systemd.requires=showroom-data-layout.service  0  0
 /data/tailscale  /var/lib/tailscale  none  bind,x-systemd.requires=showroom-data-layout.service  0  0
+/data/timesync  /var/lib/systemd/timesync  none  bind,x-systemd.requires=showroom-data-layout.service  0  0

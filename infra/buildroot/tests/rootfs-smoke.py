@@ -51,6 +51,10 @@ REQUIRED_FILES = [
     "usr/lib/os-release",
     "usr/lib/showroom/releases/player/1.0.0/index.html",
     "etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf",
+    # Clock: the boot-time floor, DNSSEC off and the timesync restart on Wi-Fi.
+    "usr/lib/clock-epoch",
+    "etc/systemd/resolved.conf.d/20-showroom.conf",
+    "etc/NetworkManager/dispatcher.d/20-showroom-timesync",
 ]
 ENABLED_UNITS = [
     "NetworkManager.service",
