@@ -1,6 +1,9 @@
 {
   "name": "showroom-signage",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "version": "0.1.0",
   "workspaces": [
     "apps/*",
