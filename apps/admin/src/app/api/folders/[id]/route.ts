@@ -29,10 +29,11 @@ export async function PATCH(
   const { id } = await params;
   const payload = patchSchema.parse(await request.json());
   return NextResponse.json({
+    // Only pass parentId when it was sent: a rename must not move the folder to the top level.
     folder: await updateLibraryFolder({
       folderId: id,
       name: payload.name,
-      parentId: payload.parentId,
+      ...("parentId" in payload ? { parentId: payload.parentId } : {}),
     }),
   });
 }

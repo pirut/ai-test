@@ -165,6 +165,7 @@ export function LibraryFolderTree({
             <div className="hidden items-center gap-1 pr-1 group-hover:flex">
               {onRename ? (
                 <button
+                  aria-label={`Rename ${folder.name}`}
                   className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                   onClick={() => onRename(folder)}
                   type="button"
@@ -174,6 +175,7 @@ export function LibraryFolderTree({
               ) : null}
               {onDelete ? (
                 <button
+                  aria-label={`Delete ${folder.name}`}
                   className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                   onClick={() => onDelete(folder)}
                   type="button"
