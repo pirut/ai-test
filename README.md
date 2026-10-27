@@ -1,6 +1,6 @@
-# Showroom Signage
+# Digital Curator
 
-Private Raspberry Pi digital signage stack for small showroom fleets.
+Private Raspberry Pi digital signage stack for small showroom fleets. The product name in the UI is Digital Curator; internal package names keep the `showroom` prefix.
 
 ## Workspace
 

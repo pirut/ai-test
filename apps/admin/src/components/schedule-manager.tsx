@@ -5,6 +5,8 @@ import { CalendarIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { ScheduleWeekView } from "@/components/schedule-week-view";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,7 +122,7 @@ function DateTimeField({
 }) {
   return (
     <div className="grid gap-2">
-      <Label className="text-[0.8rem] text-muted-foreground" htmlFor={`${id}-date`}>
+      <Label className="text-sm" htmlFor={`${id}-date`}>
         {label}
       </Label>
       <div className="grid gap-2">
@@ -168,6 +170,27 @@ function DateTimeField({
   );
 }
 
+type WindowState = "active" | "upcoming" | "ended";
+
+function windowState(window: ScheduleSummary, now: number): WindowState {
+  if (Date.parse(window.endsAt) <= now) return "ended";
+  if (Date.parse(window.startsAt) <= now) return "active";
+  return "upcoming";
+}
+
+const stateOrder: Record<WindowState, number> = { active: 0, upcoming: 1, ended: 2 };
+
+/** Other windows that overlap this one on at least one shared screen, highest priority first. */
+function overlapsFor(window: ScheduleSummary, all: ScheduleSummary[]) {
+  const start = Date.parse(window.startsAt);
+  const end = Date.parse(window.endsAt);
+  return all
+    .filter((other) => other.id !== window.id)
+    .filter((other) => Date.parse(other.startsAt) < end && start < Date.parse(other.endsAt))
+    .filter((other) => !window.targetDeviceId || !other.targetDeviceId || other.targetDeviceId === window.targetDeviceId)
+    .sort((a, b) => b.priority - a.priority);
+}
+
 export function ScheduleManager({
   initialSchedules,
   playlists,
@@ -192,6 +215,12 @@ export function ScheduleManager({
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const playlistOptions = useMemo(
     () =>
@@ -336,12 +365,12 @@ export function ScheduleManager({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
-      <Card className="border border-border/70 bg-card/95">
-        <CardHeader className="border-b border-border/60">
-          <CardTitle className="text-[0.92rem] font-semibold">
+      <Card className="h-fit xl:sticky xl:top-20">
+        <CardHeader className="border-b">
+          <CardTitle>
             {editingId ? "Edit schedule" : "Create schedule"}
           </CardTitle>
-          <p className="text-[0.78rem] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {editingId
               ? "Update the window, playlist, and target, then save."
               : "Set a time window, assign a playlist, and choose a target."}
@@ -349,7 +378,7 @@ export function ScheduleManager({
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-5">
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground" htmlFor="schedule-name">
+            <Label className="text-sm" htmlFor="schedule-name">
               Name
             </Label>
             <Input
@@ -381,7 +410,8 @@ export function ScheduleManager({
           />
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground">Priority</Label>
+            <Label className="text-sm">Priority</Label>
+            <p className="text-xs text-muted-foreground">When windows overlap, the higher number plays.</p>
             <Select items={PRIORITY_OPTIONS} onValueChange={(value) => setPriority(value ?? "10")} value={priority}>
               <SelectTrigger>
                 <SelectValue />
@@ -397,7 +427,7 @@ export function ScheduleManager({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground">Playlist</Label>
+            <Label className="text-sm">Playlist</Label>
             <Select
               disabled={!hasPlaylists}
               items={playlistOptions}
@@ -418,7 +448,7 @@ export function ScheduleManager({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-[0.8rem] text-muted-foreground">Target</Label>
+            <Label className="text-sm">Screens</Label>
             <Select
               items={deviceOptions}
               onValueChange={(value) => setDeviceId(value === ALL_SCREENS_VALUE ? "" : value ?? "")}
@@ -454,41 +484,55 @@ export function ScheduleManager({
           </div>
 
           {status ? (
-            <p className={cn("text-[0.8rem] font-mono", status.ok ? "text-primary" : "text-destructive")}>
+            <p role="status" className={cn("text-xs", status.ok ? "text-signal" : "text-destructive")}>
               {status.text}
             </p>
           ) : !hasPlaylists ? (
-            <p className="text-[0.8rem] font-mono text-muted-foreground">
-              Create a playlist before building a schedule.
+            <p className="text-xs text-muted-foreground">
+              Create a playlist first, then come back to schedule it.
             </p>
           ) : null}
         </CardContent>
       </Card>
 
-      <section>
+      <section className="flex min-w-0 flex-col gap-6">
+        <ScheduleWeekView
+          windows={schedules}
+          selectedId={editingId}
+          onSelect={(id) => {
+            const target = schedules.find((schedule) => schedule.id === id);
+            if (target) startEditing(target);
+          }}
+        />
         {schedules.length > 0 ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-            {schedules.map((window) => {
+            {[...schedules]
+              .sort((a, b) => {
+                return stateOrder[windowState(a, now)] - stateOrder[windowState(b, now)] || Date.parse(a.startsAt) - Date.parse(b.startsAt);
+              })
+              .map((window) => {
+              const state = windowState(window, now);
+              const overlaps = state === "ended" ? [] : overlapsFor(window, schedules.filter((other) => windowState(other, now) !== "ended"));
+              const outranked = overlaps.find((other) => other.priority > window.priority);
               return (
                 <Card
                   key={window.id}
                   className={cn(
-                    "border bg-card/95 transition-colors",
-                    editingId === window.id
-                      ? "border-primary/50 bg-primary/5"
-                      : "border-border/70",
+                    "transition-colors",
+                    editingId === window.id && "border-primary/50 bg-accent/40",
+                    state === "ended" && "opacity-60",
                   )}
+                  size="sm"
                 >
-                  <CardHeader className="border-b border-border/60 pb-3">
+                  <CardHeader className="border-b">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="truncate text-[0.88rem] font-semibold">
-                            {window.label}
-                          </CardTitle>
-                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
-                            P{window.priority}
-                          </span>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <CardTitle className="truncate">{window.label}</CardTitle>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant={state === "active" ? "success" : state === "upcoming" ? "info" : "secondary"}>
+                            {state === "active" ? "Playing now" : state === "upcoming" ? "Upcoming" : "Ended"}
+                          </Badge>
+                          <Badge variant="outline">Priority {window.priority}</Badge>
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
@@ -502,38 +546,49 @@ export function ScheduleManager({
                           Edit
                         </Button>
                         <Button
-                          className={confirmDeleteId === window.id ? "border-destructive/30 text-destructive hover:bg-destructive/10" : ""}
+                          className={confirmDeleteId === window.id ? "text-destructive hover:bg-destructive/10" : ""}
                           disabled={deleting}
                           onClick={() => void handleDelete(window.id)}
                           size="sm"
                           type="button"
                           variant="ghost"
                         >
-                          {confirmDeleteId === window.id ? "Confirm?" : "Delete"}
+                          {confirmDeleteId === window.id ? "Really delete?" : "Delete"}
                         </Button>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="divide-y divide-border/60 pt-1">
-                    {[
-                      { label: "Playlist", value: window.playlistName ?? "Unassigned" },
-                      { label: "Target", value: window.targetLabel },
-                      { label: "Starts", value: formatScheduleDateTime(window.startsAt) },
-                      { label: "Ends", value: formatScheduleDateTime(window.endsAt) },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex items-center justify-between gap-4 py-2 text-sm">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className="font-mono text-[0.8rem] text-foreground">{value}</span>
-                      </div>
-                    ))}
+                  <CardContent className="flex flex-col">
+                    <dl className="divide-y">
+                      {[
+                        { label: "Playlist", value: window.playlistName ?? "Unassigned" },
+                        { label: "Screens", value: window.targetLabel },
+                        { label: "Starts", value: formatScheduleDateTime(window.startsAt) },
+                        { label: "Ends", value: formatScheduleDateTime(window.endsAt) },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex items-center justify-between gap-4 py-1.5 text-sm">
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd className="truncate text-right">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {overlaps.length ? (
+                      <p className={cn("mt-2 text-xs", outranked ? "text-warning" : "text-muted-foreground")}>
+                        {outranked
+                          ? `Overlaps "${outranked.label}" (priority ${outranked.priority}), which plays instead while both are on.`
+                          : `Overlaps ${overlaps.length} other window${overlaps.length === 1 ? "" : "s"}; this one wins on priority.`}
+                      </p>
+                    ) : null}
                   </CardContent>
                 </Card>
               );
             })}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center">
-            <p className="text-[0.85rem] text-muted-foreground">No schedules yet. Create one on the left.</p>
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No schedules yet. Every screen plays its default playlist all the time. Add a window on the left to play something different at certain times.
+            </p>
           </div>
         )}
       </section>

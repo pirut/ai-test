@@ -64,8 +64,23 @@ type MockState = {
   manifests: Record<string, DeviceManifest>;
   screenshots: ScreenshotRecord[];
   commands: DeviceCommand[];
+  // Delivery state per command id; a command with no entry is still queued.
+  commandStates?: Record<string, MockCommandState>;
   registrations: RegistrationRecord[];
 };
+
+type MockCommandState = {
+  status: "in_progress" | "succeeded" | "failed";
+  startedAt: string;
+  completedAt: string | null;
+  message: string | null;
+};
+
+function commandStates() {
+  const mockState = state();
+  mockState.commandStates ??= {};
+  return mockState.commandStates;
+}
 
 type FolderKind = LibraryFolder["kind"];
 
@@ -427,12 +442,16 @@ export function listCommands(deviceId?: string) {
   return state()
     .commands
     .filter((command) => (deviceId ? command.deviceId === deviceId : true))
-    .map((command) => ({
-      ...command,
-      status: "queued" as const,
-      completedAt: null,
-      message: null,
-    }));
+    .map((command) => {
+      const delivery = commandStates()[command.id];
+      return {
+        ...command,
+        status: delivery?.status ?? ("queued" as const),
+        startedAt: delivery?.startedAt ?? null,
+        completedAt: delivery?.completedAt ?? null,
+        message: delivery?.message ?? null,
+      };
+    });
 }
 
 export function latestScreenshot(deviceId: string) {
@@ -875,7 +894,8 @@ export function compileManifests(orgId: string) {
       generatedAt: new Date().toISOString(),
       manifestVersion: version,
     };
-    device.manifestVersion = version;
+    device.desiredManifestVersion = version;
+    device.contentState = device.manifestVersion === version ? "current" : "updating";
   }
 
   return {
@@ -907,11 +927,14 @@ export function getClaimStatus(input: { deviceSessionId: string; claimToken: str
       entry.deviceSessionId === input.deviceSessionId &&
       entry.claimToken === input.claimToken,
   );
+  if (!registration) {
+    throw new Error("Unknown registration");
+  }
 
   return claimStatusResponseSchema.parse({
-    claimed: Boolean(registration?.claimedDeviceId && registration?.credential),
-    deviceId: registration?.claimedDeviceId,
-    credential: registration?.credential,
+    claimed: Boolean(registration.claimedDeviceId && registration.credential),
+    deviceId: registration.claimedDeviceId,
+    credential: registration.credential,
     pollAgainSeconds: 15,
   });
 }
@@ -943,8 +966,20 @@ export function getManifestForDevice(deviceId: string) {
   return state().manifests[deviceId] ?? null;
 }
 
+export function hasQueuedCommands(deviceId: string) {
+  const states = commandStates();
+  return state().commands.some((command) => command.deviceId === deviceId && !states[command.id]);
+}
+
+// Hands queued commands to the screen once, like the Convex claim does.
 export function getCommandsForDevice(deviceId: string) {
-  return state().commands.filter((command) => command.deviceId === deviceId);
+  const states = commandStates();
+  const startedAt = new Date().toISOString();
+  const queued = state().commands.filter((command) => command.deviceId === deviceId && !states[command.id]);
+  for (const command of queued) {
+    states[command.id] = { status: "in_progress", startedAt, completedAt: null, message: null };
+  }
+  return queued;
 }
 
 export function recordHeartbeat(deviceId: string, payload: Record<string, unknown>) {
@@ -962,6 +997,16 @@ export function recordHeartbeat(deviceId: string, payload: Record<string, unknow
 
   device.status = "online";
   device.lastHeartbeatAt = new Date().toISOString();
+  if (parsedPayload.manifestVersion) {
+    device.manifestVersion = parsedPayload.manifestVersion;
+    if (device.desiredManifestVersion) {
+      device.contentState = device.desiredManifestVersion === device.manifestVersion ? "current" : "updating";
+    }
+  }
+  if (parsedPayload.sync) {
+    device.lastSyncAt = parsedPayload.sync.lastSyncAt ?? device.lastSyncAt ?? null;
+    device.lastError = parsedPayload.sync.lastError || null;
+  }
   if (parsedPayload.appliance && isFleetManagedDevice({
     applianceGeneration: parsedPayload.appliance.generation,
     agentProtocolVersion: parsedPayload.appliance.protocolVersion,
@@ -991,7 +1036,19 @@ export function recordScreenshot(input: {
 }
 
 export function recordCommandResult(result: DeviceCommandResult) {
-  return deviceCommandResultSchema.parse(result);
+  const parsed = deviceCommandResultSchema.parse(result);
+  const states = commandStates();
+  const previous = states[parsed.commandId];
+  if (parsed.status !== "queued") {
+    const finished = parsed.status === "succeeded" || parsed.status === "failed";
+    states[parsed.commandId] = {
+      status: parsed.status,
+      startedAt: previous?.startedAt ?? new Date().toISOString(),
+      completedAt: finished ? parsed.completedAt ?? new Date().toISOString() : null,
+      message: parsed.message ?? null,
+    };
+  }
+  return parsed;
 }
 
 export function deletePlaylist(id: string) {

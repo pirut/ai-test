@@ -27,20 +27,23 @@ export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: strin
         <Plus data-icon="inline-start" />
         Add screen
       </SheetTrigger>
-      <SheetContent className="dashboard-theme w-full p-0 sm:max-w-md">
+      <SheetContent className="w-full p-0 sm:max-w-md">
         <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="text-xl font-semibold">Add a screen</SheetTitle>
           <SheetDescription className="leading-6">
-            Enter the six-digit claim code shown by the Pi. The screen will join this fleet and begin receiving content.
+            Enter the 6-character code shown on the screen. We&apos;ll wait here until the screen connects.
           </SheetDescription>
         </SheetHeader>
         <Separator />
         <div className="p-6">
           <ClaimDeviceForm
+            // Remount on every open so the panel always starts at the form.
+            key={open ? "open" : "closed"}
             embedded
             initialClaimCode={initialClaimCode}
-            onClaimed={() => {
-              router.replace("/screens");
+            // Drop ?claim= once it is used, so reopening the panel starts empty.
+            onClaimed={() => (initialClaimCode ? router.replace("/screens") : router.refresh())}
+            onDone={() => {
               router.refresh();
               setOpen(false);
             }}

@@ -126,7 +126,7 @@ export function WiFiSetup({
       setSubmission({
         status: "success",
         message: next.connected
-          ? `Connected to ${next.ssid ?? name}. Waiting for claim code…`
+          ? `Connected to ${next.ssid ?? name}. Waiting for a pairing code…`
           : "Credentials saved. Waiting for the network…",
       });
       setPassword("");
@@ -215,22 +215,23 @@ export function WiFiSetup({
       )}
       <label className="wifiField">
         <span>{manual ? "Password (leave empty for an open network)" : "Password"}</span>
-        <input
-          autoCapitalize="off"
-          autoComplete="off"
-          autoCorrect="off"
-          autoFocus={!manual}
-          maxLength={63}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Wi-Fi password"
-          spellCheck={false}
-          type={showPassword ? "text" : "password"}
-          value={password}
-        />
-      </label>
-      <label className="showPassword">
-        <input checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} type="checkbox" />
-        Show password
+        <span className="passwordInput">
+          <input
+            autoCapitalize="off"
+            autoComplete="off"
+            autoCorrect="off"
+            autoFocus={!manual}
+            maxLength={63}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Wi-Fi password"
+            spellCheck={false}
+            type={showPassword ? "text" : "password"}
+            value={password}
+          />
+          <button className="revealButton" onClick={() => setShowPassword((value) => !value)} type="button">
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </span>
       </label>
       <button disabled={saving} type="submit">
         {saving ? "Connecting…" : "Connect screen"}
@@ -295,7 +296,7 @@ export function WiFiSetup({
           <p className="label">First-time setup</p>
           <h1>Connect to Wi-Fi</h1>
           {hotspot ? null : (
-            <p className="setupCopy">Choose this screen&apos;s network to receive its claim code.</p>
+            <p className="setupCopy">Choose this screen&apos;s network to get a pairing code.</p>
           )}
           <div className={hotspot ? "setupColumns" : undefined}>
             {hotspot ? (
