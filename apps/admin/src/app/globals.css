@@ -4,55 +4,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
-.dark,
+/*
+ * Theme tokens. Light is the default; `.dark` (set by next-themes on <html>)
+ * swaps the palette. Tokens live on :root so portalled popovers, menus and
+ * dialogs pick up the same theme as the page.
+ */
 :root {
-  --background:            #0c0e11;
-  --foreground:            #f9f9fd;
-  --card:                  #111417;
-  --card-foreground:       #f9f9fd;
-  --popover:               #171a1d;
-  --popover-foreground:    #f9f9fd;
-  --primary:               #8dacff;
-  --primary-foreground:    #001f57;
-  --secondary:             #23262a;
-  --secondary-foreground:  #dae2f9;
-  --muted:                 #171a1d;
-  --muted-foreground:      #aaabaf;
-  --accent:                #1d2024;
-  --accent-foreground:     #f9f9fd;
-  --destructive:           #ff6e84;
-  --destructive-foreground:#490013;
-  --border:                rgba(116, 117, 121, 0.18);
-  --input:                 rgba(70, 72, 75, 0.75);
-  --ring:                  #608fff;
-  --radius:                0.625rem;
-
-  --sidebar:               #111417;
-  --sidebar-foreground:    #f5f7fd;
-  --sidebar-border:        rgba(116, 117, 121, 0.14);
-  --sidebar-accent:        #1b2027;
-  --sidebar-accent-foreground: #f9f9fd;
-  --sidebar-primary:       #8dacff;
-  --sidebar-primary-foreground: #001f57;
-  --sidebar-ring:          #608fff;
-  --surface-low:           #111417;
-  --surface-high:          #1d2024;
-  --surface-highest:       #23262a;
-  --outline-soft:          rgba(70, 72, 75, 0.55);
-
-  --signal:                #7cd39d;
-  --warning:               #f5c77d;
-  --danger:                #ff7d91;
-  --queue:                 #d0b0ff;
-  --unclaimed:             #7ea5ff;
-  --font-app-sans:         Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-app-heading:      "Avenir Next", Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-app-mono:         "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-}
-
-.dashboard-theme {
   color-scheme: light;
-  --background: #f7f8fa;
+  --background: #f6f7f9;
   --foreground: #111827;
   --card: #ffffff;
   --card-foreground: #111827;
@@ -60,23 +19,23 @@
   --popover-foreground: #111827;
   --primary: #295dff;
   --primary-foreground: #ffffff;
-  --secondary: #e9edf2;
+  --secondary: #eceff3;
   --secondary-foreground: #1f2937;
   --muted: #eef1f4;
-  --muted-foreground: #697386;
+  --muted-foreground: #667085;
   --accent: #eef2ff;
   --accent-foreground: #1f3fb8;
-  --destructive: #d94a5a;
+  --destructive: #d43c4f;
   --destructive-foreground: #ffffff;
-  --border: #dce2e9;
-  --input: #cfd6df;
+  --border: #e1e6ec;
+  --input: #d0d7e0;
   --ring: #295dff;
   --radius: 0.625rem;
 
-  --sidebar: #111827;
+  --sidebar: #0f1624;
   --sidebar-foreground: #f8fafc;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-accent: #243047;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-accent: #1e293d;
   --sidebar-accent-foreground: #ffffff;
   --sidebar-primary: #295dff;
   --sidebar-primary-foreground: #ffffff;
@@ -84,13 +43,58 @@
   --surface-low: #f8fafc;
   --surface-high: #eef1f4;
   --surface-highest: #e4e9ef;
-  --outline-soft: #dce2e9;
+  --outline-soft: #e1e6ec;
 
-  --signal: #17875d;
-  --warning: #b86b0c;
-  --danger: #d94a5a;
-  --queue: #7857c5;
+  --signal: #14804f;
+  --warning: #b25e09;
+  --danger: #d43c4f;
+  --queue: #7351c2;
   --unclaimed: #295dff;
+  --font-app-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-app-heading: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-app-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0b0f15;
+  --foreground: #eef1f6;
+  --card: #121821;
+  --card-foreground: #eef1f6;
+  --popover: #161d27;
+  --popover-foreground: #eef1f6;
+  --primary: #7c9dff;
+  --primary-foreground: #08132f;
+  --secondary: #1d2532;
+  --secondary-foreground: #dbe3f1;
+  --muted: #18202b;
+  --muted-foreground: #98a2b3;
+  --accent: #1b2540;
+  --accent-foreground: #c9d6ff;
+  --destructive: #ff7387;
+  --destructive-foreground: #3d0010;
+  --border: rgba(148, 163, 184, 0.16);
+  --input: rgba(148, 163, 184, 0.26);
+  --ring: #7c9dff;
+
+  --sidebar: #0a0e14;
+  --sidebar-foreground: #eef1f6;
+  --sidebar-border: rgba(148, 163, 184, 0.12);
+  --sidebar-accent: #18202b;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-primary: #7c9dff;
+  --sidebar-primary-foreground: #08132f;
+  --sidebar-ring: #7c9dff;
+  --surface-low: #0f141c;
+  --surface-high: #18202b;
+  --surface-highest: #1f2937;
+  --outline-soft: rgba(148, 163, 184, 0.2);
+
+  --signal: #5fd394;
+  --warning: #f2bb63;
+  --danger: #ff7d91;
+  --queue: #c4a6ff;
+  --unclaimed: #7ea5ff;
 }
 
 @theme inline {
@@ -153,10 +157,6 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
-
-  html {
-    color-scheme: dark;
   }
 
   body {

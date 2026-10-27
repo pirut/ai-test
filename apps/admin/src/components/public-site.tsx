@@ -9,19 +9,17 @@ const navItems = [
   { href: "/#pricing", label: "Pricing" },
 ];
 
-const logoNames = ["VOLT", "AXON", "NEXUS", "ORBIT", "FLUX"];
-
 export function PublicNav() {
   return (
     <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/6 bg-[#131313]/82 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-4">
         <Link href="/" className="flex items-center gap-3 text-white">
           <div className="flex size-9 items-center justify-center rounded-lg bg-white text-sm font-black text-[#131313]">
-            S
+            DC
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-tight">Screen</div>
-            <div className="text-[11px] text-[#c2c6d6]">Digital curator</div>
+            <div className="text-sm font-semibold tracking-tight">Digital Curator</div>
+            <div className="text-[11px] text-[#c2c6d6]">Showroom screens</div>
           </div>
         </Link>
 
@@ -56,30 +54,11 @@ export function PublicNav() {
   );
 }
 
-export function LogoCloud() {
-  return (
-    <section className="bg-[#131313] py-20">
-      <div className="mx-auto max-w-7xl px-6">
-        <p className="text-center text-[10px] font-semibold uppercase tracking-[0.3em] text-[#c2c6d6]/60">
-          Trusted by modern design teams
-        </p>
-        <div className="mt-12 flex flex-wrap items-center justify-center gap-10 opacity-45 grayscale sm:gap-20">
-          {logoNames.map((name) => (
-            <span key={name} className="text-2xl font-black tracking-tight text-white">
-              {name}
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function PublicFooter() {
   return (
     <footer className="border-t border-[#424754]/15 bg-[#0e0e0e] py-10">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 md:flex-row md:items-center md:justify-between">
-        <div className="text-lg font-bold text-white">Screen</div>
+        <div className="text-lg font-bold text-white">Digital Curator</div>
         <div className="flex flex-wrap gap-6 text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]">
           <Link href="/#features" className="transition-colors hover:text-[#adc6ff]">
             Features
@@ -161,7 +140,7 @@ export function HeroShowcase() {
                   One surface for library, releases, and proof of playback.
                 </h3>
                 <p className="mt-4 text-sm leading-6 text-[#c2c6d6]">
-                  The marketing page borrows the same dark editorial system from the Stitch source, then adapts it to the actual Screen product model.
+                  Upload once, schedule what plays where, and see a live screenshot from every display.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -221,7 +200,7 @@ export function PublicAuthShell({
                 Curate your digital assets with precision.
               </h1>
               <p className="mt-5 max-w-lg text-base leading-7 text-[#c2c6d6]">
-                Screen gives operators a cinematic control surface for media libraries, playlists, schedules, and proof of playback.
+                Digital Curator gives operators a cinematic control surface for media libraries, playlists, schedules, and proof of playback.
               </p>
             </div>
 
@@ -261,7 +240,7 @@ export function PublicAuthShell({
               <div className="size-12 overflow-hidden rounded-full bg-[#353534]">
                 <Image
                   src="/marketing/testimonial-portrait.png"
-                  alt="Portrait used with the stitched testimonial treatment."
+                  alt=""
                   width={512}
                   height={512}
                   className="h-full w-full object-cover"
@@ -269,10 +248,7 @@ export function PublicAuthShell({
               </div>
               <div>
                 <p className="max-w-xl text-sm leading-6 text-white">
-                  “Screen treats operational media like curated work, not a pile of files.”
-                </p>
-                <p className="mt-1 text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]/75">
-                  Julian Thorne, creative director
+                  Screens keep playing saved content if the internet drops, and pick up changes as soon as they reconnect.
                 </p>
               </div>
             </div>

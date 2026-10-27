@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,9 @@ type Service struct {
 	// syncMu serializes pairing, credential refresh and manifest sync.
 	syncMu      sync.Mutex
 	syncTrigger chan struct{}
+	// heartbeatTrigger sends a heartbeat now, so the dashboard sees new
+	// content or a command's effect without waiting for the next tick.
+	heartbeatTrigger chan struct{}
 
 	authMu                   sync.Mutex
 	rejectedCredential       string
@@ -102,6 +106,7 @@ func New(cfg config.Config) (*Service, error) {
 		hydrationFailures: make(map[string]hydrationFailure),
 		now:               time.Now,
 		syncTrigger:       make(chan struct{}, 1),
+		heartbeatTrigger:  make(chan struct{}, 1),
 	}, nil
 }
 
@@ -545,14 +550,14 @@ func (s *Service) runHealthLoop(ctx context.Context) {
 }
 
 func (s *Service) runHeartbeatLoop(ctx context.Context) {
-	send := func() {
+	send := func(force bool) {
 		snapshot := s.store.Snapshot()
-		if err := s.maybeSendHeartbeat(ctx, snapshot); err != nil {
+		if err := s.sendHeartbeat(ctx, snapshot, force); err != nil {
 			s.noteRequestError(snapshot.Credential, err)
 			log.Printf("heartbeat failed: %v", err)
 		}
 	}
-	send()
+	send(false)
 
 	ticker := time.NewTicker(s.config.HeartbeatInterval)
 	defer ticker.Stop()
@@ -562,8 +567,20 @@ func (s *Service) runHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			send()
+			send(false)
+		case <-s.heartbeatTrigger:
+			send(true)
 		}
+	}
+}
+
+func (s *Service) requestHeartbeat() {
+	if s.heartbeatTrigger == nil {
+		return
+	}
+	select {
+	case s.heartbeatTrigger <- struct{}{}:
+	default:
 	}
 }
 
@@ -620,6 +637,10 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		}
 	}
 
+	if manifest.ManifestVersion != previousState.ManifestVersion {
+		// Tell the dashboard the new content landed once state is saved.
+		defer s.requestHeartbeat()
+	}
 	if err := s.store.Update(func(next *state.DeviceState) {
 		next.DeviceID = manifest.DeviceID
 		next.ManifestVersion = manifest.ManifestVersion
@@ -975,9 +996,20 @@ func (s *Service) resolveYouTubeDLBinary(ctx context.Context) (string, error) {
 }
 
 func (s *Service) processCommands(ctx context.Context, credential string, wait time.Duration) (int, error) {
-	commands, err := s.client.FetchCommands(ctx, credential, wait)
+	batch, err := s.client.FetchCommands(ctx, credential, wait)
 	if err != nil {
 		return 0, err
+	}
+	if contentChanged(batch.ManifestVersion, s.store.Snapshot().ManifestVersion) {
+		// New content was published from the dashboard; fetch it now rather
+		// than on the next regular sync.
+		s.requestSync()
+	}
+	commands := batch.Commands
+	if len(commands) > 0 {
+		// Report back once this batch is done, so the dashboard reflects a
+		// blank, restart or sync within seconds.
+		defer s.requestHeartbeat()
 	}
 
 	for _, command := range commands {
@@ -1044,16 +1076,19 @@ func (s *Service) executeCommand(ctx context.Context, credential string, command
 	return err
 }
 
-// syncNow runs a manifest sync for the dashboard's "Sync now" button. When the
-// background sync is already running it reports that instead of queueing a
-// second download behind it, so the command loop stays responsive.
+// syncNow handles the dashboard's "Sync now" button by waking the sync loop.
+// It does not run the sync inline: a sync can spend minutes downloading
+// media, and the command loop must stay free for the next button press. The
+// dashboard follows the sync through the screen's reported content state.
 func (s *Service) syncNow(ctx context.Context, credential string) error {
-	if !s.syncMu.TryLock() {
-		s.requestSync()
-		return nil
-	}
-	defer s.syncMu.Unlock()
-	return s.syncManifest(ctx, credential)
+	s.requestSync()
+	return nil
+}
+
+// contentChanged reports whether the server published content the screen has
+// not synced yet. An empty server version means the server did not say.
+func contentChanged(published string, local string) bool {
+	return published != "" && published != local
 }
 
 // finishCommand persists a command's outcome locally, then reports it. The
@@ -1096,16 +1131,28 @@ func (s *Service) finishCommand(ctx context.Context, credential string, command 
 }
 
 func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceState) error {
+	return s.sendHeartbeat(ctx, current, false)
+}
+
+// minForcedHeartbeatSpacing keeps a burst of triggered heartbeats (several
+// commands in a row) from flooding the control plane.
+const minForcedHeartbeatSpacing = 2 * time.Second
+
+func (s *Service) sendHeartbeat(ctx context.Context, current state.DeviceState, force bool) error {
 	if current.Credential == "" || current.DeviceID == "" {
 		return nil
 	}
 
+	minSpacing := s.config.HeartbeatInterval / 2
+	if force {
+		minSpacing = minForcedHeartbeatSpacing
+	}
 	if current.LastHeartbeatAt != "" {
 		lastHeartbeatAt, err := time.Parse(time.RFC3339, current.LastHeartbeatAt)
 		// Only skip a heartbeat that was just sent (for example right after
 		// claiming). Skipping anything under a full interval would halve the
 		// heartbeat rate, because ticks land slightly before the interval ends.
-		if err == nil && time.Since(lastHeartbeatAt) < s.config.HeartbeatInterval/2 {
+		if err == nil && time.Since(lastHeartbeatAt) < minSpacing {
 			return nil
 		}
 	}
@@ -1132,6 +1179,12 @@ func (s *Service) maybeSendHeartbeat(ctx context.Context, current state.DeviceSt
 		"lastSeenAt":        time.Now().UTC().Format(time.RFC3339),
 		"appliance":         applianceDescriptor(),
 		"health":            current.Health,
+		// Older control planes drop this field; newer ones show it on the
+		// dashboard so a stuck download or a bad file is visible remotely.
+		"sync": map[string]interface{}{
+			"lastSyncAt": current.LastSyncAt,
+			"lastError":  redactURLQueries(current.LastError),
+		},
 	}
 
 	if err := s.client.PostHeartbeat(ctx, current.Credential, payload); err != nil {
@@ -1209,6 +1262,14 @@ func userFacingError(err error) string {
 		return strings.TrimSpace(message[:maxLength-1]) + "…"
 	}
 	return message
+}
+
+var urlQueryPattern = regexp.MustCompile(`(https?://[^\s?#"']+)[?#](?:[^\s"']*[^\s"':,.;)])?`)
+
+// redactURLQueries drops query strings from URLs in an error before it leaves
+// the screen: media URLs can carry signed access tokens.
+func redactURLQueries(message string) string {
+	return urlQueryPattern.ReplaceAllString(message, "$1")
 }
 
 func clonePlaylist(items []remote.ManifestPlaylistItem) []remote.ManifestPlaylistItem {

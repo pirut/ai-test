@@ -3,7 +3,6 @@
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
   CalendarRange,
-  CircleCheck,
   ImageIcon,
   LayoutDashboard,
   MonitorSmartphone,
@@ -14,6 +13,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -26,6 +26,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -33,15 +34,33 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
-const navItems = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/screens", label: "Screens", icon: MonitorSmartphone },
-  { href: "/media", label: "Media", icon: ImageIcon },
-  { href: "/playlists", label: "Playlists", icon: PlaySquare },
-  { href: "/schedules", label: "Schedules", icon: CalendarRange },
-  { href: "/releases", label: "Releases", icon: Package2 },
-  { href: "/team", label: "Team", icon: Users },
+const navGroups = [
+  {
+    label: "Fleet",
+    items: [
+      { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+      { href: "/screens", label: "Screens", icon: MonitorSmartphone },
+    ],
+  },
+  {
+    label: "Content",
+    items: [
+      { href: "/media", label: "Media", icon: ImageIcon },
+      { href: "/playlists", label: "Playlists", icon: PlaySquare },
+      { href: "/schedules", label: "Schedules", icon: CalendarRange },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/releases", label: "Releases", icon: Package2 },
+      { href: "/team", label: "Team", icon: Users },
+    ],
+  },
 ];
+const navItems = navGroups.flatMap((group) => group.items);
+
+export type FleetPulse = { total: number; online: number; attention: number };
 
 const clerkAppearance = {
   variables: {
@@ -58,7 +77,15 @@ const clerkAppearance = {
   },
 } as const;
 
-export function TopShell({ children, authEnabled }: { children: React.ReactNode; authEnabled: boolean }) {
+export function TopShell({
+  children,
+  authEnabled,
+  fleetPulse,
+}: {
+  children: React.ReactNode;
+  authEnabled: boolean;
+  fleetPulse: FleetPulse | null;
+}) {
   const pathname = usePathname();
   const currentSection = navItems.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
@@ -66,7 +93,6 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
 
   return (
     <SidebarProvider
-      className="dashboard-theme"
       style={
         {
           "--sidebar-width": "16rem",
@@ -79,7 +105,6 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
-                isActive
                 size="lg"
                 tooltip="Digital Curator"
                 render={<Link href="/dashboard" />}
@@ -97,45 +122,76 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
         </SidebarHeader>
 
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {navItems.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                  const Icon = item.icon;
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    const Icon = item.icon;
+                    const attention = item.href === "/screens" ? fleetPulse?.attention ?? 0 : 0;
 
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<Link href={item.href} />}
-                        tooltip={item.label}
-                      >
-                        <Icon />
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          render={<Link href={item.href} />}
+                          tooltip={item.label}
+                        >
+                          <Icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                        {attention > 0 ? (
+                          <SidebarMenuBadge
+                            aria-label={`${attention} screens need attention`}
+                            className="bg-amber-400/15 text-amber-300 peer-hover/menu-button:text-amber-300 peer-data-active/menu-button:text-amber-300"
+                          >
+                            {attention}
+                          </SidebarMenuBadge>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
         </SidebarContent>
 
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" tooltip="Control plane online">
-                <CircleCheck className="text-signal" />
-                <span className="grid min-w-0 flex-1 text-left leading-tight">
-                  <span className="truncate text-xs font-medium">Control plane online</span>
-                  <span className="truncate text-xs text-sidebar-foreground/60">Monitoring fleet</span>
-                </span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
+        {fleetPulse ? (
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip={fleetPulseLabel(fleetPulse)}
+                  render={<Link href={fleetPulse.attention ? "/screens?view=attention" : "/screens"} />}
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+                    <span
+                      className={
+                        fleetPulse.attention
+                          ? "size-2 rounded-full bg-amber-400"
+                          : "size-2 rounded-full bg-emerald-400 motion-safe:animate-[pulse-dot_2s_ease-in-out_infinite]"
+                      }
+                    />
+                  </span>
+                  <span className="grid min-w-0 flex-1 text-left leading-tight">
+                    <span className="truncate text-xs font-medium">
+                      {fleetPulse.online} of {fleetPulse.total} screens online
+                    </span>
+                    <span className="truncate text-xs text-sidebar-foreground/60">
+                      {fleetPulse.attention
+                        ? `${fleetPulse.attention} need${fleetPulse.attention === 1 ? "s" : ""} attention`
+                        : "Everything looks good"}
+                    </span>
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarFooter>
+        ) : null}
         <SidebarRail />
       </Sidebar>
 
@@ -147,6 +203,7 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
             <span className="truncate text-sm font-medium">{currentSection.label}</span>
 
             <div className="ml-auto flex items-center gap-2">
+              <ThemeToggle />
               {authEnabled ? (
                 <>
                   <div className="hidden lg:block">
@@ -175,4 +232,10 @@ export function TopShell({ children, authEnabled }: { children: React.ReactNode;
       </SidebarInset>
     </SidebarProvider>
   );
+}
+
+function fleetPulseLabel(pulse: FleetPulse) {
+  return pulse.attention
+    ? `${pulse.attention} of ${pulse.total} screens need attention`
+    : `${pulse.online} of ${pulse.total} screens online`;
 }

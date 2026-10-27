@@ -11,10 +11,10 @@ export default async function ReleasesPage() {
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Releases"
-        description="Manage player and agent builds, then roll them out across the fleet."
+        description="Signed software updates for your screens. Roll out to a few screens first, then the rest."
       />
       <ReleaseManager initialDevices={devices} initialReleases={releases} />
     </div>

@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { isFleetManagedDevice } from "@showroom/contracts";
 
+import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
@@ -235,19 +236,37 @@ export const getManifest = query({
     return buildManifestForDevice(
       ctx,
       device,
-      device.manifestVersion ?? `manifest-${device._id}`,
+      device.desiredManifestVersion ?? device.manifestVersion ?? `manifest-${device._id}`,
     );
   },
 });
 
-// Subscribed to by the device commands endpoint while a screen long-polls, so a
-// command queued from the dashboard is delivered within about a second.
+async function activeManifestVersion(ctx: QueryCtx, device: Doc<"devices">) {
+  const manifest = (
+    await ctx.db
+      .query("compiledManifests")
+      .withIndex("by_device_and_active", (q) => q.eq("deviceId", device._id).eq("isActive", true))
+      .order("desc")
+      .take(1)
+  )[0];
+  return manifest?.version ?? device.desiredManifestVersion ?? null;
+}
+
+// What a long-polling screen waits on: a queued command, or new content
+// published from the dashboard. The commands endpoint hands manifestVersion to
+// the screen so a newer agent can sync right away instead of on its next poll.
 // Returns null when the credential is not accepted.
-export const hasQueuedCommands = query({
+export const getDeviceSignal = query({
   args: {
     credential: v.string(),
   },
-  returns: v.union(v.boolean(), v.null()),
+  returns: v.union(
+    v.object({
+      queued: v.boolean(),
+      manifestVersion: v.union(v.string(), v.null()),
+    }),
+    v.null(),
+  ),
   handler: async (ctx, args) => {
     const device = await resolveDeviceByCredential(ctx, args.credential);
     if (!device) {
@@ -257,7 +276,10 @@ export const hasQueuedCommands = query({
       .query("deviceCommands")
       .withIndex("by_device_and_status", (q) => q.eq("deviceId", device._id).eq("status", "queued"))
       .take(1);
-    return queued.length > 0;
+    return {
+      queued: queued.length > 0,
+      manifestVersion: await activeManifestVersion(ctx, device),
+    };
   },
 });
 
@@ -280,8 +302,16 @@ export const claimCommands = mutation({
       .take(10);
 
     if (!isFleetManagedDevice(device)) {
+      const deliverable = [];
+      for (const command of queued) {
+        if (command.deadlineAt && command.deadlineAt <= now) {
+          await ctx.db.patch(command._id, { status: "failed", completedAt: now, resultMessage: "Command expired before delivery" });
+        } else {
+          deliverable.push(command);
+        }
+      }
       await Promise.all(
-        queued.map(async (command) => {
+        deliverable.map(async (command) => {
           await ctx.db.patch(command._id, {
             status: "in_progress",
             startedAt: now,
@@ -299,7 +329,7 @@ export const claimCommands = mutation({
           }
         }),
       );
-      return queued.map((command) => ({
+      return deliverable.map((command) => ({
         id: command._id,
         deviceId: device._id,
         commandType: command.commandType,
@@ -416,6 +446,10 @@ export const recordHeartbeat = mutation({
       ? reportedAppliance.capabilities
       : device.capabilities;
     const health = managed ? args.payload.health : undefined;
+    // Newer agents report their sync state; older ones send nothing and the
+    // stored values are left as they were.
+    const sync = args.payload.sync;
+    const lastSyncAt = typeof sync?.lastSyncAt === "string" ? Date.parse(sync.lastSyncAt) : NaN;
     await ctx.db.insert("deviceHeartbeats", {
       organizationId: device.organizationId,
       deviceId: device._id,
@@ -494,6 +528,10 @@ export const recordHeartbeat = mutation({
         args.payload.currentPlaylistId,
       ) ?? device.currentPlaylistName,
       lastHeartbeatAt: now,
+      ...(Number.isFinite(lastSyncAt) ? { lastSyncAt } : {}),
+      ...(sync && typeof sync === "object"
+        ? { lastAgentError: typeof sync.lastError === "string" && sync.lastError ? sync.lastError.slice(0, 500) : undefined }
+        : {}),
       updatedAt: now,
     });
 
@@ -610,7 +648,11 @@ export const recordCommandResult = mutation({
             ? Date.parse(args.payload.completedAt)
             : Date.now()
           : command.completedAt,
-      leaseExpiresAt: undefined,
+      // A screen that reports "in_progress" is still working on a long command
+      // (a release download, a large sync). Extend its lease so the command is
+      // not handed out again mid-run; any final status ends the lease.
+      leaseExpiresAt:
+        args.payload.status === "in_progress" ? Date.now() + 15 * 60_000 : undefined,
       payload:
         command.commandType === "update_network" && args.payload.status !== "in_progress"
           ? { redacted: true, ssid: command.payload?.ssid }

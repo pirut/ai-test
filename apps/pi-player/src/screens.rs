@@ -80,6 +80,16 @@ pub fn escape(text: &str) -> String {
     escaped
 }
 
+/// Splits a six-character pairing code into two groups so it reads across a room.
+pub fn format_claim_code(code: &str) -> String {
+    let clean: String = code.split_whitespace().collect::<String>().to_uppercase();
+    if clean.chars().count() != 6 {
+        return escape(&clean);
+    }
+    let (first, second) = clean.split_at(clean.char_indices().nth(3).map(|(i, _)| i).unwrap_or(3));
+    escape(&format!("{first} {second}"))
+}
+
 fn truncate(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
@@ -122,26 +132,52 @@ pub fn render(
             text(960, 470, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
             text(960, 550, 72, TEXT, "\\b1", "Starting player"),
         ],
-        Screen::Claim { code } => vec![
-            background(),
-            text(960, 330, 30, ACCENT, "\\b1\\fsp4", "CLAIM THIS SCREEN"),
-            text(
-                960,
-                500,
-                200,
-                TEXT,
-                "\\b1\\fsp24",
-                code.as_deref().unwrap_or("••••••"),
-            ),
-            text(
-                960,
-                680,
-                38,
-                MUTED,
-                "",
-                "Open Digital Curator, enter this code, and the screen will connect automatically.",
-            ),
-        ],
+        Screen::Claim { code } => {
+            let code = code
+                .as_deref()
+                .map(format_claim_code)
+                .unwrap_or_else(|| "••• •••".to_string());
+            let status = match wifi {
+                Some(wifi) if wifi.connected => {
+                    match wifi.ssid.as_deref().filter(|s| !s.is_empty()) {
+                        Some(ssid) => format!("Online via {}", truncate(ssid, 40)),
+                        None => "Online".to_string(),
+                    }
+                }
+                Some(_) => "Waiting for network".to_string(),
+                None => "Online".to_string(),
+            };
+            vec![
+                background(),
+                text(960, 250, 30, ACCENT, "\\b1\\fsp4", "PAIR THIS SCREEN"),
+                text(960, 410, 200, TEXT, "\\b1\\fsp24", &code),
+                text(
+                    960,
+                    590,
+                    38,
+                    MUTED,
+                    "",
+                    "1   Open Digital Curator on a phone or computer",
+                ),
+                text(
+                    960,
+                    650,
+                    38,
+                    MUTED,
+                    "",
+                    "2   Go to Screens and choose Add screen",
+                ),
+                text(
+                    960,
+                    710,
+                    38,
+                    MUTED,
+                    "",
+                    "3   Enter this code. The screen connects on its own",
+                ),
+                text(960, 820, 28, MUTED, "", &escape(&status)),
+            ]
+        }
         Screen::Waiting { downloading, error } => {
             let mut lines = vec![
                 background(),
@@ -192,7 +228,7 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
             36,
             MUTED,
             "",
-            "Connect this screen to the network to receive its claim code.",
+            "Plug in a keyboard and enter your showroom Wi-Fi to get a pairing code.",
         ),
     ];
 
@@ -365,7 +401,8 @@ mod tests {
         )
         .unwrap();
         assert!(events.contains("XY12"));
-        assert!(events.contains("CLAIM THIS SCREEN"));
+        assert!(events.contains("PAIR THIS SCREEN"));
+        assert_eq!(format_claim_code("k7p4qx"), "K7P 4QX");
     }
 
     #[test]

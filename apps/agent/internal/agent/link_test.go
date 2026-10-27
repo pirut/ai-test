@@ -236,3 +236,67 @@ func TestCommandPollingKeepsTheLineOpenOnlyWhenTheServerLongPolls(t *testing.T) 
 		t.Fatalf("failures should back off, got %s", got)
 	}
 }
+
+func TestPublishedContentTriggersImmediateSync(t *testing.T) {
+	published := "manifest-1"
+	service, _ := newLinkTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"commands": []interface{}{}, "manifestVersion": published})
+	}))
+	_ = service.store.Update(func(next *state.DeviceState) { next.ManifestVersion = "manifest-1" })
+
+	if _, err := service.processCommands(context.Background(), "credential", 0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-service.syncTrigger:
+		t.Fatal("content the screen already has must not trigger a sync")
+	default:
+	}
+
+	published = "manifest-2"
+	if _, err := service.processCommands(context.Background(), "credential", 0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-service.syncTrigger:
+	default:
+		t.Fatal("newly published content should wake the sync loop")
+	}
+}
+
+func TestContentChangedIgnoresServersThatDoNotReport(t *testing.T) {
+	if contentChanged("", "manifest-1") {
+		t.Fatal("an empty server version means unknown, not changed")
+	}
+	if !contentChanged("manifest-2", "") {
+		t.Fatal("a screen with no content should sync published content")
+	}
+}
+
+func TestSyncNowDoesNotBlockTheCommandLoop(t *testing.T) {
+	service, _ := newLinkTestService(t, http.NotFoundHandler())
+	service.syncMu.Lock()
+	defer service.syncMu.Unlock()
+	done := make(chan error, 1)
+	go func() { done <- service.syncNow(context.Background(), "credential") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sync_now waited on a running sync")
+	}
+	select {
+	case <-service.syncTrigger:
+	default:
+		t.Fatal("sync_now should wake the sync loop")
+	}
+}
+
+func TestReportedErrorsDropSignedURLQueries(t *testing.T) {
+	got := redactURLQueries("download failed for https://cdn.example.com/a.mp4?token=secret&x=1: 403 Forbidden")
+	if got != "download failed for https://cdn.example.com/a.mp4: 403 Forbidden" {
+		t.Fatalf("unexpected redaction %q", got)
+	}
+}
