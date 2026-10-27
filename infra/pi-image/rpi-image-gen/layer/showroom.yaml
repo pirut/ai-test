@@ -13,6 +13,7 @@ mmdebstrap:
     - cloud-guest-utils
     - chromium
     - curl
+    - dnsmasq-base
     - e2fsprogs
     - fdisk
     - ffmpeg

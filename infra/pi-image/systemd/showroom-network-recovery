@@ -3,7 +3,18 @@ set -euo pipefail
 
 FAILURES=0
 : "${SHOWROOM_API_BASE_URL:?SHOWROOM_API_BASE_URL is required}"
+setup_hotspot_active() {
+  nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx showroom-setup
+}
+
 while true; do
+  # A new screen hosting its setup hotspot is offline on purpose; kicking
+  # the radio would drop the phone that is setting it up.
+  if setup_hotspot_active; then
+    FAILURES=0
+    sleep 30
+    continue
+  fi
   if curl -fsSI --max-time 8 "${SHOWROOM_API_BASE_URL}/" >/dev/null 2>&1 \
     || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
     FAILURES=0

@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 
-export function AddScreenDialog() {
-  const [open, setOpen] = useState(false);
+export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: string } = {}) {
+  // A screen's scan-to-add QR code links here with ?claim=CODE.
+  const [open, setOpen] = useState(Boolean(initialClaimCode));
   const router = useRouter();
 
   return (
@@ -39,7 +40,9 @@ export function AddScreenDialog() {
             // Remount on every open so the panel always starts at the form.
             key={open ? "open" : "closed"}
             embedded
-            onClaimed={() => router.refresh()}
+            initialClaimCode={initialClaimCode}
+            // Drop ?claim= once it is used, so reopening the panel starts empty.
+            onClaimed={() => (initialClaimCode ? router.replace("/screens") : router.refresh())}
             onDone={() => {
               router.refresh();
               setOpen(false);

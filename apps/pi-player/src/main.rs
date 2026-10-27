@@ -602,7 +602,13 @@ impl Player {
         if self.screen != Screen::WifiSetup {
             return;
         }
-        match self.form.handle(key) {
+        let networks = self
+            .state
+            .as_ref()
+            .and_then(|s| s.wifi.as_ref())
+            .map(|w| w.networks.clone())
+            .unwrap_or_default();
+        match self.form.handle(key, &networks) {
             Action::None => {}
             Action::Redraw => self.redraw(),
             Action::Submit { ssid, password } => {
@@ -783,6 +789,13 @@ fn main() {
         let screen = match name.as_str() {
             "claim" => Screen::Claim {
                 code: Some("K7Q2XM".into()),
+                qr: (0..29)
+                    .map(|y| {
+                        (0..29)
+                            .map(|x| if (x * 7 + y * 3) % 5 < 2 { '1' } else { '0' })
+                            .collect()
+                    })
+                    .collect(),
             },
             "waiting" => Screen::Waiting {
                 downloading: false,
@@ -792,17 +805,49 @@ fn main() {
                 downloading: true,
                 error: Some("YouTube content could not be prepared.".into()),
             },
-            "wifi" => Screen::WifiSetup,
+            "wifi" | "wifi-password" | "wifi-manual" | "wifi-keyboard" => Screen::WifiSetup,
             _ => Screen::Starting,
         };
+        let mode = match name.as_str() {
+            "wifi-password" => wifi_form::Mode::Password,
+            "wifi-manual" => wifi_form::Mode::Manual,
+            _ => wifi_form::Mode::List,
+        };
         let form = WifiForm {
+            mode,
             ssid: "Showroom Guest".into(),
             password: "hunter22".into(),
             focus: wifi_form::Field::Password,
             ..Default::default()
         };
+        let network = |ssid: &str, signal: u8, secure: bool| agent::Network {
+            ssid: ssid.into(),
+            signal,
+            secure,
+            in_use: false,
+        };
+        // A QR-shaped placeholder; the agent sends real modules.
+        let join_qr = (0..29)
+            .map(|y| {
+                (0..29)
+                    .map(|x| if (x * 7 + y * 3) % 5 < 2 { '1' } else { '0' })
+                    .collect()
+            })
+            .collect();
         let wifi = WifiStatus {
             supported: true,
+            networks: vec![
+                network("Showroom Guest", 82, true),
+                network("Warehouse", 61, true),
+                network("Lobby Free Wi-Fi", 44, false),
+                network("DIRECT-roku-123", 20, true),
+            ],
+            hotspot: (name != "wifi-keyboard").then(|| agent::Hotspot {
+                ssid: "Showroom-AB12".into(),
+                password: "kp7wm3xq".into(),
+                url: "http://10.42.0.1/".into(),
+                join_qr,
+            }),
             ..Default::default()
         };
         println!(

@@ -23,10 +23,13 @@ export function ClaimDeviceForm({
   embedded = false,
   onClaimed,
   onDone,
+  initialClaimCode,
 }: {
   embedded?: boolean;
   onClaimed?: () => void;
   onDone?: () => void;
+  /** Filled in when the screen's scan-to-add QR code opened this page. */
+  initialClaimCode?: string;
 }) {
   const [step, setStep] = useState<Step>({ kind: "details", error: null, submitting: false });
 
@@ -83,6 +86,7 @@ export function ClaimDeviceForm({
               spellCheck={false}
               maxLength={8}
               className="h-11 text-center font-mono text-lg uppercase tracking-[0.4em]"
+              defaultValue={initialClaimCode}
               required
             />
             <p className="text-xs text-muted-foreground">Shown in large letters on the screen when it&apos;s ready to pair.</p>

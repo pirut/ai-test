@@ -1,9 +1,11 @@
 package local
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,10 +18,32 @@ import (
 type Server struct {
 	config config.Config
 	store  *state.Store
+	wifi   *wifiSetup
 }
 
 func NewServer(cfg config.Config, store *state.Store) *Server {
-	return &Server{config: cfg, store: store}
+	server := &Server{config: cfg, store: store}
+	server.wifi = newWiFiSetup(nmcli{}, cfg.SetupHotspot, server.needsWiFiSetup)
+	return server
+}
+
+// needsWiFiSetup is true while the screen has never reached the service: it
+// is unclaimed and has no claim code yet.
+func (s *Server) needsWiFiSetup() bool {
+	status := s.store.PlayerStatus()
+	return !status.Claimed && status.ClaimCode == ""
+}
+
+// OnWiFiOnline sets what runs when first-time setup gets the screen online.
+func (s *Server) OnWiFiOnline(fn func()) {
+	s.wifi.mu.Lock()
+	s.wifi.onOnline = fn
+	s.wifi.mu.Unlock()
+}
+
+// RunWiFiSetup runs the setup hotspot when the image enables it.
+func (s *Server) RunWiFiSetup(ctx context.Context) {
+	s.wifi.Run(ctx)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -32,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/local/player/state", s.handlePlayerState)
 	mux.HandleFunc("/local/wifi/status", s.handleWiFiStatus)
 	mux.HandleFunc("/local/wifi/configure", s.handleWiFiConfigure)
+	mux.HandleFunc("/local/wifi/networks", s.handleWiFiNetworks)
 	mux.HandleFunc("/assets/", s.handleAsset)
 	mux.HandleFunc("/", s.handlePlayer)
 	return mux
@@ -113,7 +138,28 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.store.PlayerStatus())
+	status := s.store.PlayerStatus()
+	payload := struct {
+		state.PlayerStatus
+		ClaimURL string   `json:"claimUrl,omitempty"`
+		ClaimQR  []string `json:"claimQr,omitempty"`
+	}{PlayerStatus: status}
+	if !status.Claimed {
+		payload.ClaimURL, payload.ClaimQR = s.claimLink(status.ClaimCode)
+	}
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// claimLink is the dashboard page that adds this screen with its pairing code
+// already filled in, so the person at the screen can scan instead of type.
+func (s *Server) claimLink(code string) (string, []string) {
+	code = strings.TrimSpace(code)
+	base := strings.TrimRight(strings.TrimSpace(s.config.APIBaseURL), "/")
+	if code == "" || !(strings.HasPrefix(base, "https://") || strings.HasPrefix(base, "http://")) {
+		return "", nil
+	}
+	link := base + "/screens?claim=" + url.QueryEscape(code)
+	return link, qrRows(link)
 }
 
 func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {

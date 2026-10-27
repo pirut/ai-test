@@ -10,11 +10,14 @@ const filters = new Set<ScreenFilter>(["all", "attention", "online", "stale", "o
 export default async function ScreensPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; view?: string; layout?: string }>;
+  searchParams: Promise<{ status?: string; view?: string; layout?: string; claim?: string | string[] }>;
 }) {
   const orgId = await requireOrgId();
   const [devices, session, params] = await Promise.all([listDevices(orgId), getAuthSession(), searchParams]);
   const canAdmin = session.has({ role: "org:admin" });
+  // Pairing codes are short and alphanumeric; anything else is ignored.
+  const claimCode =
+    typeof params.claim === "string" && /^[A-Za-z0-9]{4,12}$/.test(params.claim) ? params.claim : undefined;
   const requested = (params.view === "attention" ? "attention" : params.status ?? "all") as ScreenFilter;
 
   return (
@@ -23,7 +26,7 @@ export default async function ScreensPage({
       <PageHeader
         title="Screens"
         description="Every display in this workspace. Open one to see what it's playing, change its settings, or send it a command."
-        action={canAdmin ? <AddScreenDialog /> : undefined}
+        action={canAdmin ? <AddScreenDialog initialClaimCode={claimCode} /> : undefined}
       />
       <ScreensTable
         canAdmin={canAdmin}

@@ -175,6 +175,8 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
+	server.OnWiFiOnline(s.requestSync)
+	go server.RunWiFiSetup(ctx)
 	go s.runSyncLoop(ctx)
 	go s.runCommandLoop(ctx)
 	go s.runHeartbeatLoop(ctx)

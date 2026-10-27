@@ -28,11 +28,20 @@ const (
 	// never unpair a fleet.
 	credentialRejectionsBeforeReset = 5
 	credentialRejectionWindow       = 10 * time.Minute
+
+	// Unpaired screens sync faster and back off less: someone is standing at
+	// the screen waiting for its pairing code, or for it to react after they
+	// typed the code in. Paired screens keep the configured interval.
+	pairingCodePollInterval  = 3 * time.Second
+	pairingClaimPollInterval = 5 * time.Second
+	pairingMaxBackoff        = 15 * time.Second
+	pairingRequestTimeout    = 15 * time.Second
 )
 
 // runLoop calls step, then waits for the base interval (or a backoff after
-// connectivity failures) or for a trigger, whichever comes first.
-func runLoop(ctx context.Context, name string, base time.Duration, maxBackoff time.Duration, trigger <-chan struct{}, step func(context.Context) error) {
+// connectivity failures) or for a trigger, whichever comes first. pace is
+// asked for the interval and backoff cap after every step.
+func runLoop(ctx context.Context, name string, pace func() (base, maxBackoff time.Duration), trigger <-chan struct{}, step func(context.Context) error) {
 	failures := 0
 	for {
 		if err := step(ctx); err != nil {
@@ -46,6 +55,7 @@ func runLoop(ctx context.Context, name string, base time.Duration, maxBackoff ti
 			failures = 0
 		}
 
+		base, maxBackoff := pace()
 		timer := time.NewTimer(backoffDelay(base, failures, maxBackoff))
 		select {
 		case <-ctx.Done():
@@ -102,7 +112,25 @@ func (s *Service) requestSync() {
 }
 
 func (s *Service) runSyncLoop(ctx context.Context) {
-	runLoop(ctx, "sync", s.config.PollInterval, syncMaxBackoff, s.syncTrigger, s.syncOnce)
+	runLoop(ctx, "sync", s.syncPace, s.syncTrigger, s.syncOnce)
+}
+
+// syncPace keeps the configured interval for paired screens and speeds up
+// pairing, never going slower than the configured interval would.
+func (s *Service) syncPace() (time.Duration, time.Duration) {
+	interval := s.config.PollInterval
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	current := s.store.Snapshot()
+	if current.Credential != "" {
+		return interval, syncMaxBackoff
+	}
+	fast := pairingClaimPollInterval
+	if current.ClaimCode == "" {
+		fast = pairingCodePollInterval
+	}
+	return min(fast, interval), max(pairingMaxBackoff, interval)
 }
 
 // commandLongPollWait is how long the server may hold a command request open.
@@ -215,6 +243,10 @@ func shouldExposeManifestSyncError(manifestPath string) bool {
 }
 
 func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState) error {
+	// A request stuck on a network that just went away must not hold up the
+	// next try for the HTTP client's full timeout.
+	ctx, cancel := context.WithTimeout(ctx, pairingRequestTimeout)
+	defer cancel()
 	if current.DeviceSessionID == "" || current.ClaimToken == "" {
 		registration, err := s.client.RegisterTemporary(ctx)
 		if err != nil {
