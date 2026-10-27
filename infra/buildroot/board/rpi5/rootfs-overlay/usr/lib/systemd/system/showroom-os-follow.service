@@ -4,7 +4,10 @@ Documentation=file:///usr/libexec/showroom/showroom-os-follow
 # Only development images carry a channel; field images never follow one.
 ConditionPathExists=/etc/showroom/os-channel.env
 Wants=network-online.target
-After=network-online.target showroom-os-commit.service rauc.service
+# Not ordered after showroom-os-commit: that waits for the player, and a
+# player that keeps failing to start must not block the build that fixes it.
+# The script itself leaves a pending trial boot to showroom-os-commit.
+After=network-online.target rauc.service
 RequiresMountsFor=/data
 
 [Service]

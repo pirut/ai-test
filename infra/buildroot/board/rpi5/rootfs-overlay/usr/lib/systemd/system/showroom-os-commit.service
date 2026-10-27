@@ -1,6 +1,9 @@
 [Unit]
 Description=Commit or roll back a Showroom OS update
-After=showroom-agent.service showroom-kiosk.service
+# Not ordered after the agent or player: a start job that keeps restarting
+# never finishes, which would keep a broken trial boot from ever rolling
+# back. The script polls them for five minutes instead.
+After=local-fs.target
 RequiresMountsFor=/data /var/lib/showroom
 
 [Service]
