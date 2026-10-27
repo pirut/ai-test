@@ -1,0 +1,19 @@
+[Unit]
+Description=Copy the journal to the card's AUTOBOOT partition (development images)
+Documentation=file:///usr/libexec/showroom/showroom-debug-log
+# Only development images; field images never write to the boot partitions.
+ConditionPathExists=/etc/showroom/os-channel.env
+DefaultDependencies=no
+After=systemd-journald.service local-fs.target
+Before=showroom-agent.service showroom-kiosk.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/showroom/showroom-debug-log
+ExecStopPost=-/bin/umount /run/showroom-debug-log
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Prepare persistent Showroom directories on the data partition
+DefaultDependencies=no
+RequiresMountsFor=/data
+Before=local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/showroom/showroom-data-layout

@@ -1,0 +1,26 @@
+# Read-only EROFS root and the ext4 data partition, without an initramfs.
+CONFIG_EROFS_FS=y
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EXT4_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_NLS_CODEPAGE_437=y
+CONFIG_NLS_ISO8859_1=y
+CONFIG_AUTOFS_FS=y
+
+# RAUC verity bundles: squashfs on a loop device checked by dm-verity.
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_MD=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_VERITY=y
+
+# Hardware watchdog for systemd's RuntimeWatchdogSec.
+CONFIG_WATCHDOG=y
+CONFIG_BCM2835_WDT=y
+
+# Modules uncompressed: the image's kmod has no decompressors and EROFS
+# compresses the root filesystem anyway. Wi-Fi, display, HEVC decode and HDMI
+# audio are all modules.
+# CONFIG_MODULE_COMPRESS is not set

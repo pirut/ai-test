@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_SHOWROOM_PATH/package/rpi-vcgencmd/Config.in"

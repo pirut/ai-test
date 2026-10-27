@@ -1,0 +1,11 @@
+#!/bin/sh
+# timesyncd backs off between attempts while the screen is offline, and
+# without systemd-networkd it does not learn that Wi-Fi came up. Restart it
+# when a connection comes up and the clock has not been synchronized yet, so
+# TLS to the dashboard works within seconds of joining a network.
+case "$2" in
+  up|connectivity-change) ;;
+  *) exit 0 ;;
+esac
+[ -e /run/systemd/timesync/synchronized ] && exit 0
+exec systemctl --no-block restart systemd-timesyncd.service

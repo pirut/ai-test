@@ -1,0 +1,60 @@
+#!/bin/bash
+# Development images only: keeps the journal on the card's AUTOBOOT partition
+# (FAT, readable on any computer), so a test screen that crashes or restarts
+# too fast to use can still be diagnosed by putting its card in a laptop.
+#
+#   showroom-logs/current-boot.txt    this boot, rewritten every few seconds
+#   showroom-logs/previous-boot.txt   the last copy written during the boot
+#                                     before (up to the moment it stopped)
+#
+# Each file starts with the firmware's throttling flags: 0x50005 and
+# similar mean under-voltage, usually a power supply too weak for a Pi 5.
+# The boot line tells a power cut from a watchdog or software reset: the
+# firmware's copy of the PM_RSTS register (bootloader/rsts), the PMIC's reset
+# reason bits (power/power_reset) and the supply's current limit in mA
+# (power/max_current), all as raw big-endian bytes.
+set -uo pipefail
+
+DEVICE="${SHOWROOM_DEBUG_LOG_DEVICE:-/dev/disk/by-label/AUTOBOOT}"
+MOUNT=/run/showroom-debug-log
+INTERVAL="${SHOWROOM_DEBUG_LOG_INTERVAL:-3}"
+LINES=4000
+
+mkdir -p "${MOUNT}"
+if ! mountpoint -q "${MOUNT}"; then
+  mount -t vfat -o rw,noatime,flush "${DEVICE}" "${MOUNT}" || exit 0
+fi
+logs="${MOUNT}/showroom-logs"
+mkdir -p "${logs}"
+if [[ -s "${logs}/current-boot.txt" ]]; then
+  mv -f "${logs}/current-boot.txt" "${logs}/previous-boot.txt"
+fi
+sync -f "${logs}"
+
+chosen() {
+  local value
+  value="$(od -An -tx1 -v "/proc/device-tree/chosen/$1" 2>/dev/null | tr -d ' \n')"
+  printf '%s' "${value:-none}"
+}
+boot_info="partition $(chosen bootloader/partition), tryboot $(chosen bootloader/tryboot), rsts $(chosen bootloader/rsts), power_reset $(chosen power/power_reset), max_current $(chosen power/max_current)"
+
+snapshot() {
+  {
+    printf 'Showroom OS debug log, written %s (uptime %s s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(cut -d' ' -f1 /proc/uptime)"
+    printf 'Boot: %s\n' "${boot_info}"
+    printf 'Throttling: %s, %s\n\n' "$(vcgencmd get_throttled 2>/dev/null || echo unknown)" \
+      "$(vcgencmd pmic_read_adc EXT5V_V 2>/dev/null || echo 'EXT5V_V unknown')"
+    journalctl -b 0 -o short-monotonic --no-pager 2>/dev/null | tail -n "${LINES}"
+  } >"${logs}/current-boot.tmp"
+  mv -f "${logs}/current-boot.tmp" "${logs}/current-boot.txt"
+  sync -f "${logs}"
+}
+
+# A clean shutdown or reboot gets one last copy, with whatever asked for it.
+trap 'snapshot; exit 0' TERM INT
+
+while true; do
+  snapshot
+  sleep "${INTERVAL}" &
+  wait $!
+done

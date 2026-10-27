@@ -25,6 +25,7 @@ type Config struct {
 	RestartPlayerCommand    string
 	RestartAgentCommand     string
 	RebootCommand           string
+	SystemUpdateCommand     string
 	BlankScreenCommand      string
 	UnblankScreenCommand    string
 	ReleasePublicKey        string
@@ -97,6 +98,7 @@ func Load() Config {
 		RestartPlayerCommand:    getenv("SHOWROOM_RESTART_PLAYER_COMMAND", "systemctl restart showroom-kiosk.service"),
 		RestartAgentCommand:     getenv("SHOWROOM_RESTART_AGENT_COMMAND", "systemctl restart showroom-agent.service"),
 		RebootCommand:           getenv("SHOWROOM_REBOOT_COMMAND", "shutdown -r now"),
+		SystemUpdateCommand:     getenv("SHOWROOM_SYSTEM_UPDATE_COMMAND", ""),
 		BlankScreenCommand:      getenv("SHOWROOM_BLANK_COMMAND", "vcgencmd display_power 0"),
 		UnblankScreenCommand:    getenv("SHOWROOM_UNBLANK_COMMAND", "vcgencmd display_power 1"),
 		ReleasePublicKey:        getenv("SHOWROOM_RELEASE_PUBLIC_KEY", ""),

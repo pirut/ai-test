@@ -1,0 +1,54 @@
+#!/bin/bash
+# Grows the data partition to the end of the card on first boot, so the flash
+# image itself stays small, and restarts the Pi so the kernel reads the new
+# partition table; x-systemd.growfs then grows the filesystem. Changing the
+# table of the running card makes udev re-announce its partitions, which
+# stopped the check and mount of /data on a Pi 5 and left the screen without
+# its agent and player; a restart is the one reliable way past that. It never
+# fails, because /data requires it: a card that cannot grow still boots with
+# the data partition it was flashed with.
+set -uo pipefail
+
+log() {
+  echo "showroom-data-grow: $*" >&2
+}
+
+part="$(readlink -f /dev/disk/by-label/showroom-data 2>/dev/null)" || exit 0
+[[ -b "${part}" ]] || exit 0
+sys="/sys/class/block/$(basename "${part}")"
+[[ -r "${sys}/partition" ]] || exit 0
+number="$(cat "${sys}/partition")"
+disk_name="$(basename "$(readlink -f "${sys}/..")")"
+disk="/dev/${disk_name}"
+disk_sectors="$(cat "/sys/class/block/${disk_name}/size")"
+end=$(( $(cat "${sys}/start") + $(cat "${sys}/size") ))
+
+# Nothing to do once less than 64 MiB (131072 sectors) follows the partition.
+if (( disk_sectors - end < 131072 )); then
+  exit 0
+fi
+
+log "growing ${part} (partition ${number} of ${disk}) to the end of the disk"
+# The data partition is a logical partition, so its extended partition (4)
+# has to grow first.
+if (( number > 4 )); then
+  if ! echo ', +' | sfdisk --no-reread --no-tell-kernel -N 4 "${disk}"; then
+    log "could not grow the extended partition"
+    exit 0
+  fi
+fi
+if ! echo ', +' | sfdisk --no-reread --no-tell-kernel -N "${number}" "${disk}"; then
+  log "could not grow partition ${number}"
+  exit 0
+fi
+# Restart only when the table on the card really changed, so a card whose
+# table cannot change does not restart on every boot.
+new_end="$(partx -g -o END -n "${number}" "${disk}" 2>/dev/null | tr -d ' ')"
+if [[ ! "${new_end}" =~ ^[0-9]+$ ]] || (( new_end + 1 <= end )); then
+  log "partition ${number} did not grow"
+  exit 0
+fi
+log "restarting so the kernel reads the new partition table"
+sync
+systemctl --no-block reboot
+exit 0

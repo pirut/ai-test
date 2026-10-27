@@ -37,3 +37,4 @@ infra/pi-image/rpi-image-gen/rootfs-overlay/etc/showroom/image-variant
 infra/pi-image/out/appliance-source/
 infra/pi-image/out/rpi-image-gen-*/
 infra/pi-image/secrets/
+__pycache__/
