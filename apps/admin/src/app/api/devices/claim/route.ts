@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
-import { claimDevice } from "@/lib/backend";
+import { ClaimRateLimitedError, claimDevice } from "@/lib/backend";
 
 const schema = z.object({
   claimCode: z
@@ -39,6 +39,9 @@ export async function POST(request: Request) {
   try {
     result = await claimDevice({ orgId: session.orgId, ...parsed.data });
   } catch (error) {
+    if (error instanceof ClaimRateLimitedError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
     if (error instanceof Error && /Invalid claim code/i.test(error.message)) {
       return NextResponse.json({ error: invalidCodeMessage }, { status: 404 });
     }

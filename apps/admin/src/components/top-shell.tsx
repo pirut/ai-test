@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   Package2,
   PlaySquare,
+  Rocket,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -40,6 +41,7 @@ const navGroups = [
     items: [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
       { href: "/screens", label: "Screens", icon: MonitorSmartphone },
+      { href: "/get-started", label: "Get started", icon: Rocket },
     ],
   },
   {
@@ -81,10 +83,12 @@ export function TopShell({
   children,
   authEnabled,
   fleetPulse,
+  showReleases = true,
 }: {
   children: React.ReactNode;
   authEnabled: boolean;
   fleetPulse: FleetPulse | null;
+  showReleases?: boolean;
 }) {
   const pathname = usePathname();
   const currentSection = navItems.find(
@@ -127,7 +131,9 @@ export function TopShell({
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map((item) => {
+                  {group.items
+                    .filter((item) => showReleases || item.href !== "/releases")
+                    .map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     const Icon = item.icon;
                     const attention = item.href === "/screens" ? fleetPulse?.attention ?? 0 : 0;

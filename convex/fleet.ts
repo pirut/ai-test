@@ -7,7 +7,7 @@ import {
 
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, mutation } from "./_generated/server";
-import { requireAdmin } from "./lib";
+import { requirePlatformAdmin } from "./lib";
 
 function commandPayload(release: Doc<"releases">) {
   return {
@@ -133,7 +133,7 @@ export const controlReleaseRollout = mutation({
   },
   returns: v.object({ status: v.string() }),
   handler: async (ctx, args) => {
-    const { orgId } = await requireAdmin(ctx);
+    const { orgId } = await requirePlatformAdmin(ctx);
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.organizationId !== orgId) throw new ConvexError("Release not found");
     const now = Date.now();
