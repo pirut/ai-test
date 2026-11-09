@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
@@ -80,7 +81,7 @@ func TestPlayerStateIncludesCachedImagesAndVideos(t *testing.T) {
 	}
 }
 
-func TestPlayerStateReadsWiFiOnlyBeforeClaimCode(t *testing.T) {
+func TestPlayerStateSendsWiFiWhileUnpairedOnly(t *testing.T) {
 	stateRoot := t.TempDir()
 	store, err := state.Open(stateRoot)
 	if err != nil {
@@ -97,14 +98,109 @@ func TestPlayerStateReadsWiFiOnlyBeforeClaimCode(t *testing.T) {
 		t.Fatalf("expected wifi status before claim code: %#v", result)
 	}
 
-	if err := store.Update(func(next *state.DeviceState) { next.ClaimCode = "ABC123" }); err != nil {
+	if err := store.Update(func(next *state.DeviceState) {
+		next.ClaimCode = "ABC123"
+		next.LastCloudContactAt = time.Now().UTC().Format(time.RFC3339)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	result = server.playerState(func() wifiStatus {
 		calls++
 		return wifiStatus{}
 	})
-	if calls != 1 || result.WiFi != nil || result.ClaimCode != "ABC123" {
-		t.Fatalf("wifi status should be skipped once a claim code exists: %#v", result)
+	if calls != 2 || result.WiFi == nil || result.ClaimCode != "ABC123" || !result.Online {
+		t.Fatalf("an unpaired screen with a code still needs its network line: %#v", result)
+	}
+
+	if err := store.Update(func(next *state.DeviceState) {
+		next.ClaimCode = ""
+		next.Credential = "credential"
+		next.PendingItems = 3
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result = server.playerState(func() wifiStatus {
+		calls++
+		return wifiStatus{}
+	})
+	if calls != 2 || result.WiFi != nil {
+		t.Fatalf("a paired screen must not run nmcli for every poll: %#v", result)
+	}
+	// Paired, nothing cached yet: the player can say content is downloading.
+	if result.HasManifest || result.PendingItems != 3 || !result.Online {
+		t.Fatalf("first download is not visible to the player: %#v", result)
+	}
+	if got := server.store.PlayerStatus().PendingItems; got != 3 {
+		t.Fatalf("/local/status pendingItems = %d, want 3", got)
+	}
+}
+
+func TestCabledScreenCountsAsConnected(t *testing.T) {
+	wired := wifiStatusFromDevices(deviceSummary{wired: true, wifi: &networkDevice{name: "wlan0", kind: "wifi"}})
+	if !wired.Connected || !wired.Wired || wired.SSID != "" || wired.Interface != "wlan0" {
+		t.Fatalf("cabled screen = %+v", wired)
+	}
+	noRadio := wifiStatusFromDevices(deviceSummary{wired: true})
+	if !noRadio.Connected || noRadio.Error != "" {
+		t.Fatalf("cabled screen without a radio = %+v", noRadio)
+	}
+	hotspot := wifiStatusFromDevices(deviceSummary{wifi: &networkDevice{name: "wlan0", connected: true, connection: setupConnectionName}})
+	if hotspot.Connected {
+		t.Fatalf("hosting the setup hotspot is not being online: %+v", hotspot)
+	}
+	joined := wifiStatusFromDevices(deviceSummary{wifi: &networkDevice{name: "wlan0", connected: true, connection: "Shop"}})
+	if !joined.Connected || joined.SSID != "Shop" || joined.Wired {
+		t.Fatalf("joined screen = %+v", joined)
+	}
+	if offline := wifiStatusFromDevices(deviceSummary{}); offline.Connected || offline.Error == "" {
+		t.Fatalf("no network at all = %+v", offline)
+	}
+}
+
+// A screen that got its pairing code on one network and was then moved has a
+// code nobody can use. It must fall back to Wi-Fi setup, not show the code.
+func TestStalePairingCodeGivesWayToWiFiSetup(t *testing.T) {
+	stateRoot := t.TempDir()
+	store, err := state.Open(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(config.Config{APIBaseURL: "https://screen.example.com", StateRoot: stateRoot, StorageRoot: t.TempDir()}, store)
+	if err := store.Update(func(next *state.DeviceState) {
+		next.ClaimCode = "ABC123"
+		next.LastCloudContactAt = time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := server.playerState(func() wifiStatus { return wifiStatus{Supported: true} })
+	if result.ClaimCode != "" || result.ClaimURL != "" || len(result.ClaimQR) != 0 || result.WiFi == nil {
+		t.Fatalf("a dead pairing code is still on screen: %#v", result)
+	}
+	if !server.needsWiFiSetup() {
+		t.Fatal("the setup hotspot would stay closed behind a dead pairing code")
+	}
+
+	// The service answers again: the same code is back.
+	if err := store.Update(func(next *state.DeviceState) {
+		next.LastCloudContactAt = time.Now().UTC().Format(time.RFC3339)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result = server.playerState(func() wifiStatus { return wifiStatus{Supported: true} })
+	if result.ClaimCode != "ABC123" || len(result.ClaimQR) == 0 || server.needsWiFiSetup() {
+		t.Fatalf("the pairing code did not come back online: %#v", result)
+	}
+
+	// A paired screen is never sent back to setup for being offline.
+	if err := store.Update(func(next *state.DeviceState) {
+		next.Credential = "credential"
+		next.ClaimCode = ""
+		next.LastCloudContactAt = ""
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if server.needsWiFiSetup() {
+		t.Fatal("a paired screen asked for Wi-Fi setup")
 	}
 }

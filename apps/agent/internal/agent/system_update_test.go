@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/config"
 	"github.com/jrbussard/showroom-signage/apps/agent/internal/remote"
@@ -174,5 +175,125 @@ func TestDownloadResumingContinuesAfterDroppedConnections(t *testing.T) {
 	}
 	if string(got) != string(body) {
 		t.Fatalf("downloaded %d bytes, want %d", len(got), len(body))
+	}
+}
+
+// Deploying a release twice must not reinstall the OS and reboot the screen
+// again.
+func TestSystemBundleSkippedWhenThatVersionIsRunning(t *testing.T) {
+	bundle := serveSignedBundle(t, []byte("rauc bundle bytes"))
+	installer, received := writeInstaller(t, 0)
+	osRelease := filepath.Join(t.TempDir(), "os-release")
+	if err := os.WriteFile(osRelease, []byte("NAME=\"Showroom OS\"\nVERSION_ID=2026.10.22.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := osReleasePath
+	osReleasePath = osRelease
+	t.Cleanup(func() { osReleasePath = previous })
+
+	rebooted := filepath.Join(t.TempDir(), "rebooted")
+	service := newUpdateTestService(t, config.Config{
+		ReleasePublicKey:    bundle.publicKey,
+		SystemUpdateCommand: installer,
+		RebootCommand:       "touch " + rebooted,
+	})
+	if err := service.applyReleaseUpdate(context.Background(), "cmd-same", systemPayload(bundle)); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(received) {
+		t.Fatal("the running OS version was installed again")
+	}
+}
+
+// Re-sending the running agent version must not overwrite the binary in use:
+// its rollback target would be the overwritten file itself.
+func TestRunningAgentVersionIsNotReinstalled(t *testing.T) {
+	body := []byte("agent-binary")
+	bundle := serveSignedBundle(t, body)
+	service := newUpdateTestService(t, config.Config{ReleasePublicKey: bundle.publicKey, RestartAgentCommand: "true"})
+	releaseRoot := filepath.Join(filepath.Dir(service.config.StateRoot), "releases", "agent")
+	if err := os.MkdirAll(filepath.Join(releaseRoot, "2.0.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	running := filepath.Join(releaseRoot, "2.0.0", "showroom-agent")
+	if err := os.WriteFile(running, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("2.0.0", filepath.Join(releaseRoot, "current")); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]interface{}{
+		"version":        "2.0.0",
+		"agentUrl":       "http://127.0.0.1:1/unreachable",
+		"agentSha256":    bundle.sha256,
+		"agentSignature": bundle.signature,
+	}
+	if err := service.applyReleaseUpdate(context.Background(), "cmd-agent-same", payload); err != nil {
+		t.Fatalf("the running version should be accepted without a download: %v", err)
+	}
+	if fileExists(filepath.Join(service.config.StateRoot, "pending-update.json")) {
+		t.Fatal("a restart was scheduled for a version that is already running")
+	}
+
+	// Same version, different file: refuse rather than overwrite in place.
+	if err := os.WriteFile(running, []byte("another build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := service.applyReleaseUpdate(context.Background(), "cmd-agent-changed", payload)
+	if err == nil || !strings.Contains(err.Error(), "new version") {
+		t.Fatalf("expected a refusal, got %v", err)
+	}
+	if got, _ := os.ReadFile(running); string(got) != "another build" {
+		t.Fatal("the running agent binary was overwritten")
+	}
+}
+
+func TestSlotIsCurrentHandlesBuiltInAbsoluteLinks(t *testing.T) {
+	root := t.TempDir()
+	builtIn := filepath.Join(t.TempDir(), "1.0.0")
+	if err := os.MkdirAll(builtIn, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Showroom OS starts with current -> /usr/lib/showroom/releases/agent/1.0.0.
+	if err := os.Symlink(builtIn, filepath.Join(root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	if slotIsCurrent(root, "1.0.0") {
+		t.Fatal("the built-in version must not block an installed release with the same name")
+	}
+	if slotIsCurrent(t.TempDir(), "1.0.0") || slotIsCurrent(root, "") {
+		t.Fatal("a missing link or version is never current")
+	}
+}
+
+// The restart after an agent update has to outlive the agent's own service,
+// or the update guard that follows it never runs.
+func TestRestartIsScheduledOutsideTheAgentService(t *testing.T) {
+	previousDir, previousLookPath := systemdRuntimeDir, lookPath
+	t.Cleanup(func() { systemdRuntimeDir, lookPath = previousDir, previousLookPath })
+	now := time.Unix(1700000000, 42)
+
+	systemdRuntimeDir = filepath.Join(t.TempDir(), "missing")
+	lookPath = func(string) (string, error) { return "/usr/bin/systemd-run", nil }
+	if got := detachedUnitCommand("sleep 5; true", now); got != nil {
+		t.Fatalf("without systemd the old path must be used, got %v", got)
+	}
+
+	systemdRuntimeDir = t.TempDir()
+	lookPath = func(string) (string, error) { return "", fmt.Errorf("not found") }
+	if got := detachedUnitCommand("sleep 5; true", now); got != nil {
+		t.Fatalf("without systemd-run the old path must be used, got %v", got)
+	}
+
+	lookPath = func(string) (string, error) { return "/usr/bin/systemd-run", nil }
+	got := detachedUnitCommand("sleep 5; systemctl restart showroom-agent.service && systemctl restart showroom-update-guard.service", now)
+	want := []string{
+		"/usr/bin/systemd-run", "--quiet", "--collect",
+		"--unit=showroom-update-apply-1700000000000000042",
+		"--description=Showroom update restart",
+		"/bin/sh", "-c", "sleep 5; systemctl restart showroom-agent.service && systemctl restart showroom-update-guard.service",
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("command = %q", got)
 	}
 }

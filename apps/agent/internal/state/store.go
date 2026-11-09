@@ -49,19 +49,26 @@ type HealthSnapshot struct {
 }
 
 type DeviceState struct {
-	DeviceSessionID         string                      `json:"deviceSessionId,omitempty"`
-	ClaimCode               string                      `json:"claimCode,omitempty"`
-	ClaimToken              string                      `json:"claimToken,omitempty"`
-	DeviceID                string                      `json:"deviceId,omitempty"`
-	Credential              string                      `json:"credential,omitempty"`
-	CredentialExpiresAt     string                      `json:"credentialExpiresAt,omitempty"`
-	AgentVersion            string                      `json:"agentVersion,omitempty"`
-	PlayerVersion           string                      `json:"playerVersion,omitempty"`
-	ManifestVersion         string                      `json:"manifestVersion,omitempty"`
-	LastSyncAt              string                      `json:"lastSyncAt,omitempty"`
-	LastHeartbeatAt         string                      `json:"lastHeartbeatAt,omitempty"`
-	LastScreenshotAt        string                      `json:"lastScreenshotAt,omitempty"`
-	LastError               string                      `json:"lastError,omitempty"`
+	DeviceSessionID     string `json:"deviceSessionId,omitempty"`
+	ClaimCode           string `json:"claimCode,omitempty"`
+	ClaimToken          string `json:"claimToken,omitempty"`
+	DeviceID            string `json:"deviceId,omitempty"`
+	Credential          string `json:"credential,omitempty"`
+	CredentialExpiresAt string `json:"credentialExpiresAt,omitempty"`
+	AgentVersion        string `json:"agentVersion,omitempty"`
+	PlayerVersion       string `json:"playerVersion,omitempty"`
+	ManifestVersion     string `json:"manifestVersion,omitempty"`
+	LastSyncAt          string `json:"lastSyncAt,omitempty"`
+	LastHeartbeatAt     string `json:"lastHeartbeatAt,omitempty"`
+	LastScreenshotAt    string `json:"lastScreenshotAt,omitempty"`
+	LastError           string `json:"lastError,omitempty"`
+	// PendingItems is how many assigned items are not cached yet, so the
+	// players can say content is downloading before anything is playable.
+	PendingItems int `json:"pendingItems,omitempty"`
+	// SyncError is the latest content problem for the dashboard (an item that
+	// will not download, a full disk). Unlike LastError it is kept while the
+	// screen still has older content to play, and it is never drawn on screen.
+	SyncError               string                      `json:"syncError,omitempty"`
 	LastCloudContactAt      string                      `json:"lastCloudContactAt,omitempty"`
 	CurrentAssetID          string                      `json:"currentAssetId,omitempty"`
 	CurrentPlaylistID       string                      `json:"currentPlaylistId,omitempty"`
@@ -83,6 +90,7 @@ type PlayerStatus struct {
 	ManifestVersion    string `json:"manifestVersion,omitempty"`
 	LastSyncAt         string `json:"lastSyncAt,omitempty"`
 	LastError          string `json:"lastError,omitempty"`
+	PendingItems       int    `json:"pendingItems,omitempty"`
 	Online             bool   `json:"online"`
 	LastCloudContactAt string `json:"lastCloudContactAt,omitempty"`
 }
@@ -217,6 +225,7 @@ func (s *Store) PlayerStatus() PlayerStatus {
 		LastSyncAt:         current.LastSyncAt,
 		LastError:          current.LastError,
 		Online:             online,
+		PendingItems:       current.PendingItems,
 		LastCloudContactAt: current.LastCloudContactAt,
 	}
 }
