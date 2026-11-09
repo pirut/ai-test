@@ -162,7 +162,7 @@ export function LibraryFolderTree({
             </button>
           </FolderDropRow>
           {(onRename || onDelete) ? (
-            <div className="hidden items-center gap-1 pr-1 group-hover:flex">
+            <div className="hidden items-center gap-1 pr-1 group-focus-within:flex group-hover:flex [@media(hover:none)]:flex">
               {onRename ? (
                 <button
                   aria-label={`Rename ${folder.name}`}

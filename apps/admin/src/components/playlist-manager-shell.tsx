@@ -7,7 +7,9 @@ export function PlaylistManagerShell({
   mediaAssets,
   initialPlaylistFolders,
   initialMediaFolders,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   initialPlaylists: Playlist[];
   mediaAssets: MediaAsset[];
   initialPlaylistFolders: LibraryFolder[];
@@ -15,6 +17,7 @@ export function PlaylistManagerShell({
 }) {
   return (
     <PlaylistManager
+      canEdit={canEdit}
       initialMediaFolders={initialMediaFolders}
       initialPlaylistFolders={initialPlaylistFolders}
       initialPlaylists={initialPlaylists}

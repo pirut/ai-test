@@ -1,5 +1,18 @@
-import { AlertTriangle, Cable, Cpu, MonitorPlay, RefreshCw, Thermometer, Wifi } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Cable,
+  Cpu,
+  ListVideo,
+  MonitorPlay,
+  RefreshCw,
+  TerminalSquare,
+  Thermometer,
+  Wifi,
+} from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { osVersionMatches } from "@showroom/contracts";
 
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CommandStatusBadge } from "@/components/command-status-badge";
@@ -14,17 +27,23 @@ import {
 import { ScreenSettingsPanel } from "@/components/screen-settings-panel";
 import { StatusPill } from "@/components/status-pill";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import {
   getDevice,
+  getWorkspaceAccess,
   latestScreenshot,
   listCommands,
   listPlaylists,
 } from "@/lib/backend";
 import { commandLabel, isCommandPending } from "@/lib/commands";
 import { contentStateLabels, deviceIssues } from "@/lib/device-health";
+import { isTailscaleConfigured, readTailscaleConfig } from "@/lib/tailscale";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
+
+// Labels device-health.ts uses for a screen's own report; that notice is rendered separately here.
+const contentWarningLabels = new Set(["Screen reported an error", "Content needs attention"]);
 
 type Tone = "good" | "warn" | "bad" | "unknown";
 
@@ -82,16 +101,37 @@ export default async function ScreenDetailPage({
 
   if (!device) notFound();
 
-  const [screenshot, commands, playlists] = await Promise.all([
+  const [screenshot, commands, playlists, access] = await Promise.all([
     latestScreenshot(device.id),
     listCommands(device.id),
     listPlaylists(),
+    // Remote SSH belongs to whoever runs the site, so customers' workspaces don't see it.
+    canAdmin ? getWorkspaceAccess().catch(() => ({ isPlatformOperator: false })) : { isPlatformOperator: false },
   ]);
+  const showRemoteAccess = canAdmin && access.isPlatformOperator;
+  const remoteAccessOn = showRemoteAccess && isTailscaleConfigured(readTailscaleConfig());
+  // Mirrors the hostname rule in showroom-tailscale-join.
+  const tailnetName = `showroom-${device.id}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
 
   const health = device.health;
   const reporting = device.status === "online" || device.status === "stale";
   const isManaged = device.fleetManagementState === "managed";
-  const issues = deviceIssues(device).filter((issue) => issue.severity !== "info");
+  const osVersion = device.osVersion ?? health?.osVersion ?? null;
+  const bootSlot = device.bootSlot ?? health?.bootSlot ?? null;
+  const systemUpdatePending = Boolean(
+    device.desiredSystemVersion && !osVersionMatches(osVersion, device.desiredSystemVersion),
+  );
+  const noPlaylist = device.status !== "unclaimed" && !device.currentPlaylistName;
+  // The screen's own report (for example "2 of 9 items are not on the screen yet") stays set until
+  // the cause is fixed. It is a content warning, not a failure, and is shown in full below.
+  const contentWarning = reporting && device.lastError ? device.lastError : null;
+  // "No playlist" and the content warning get their own notices with the way to fix them.
+  const issues = deviceIssues(device).filter(
+    (issue) =>
+      issue.severity !== "info" &&
+      issue.label !== "No playlist" &&
+      !(contentWarning && contentWarningLabels.has(issue.label)),
+  );
   const hasPendingCommand = commands.some((command) => isCommandPending(command.status));
 
   const tiles = [
@@ -121,7 +161,7 @@ export default async function ScreenDetailPage({
     {
       icon: RefreshCw,
       label: "Content",
-      value: !reporting ? "Unknown" : device.lastError ? "Error" : contentStateLabels[device.contentState ?? "unknown"],
+      value: !reporting ? "Unknown" : device.lastError ? "Needs attention" : contentStateLabels[device.contentState ?? "unknown"],
       detail: device.lastSyncAt ? `Synced ${formatRelativeTimestamp(device.lastSyncAt)}` : undefined,
       tone: (!reporting || !device.contentState || device.contentState === "unknown"
         ? "unknown"
@@ -161,12 +201,54 @@ export default async function ScreenDetailPage({
             <AlertTriangle />
             <AlertTitle>{issues.map((issue) => issue.label).join(" · ")}</AlertTitle>
             <AlertDescription>
-              {device.lastError ? (
-                <span className="mb-1 block break-words font-mono text-xs">Last error from the screen: {device.lastError}</span>
+              {device.lastError && !contentWarning ? (
+                <span className="mb-1 block break-words">Last report from the screen: {device.lastError}</span>
               ) : null}
               {device.status === "offline"
                 ? "The screen keeps playing its saved content if it lost internet, but it can't receive changes or commands until it reconnects. Check power and network at the site."
                 : "Playback may be interrupted. Try Restart player from the menu, or check the TV and cables at the site."}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {contentWarning ? (
+          <Alert>
+            <AlertTriangle className="text-warning" />
+            <AlertTitle>Content needs attention</AlertTitle>
+            <AlertDescription>
+              <p className="break-words text-foreground">{contentWarning}</p>
+              <p className="mt-1">
+                The screen keeps playing what it already has. This clears on its own once the problem is fixed;
+                use Sync content to try again now.
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {noPlaylist ? (
+          <Alert>
+            <ListVideo />
+            <AlertTitle>This screen has nothing to play</AlertTitle>
+            <AlertDescription>
+              <p>
+                {playlists.length === 0
+                  ? "The workspace has no playlists yet. Add media, then make a playlist and tick Workspace default."
+                  : canAdmin
+                    ? "Pick a Default playlist in Settings below, or tick Workspace default on a playlist so every screen plays it."
+                    : "Ask a workspace admin to pick a playlist for it."}
+              </p>
+              {canAdmin ? (
+                <Button
+                  className="mt-2"
+                  nativeButton={false}
+                  render={<Link href={playlists.length === 0 ? "/media" : "/playlists"} />}
+                  size="sm"
+                  variant="outline"
+                >
+                  {playlists.length === 0 ? "Add media" : "Open Playlists"}
+                  <ArrowRight data-icon="inline-end" />
+                </Button>
+              ) : null}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -207,6 +289,14 @@ export default async function ScreenDetailPage({
                 </CardHeader>
                 <CardContent>
                   <dl className="divide-y">
+                    <InfoRow label="Site" value={device.siteName} />
+                    <InfoRow
+                      label="Default playlist"
+                      value={
+                        playlists.find((playlist) => playlist.id === device.defaultPlaylistId)?.name ??
+                        "Workspace default"
+                      }
+                    />
                     <InfoRow label="Orientation" value={`${device.orientation}°`} />
                     <InfoRow label="Volume" value={`${device.volume}%`} />
                     <InfoRow label="Time zone" value={device.timezone} />
@@ -250,6 +340,42 @@ export default async function ScreenDetailPage({
 
             {canAdmin ? <NetworkCard isManaged={isManaged} currentSsid={health?.ssid} /> : null}
 
+            {showRemoteAccess ? (
+              <Card id="remote-access">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TerminalSquare className="size-4 text-muted-foreground" aria-hidden />
+                    Remote access
+                  </CardTitle>
+                  <CardDescription>
+                    {remoteAccessOn
+                      ? "SSH over Tailscale is set up on this site. A screen whose image includes Tailscale joins your tailnet within 15 minutes of pairing."
+                      : "SSH over Tailscale is not set up on this site. Everything else on this page works without it."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2 text-sm">
+                  {remoteAccessOn ? (
+                    <>
+                      <p className="text-muted-foreground">From a computer signed in to the tailnet:</p>
+                      <code className="block overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs whitespace-nowrap">
+                        ssh pi@{tailnetName}
+                      </code>
+                      <p className="text-xs text-muted-foreground">
+                        This page can&apos;t tell whether the screen has joined yet. If the name doesn&apos;t resolve,
+                        look for it in the Tailscale admin console.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      To turn it on, set <code className="font-mono">TAILSCALE_OAUTH_CLIENT_ID</code> and{" "}
+                      <code className="font-mono">TAILSCALE_OAUTH_CLIENT_SECRET</code> on the dashboard deployment.
+                      Steps are in infra/pi-image/README.md under Remote SSH (Tailscale).
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -277,8 +403,11 @@ export default async function ScreenDetailPage({
                     label="Agent"
                     value={`${device.agentVersion ?? "unknown"}${device.desiredAgentVersion && device.desiredAgentVersion !== device.agentVersion ? ` → ${device.desiredAgentVersion}` : ""}`}
                   />
-                  <InfoRow label="OS" value={health?.osVersion ?? "—"} />
-                  <InfoRow label="Boot slot" value={health?.bootSlot ?? "—"} />
+                  {/* Older Raspberry Pi OS screens don't report these, so the rows stay out of the way. */}
+                  {osVersion ? (
+                    <InfoRow label="System" value={<span title={osVersion}>{osVersion}</span>} />
+                  ) : null}
+                  {bootSlot ? <InfoRow label="Boot slot" value={bootSlot} /> : null}
                   <InfoRow
                     label="Content version"
                     value={`${device.manifestVersion ?? "—"}${device.desiredManifestVersion && device.desiredManifestVersion !== device.manifestVersion ? ` → ${device.desiredManifestVersion}` : ""}`}
@@ -288,6 +417,13 @@ export default async function ScreenDetailPage({
                     value={isManaged ? `${device.applianceGeneration ?? "appliance"} · protocol ${device.agentProtocolVersion ?? "?"}` : "Legacy"}
                   />
                 </dl>
+                {systemUpdatePending ? (
+                  <p role="status" className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    A system update to <span className="font-medium text-foreground">{device.desiredSystemVersion}</span>{" "}
+                    is in progress. The screen downloads it, restarts once, and goes back to the previous version on
+                    its own if the new one fails to start.
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           </aside>

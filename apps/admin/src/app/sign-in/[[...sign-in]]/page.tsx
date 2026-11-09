@@ -31,8 +31,8 @@ export default async function SignInPage() {
   return (
     <PublicAuthShell
       mode="sign-in"
-      title="Enter your workspace"
-      description="Open the operator console, switch organizations, and continue into the screen fleet."
+      title="Sign in"
+      description="Manage your screens, media, and playlists."
     >
       <SignIn />
     </PublicAuthShell>

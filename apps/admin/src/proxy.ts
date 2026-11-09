@@ -16,9 +16,13 @@ const proxy = clerkMiddleware(async (auth, req) => {
   if (localMockMode) return NextResponse.next();
 
   if (!isPublicRoute(req)) {
-    await auth.protect({
-      unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
-    });
+    // Keep where the visitor was going (for example the pairing link a TV shows
+    // as a QR code, /screens?claim=CODE) so sign-in returns them there.
+    const signIn = new URL("/sign-in", req.url);
+    if (req.method === "GET" && !req.nextUrl.pathname.startsWith("/api/")) {
+      signIn.searchParams.set("redirect_url", req.nextUrl.pathname + req.nextUrl.search);
+    }
+    await auth.protect({ unauthenticatedUrl: signIn.toString() });
   }
 });
 

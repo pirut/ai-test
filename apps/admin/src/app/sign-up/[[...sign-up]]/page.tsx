@@ -31,8 +31,8 @@ export default async function SignUpPage() {
   return (
     <PublicAuthShell
       mode="sign-up"
-      title="Create a Screen workspace"
-      description="Set up your team, choose the active organization, and move directly into the admin app."
+      title="Create your account"
+      description="Next you name your workspace, then we walk you through setting up your first screen."
     >
       <SignUp />
     </PublicAuthShell>

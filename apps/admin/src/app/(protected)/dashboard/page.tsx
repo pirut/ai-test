@@ -27,7 +27,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
-import { listCommands, listDevices } from "@/lib/backend";
+import { listCommands, listDevices, listPlaylists } from "@/lib/backend";
 import { commandLabel } from "@/lib/commands";
 import {
   type DeviceStatus,
@@ -49,12 +49,16 @@ const statusDot: Record<DeviceStatus, string> = {
 
 export default async function DashboardPage() {
   const orgId = await requireOrgId();
-  const [devices, commands, session] = await Promise.all([
+  const [devices, commands, session, playlists] = await Promise.all([
     listDevices(orgId),
     listCommands(),
     getAuthSession(),
+    // Only used to point a new workspace at its next step.
+    listPlaylists().catch(() => null),
   ]);
   const canAdmin = session.has({ role: "org:admin" });
+  const hasDefaultPlaylist = playlists ? playlists.some((playlist) => playlist.isDefault) : undefined;
+  const addScreen = canAdmin ? <AddScreenDialog hasDefaultPlaylist={hasDefaultPlaylist} /> : undefined;
 
   const counts = countByStatus(devices);
   const attention = devices.filter(needsAttention).sort(compareByUrgency);
@@ -71,7 +75,7 @@ export default async function DashboardPage() {
       <PageHeader
         title="Fleet overview"
         description="What every screen is showing, and anything that needs you."
-        action={canAdmin ? <AddScreenDialog /> : undefined}
+        action={addScreen}
       />
 
       {devices.length === 0 ? (
@@ -79,12 +83,30 @@ export default async function DashboardPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon"><Monitor /></EmptyMedia>
-              <EmptyTitle>Add your first screen</EmptyTitle>
+              <EmptyTitle>Set up your first screen</EmptyTitle>
               <EmptyDescription>
-                Power on a Pi and connect it to the internet. It shows a pairing code you enter here.
+                {canAdmin
+                  ? "Flash a microSD card, plug a Raspberry Pi into your TV, and pair it with the code it shows. Get started walks you through it."
+                  : "This workspace has no screens yet. A workspace admin can add one from Get started."}
               </EmptyDescription>
             </EmptyHeader>
-            {canAdmin ? <EmptyContent><AddScreenDialog /></EmptyContent> : null}
+            <EmptyContent>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button nativeButton={false} render={<Link href="/get-started" />}>
+                  Get started
+                  <ArrowRight data-icon="inline-end" />
+                </Button>
+                {canAdmin ? (
+                  <Button
+                    nativeButton={false}
+                    render={<Link href="/get-started#claim" />}
+                    variant="outline"
+                  >
+                    I already have a code
+                  </Button>
+                ) : null}
+              </div>
+            </EmptyContent>
           </Empty>
         </Card>
       ) : (

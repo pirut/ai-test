@@ -21,49 +21,49 @@ import {
 const featureCards = [
   {
     icon: Upload,
-    title: "Advanced media library",
+    title: "One media library",
     description:
-      "Keep stills, videos, and imported sources in one controlled catalog built for repeatable releases.",
+      "Upload photos and videos or add YouTube links, sort them into folders, and reuse them across playlists.",
   },
   {
     icon: Waypoints,
-    title: "Seamless collaboration",
+    title: "Playlists and schedules",
     description:
-      "Organizations, release windows, and staged approvals keep teams aligned before content reaches a screen.",
+      "Put media in order, pick a default for each screen, and schedule a different playlist for certain hours or days.",
   },
   {
     icon: Globe,
-    title: "Global content delivery",
+    title: "Manage every screen remotely",
     description:
-      "Push playlists and manifests to distributed players while preserving a simple operator view back at HQ.",
+      "See what each screen is showing, check its health, and restart or re-sync it from anywhere.",
   },
 ];
 
 const workflowSteps = [
   {
     label: "01",
-    title: "Import and organize",
+    title: "Flash a card",
     description:
-      "Build a reusable catalog of campaign assets, evergreen content, and YouTube imports without losing track of source material.",
+      "Download the screen image, write it to a microSD card, and plug a Raspberry Pi 5 into your TV.",
   },
   {
     label: "02",
-    title: "Curate with precision",
+    title: "Pair the screen",
     description:
-      "Assemble playlists, dayparts, and releases in a workflow that keeps operational detail visible and clutter low.",
+      "Join Wi-Fi from your phone or a keyboard. The TV shows a code; scan it or type it in to add the screen to your workspace.",
   },
   {
     label: "03",
-    title: "Ship and verify",
+    title: "Choose what plays",
     description:
-      "Confirm screenshots, heartbeats, and device status after deployment so the team has actual proof of playback.",
+      "Upload media, build a playlist, and assign it. The screen downloads it and starts playing within a minute.",
   },
 ];
 
 const pricingBullets = [
-  "Self-hosted control plane with a small-fleet cost profile",
-  "Playlist delivery tuned for Raspberry Pi signage hardware",
-  "Device claim and refresh endpoints built into the same stack",
+  "Raspberry Pi 5, a microSD card, and any TV or monitor with HDMI",
+  "Screens only make outbound connections, so there is no router setup",
+  "Software updates are delivered over the air",
 ];
 
 export default async function LandingPage() {
@@ -83,15 +83,15 @@ export default async function LandingPage() {
         <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_center,rgba(77,142,255,0.12),transparent_70%)]" />
         <div className="relative mx-auto flex max-w-7xl flex-col items-center text-center">
           <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-            Digital curation reinvented
+            Digital signage for showrooms
           </div>
           <h1 className="mt-6 max-w-5xl text-5xl font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl lg:text-[5.5rem]">
-            Curate your digital assets with precision.
+            Run every showroom screen from one place.
           </h1>
           <p className="mt-8 max-w-3xl text-lg leading-8 text-[#c2c6d6] sm:text-xl">
-            Digital Curator is a control surface for showroom fleets: media
-            library, playlist sequencing, release timing, screenshots, and
-            remote commands in one editorial dark-mode workspace.
+            Digital Curator turns a Raspberry Pi and any TV into a managed
+            display. Upload photos and videos, build playlists, schedule
+            them, and check on every screen without visiting the showroom.
           </p>
           <div className="mt-10">
             <PublicCtaRow />
@@ -105,7 +105,7 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-7xl">
           <div className="max-w-2xl">
             <h2 className="text-4xl font-black tracking-[-0.04em] text-white">
-              Precision engineering
+              What you get
             </h2>
             <div className="mt-5 h-1 w-20 bg-[#adc6ff]" />
           </div>
@@ -139,10 +139,10 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-7xl">
           <div className="max-w-2xl">
             <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-              The process
+              Getting started
             </div>
             <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              How Digital Curator works
+              From box to playing in three steps
             </h2>
             <div className="mt-5 h-1 w-20 bg-[#adc6ff]" />
           </div>
@@ -176,7 +176,7 @@ export default async function LandingPage() {
               <div className="relative min-h-[420px] overflow-hidden rounded-[24px]">
                 <Image
                   src="/marketing/hero-curation.png"
-                  alt="Abstract media art used to represent the curated library."
+                  alt=""
                   fill
                   className="object-cover grayscale"
                 />
@@ -187,7 +187,7 @@ export default async function LandingPage() {
                       Library preview
                     </div>
                     <p className="mt-3 text-sm leading-6 text-white">
-                      The new home page uses downloaded Stitch imagery for the hero and library treatment instead of leaving mock frames empty.
+                      Images, videos, and YouTube links live in folders you can search and tag.
                     </p>
                   </div>
                 </div>
@@ -196,28 +196,25 @@ export default async function LandingPage() {
               <div className="grid gap-3">
                 <div className="rounded-[24px] bg-[#131313] p-5">
                   <div className="text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]/72">
-                    Media coverage
-                  </div>
-                  <div className="mt-3 text-3xl font-black tracking-tight text-white">
-                    1,280
+                    Plays offline
                   </div>
                   <p className="mt-3 text-sm leading-6 text-[#c2c6d6]">
-                    Assets staged across campaigns, evergreen loops, and fallback schedules.
+                    Each screen downloads its playlist and keeps playing if the internet drops.
                   </p>
                 </div>
                 <div className="rounded-[24px] bg-[#131313] p-5">
                   <div className="text-[11px] uppercase tracking-[0.22em] text-[#c2c6d6]/72">
-                    Release discipline
+                    Schedules
                   </div>
                   <p className="mt-3 text-sm leading-6 text-[#c2c6d6]">
-                    Preview the exact sequence, window, and fleet assignment before anything ships.
+                    Play a different playlist during an event or on certain days, then return to the default.
                   </p>
                 </div>
                 <div className="rounded-[24px] bg-[#131313] p-5">
                   <div className="flex items-start gap-3">
                     <SlidersHorizontal className="mt-0.5 size-4 text-[#adc6ff]" />
                     <p className="text-sm leading-6 text-[#c2c6d6]">
-                      A quieter interface still exposes the operator details that matter when a screen is on the wall and time is short.
+                      Set orientation, volume, and time zone for each screen from the dashboard.
                     </p>
                   </div>
                 </div>
@@ -230,16 +227,16 @@ export default async function LandingPage() {
               Media library
             </div>
             <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              Treat assets like a curated collection, not a file dump.
+              Upload once, play it on any screen.
             </h2>
             <p className="mt-6 max-w-lg text-base leading-8 text-[#c2c6d6]">
-              The library section gives the marketing page a real visual anchor while still describing the actual product: catalog media, compose playlists, stage schedules, and keep provenance clear.
+              Keep everything your screens show in one library. Build playlists from it, set how long each image stays up, and change what is playing in a few clicks.
             </p>
             <div className="mt-8 space-y-3">
               {[
-                "Reusable playlists with fallback playback",
-                "YouTube imports alongside uploaded media",
-                "Release windows tied to actual device fleets",
+                "A default playlist for the workspace or for each screen",
+                "YouTube videos and playlists alongside your uploads",
+                "Schedules for events, sales, and opening hours",
               ].map((item) => (
                 <div key={item} className="rounded-[20px] bg-[#1c1b1b] px-5 py-4 text-sm text-white">
                   {item}
@@ -250,17 +247,17 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section id="pricing" className="bg-[#1c1b1b] px-6 py-28">
+      <section id="hardware" className="bg-[#1c1b1b] px-6 py-28">
         <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
-              Vertical integration
+              Hardware
             </div>
             <h2 className="mt-5 max-w-3xl text-4xl font-black leading-tight tracking-[-0.05em] text-white sm:text-6xl">
-              Uncompromising control, a smaller-fleet cost profile.
+              Built on hardware you can buy anywhere.
             </h2>
             <p className="mt-6 max-w-xl text-lg leading-8 text-[#c2c6d6]">
-              The Stitch concept had a cost-efficiency section; this implementation grounds it in the actual app: one stack for media, releases, devices, and claim flows rather than separate control tooling.
+              No proprietary players. Flash our image onto a microSD card, plug a Raspberry Pi 5 into the TV, and the screen sets itself up.
             </p>
 
             <div className="mt-10 border-t border-white/8 pt-8">
@@ -270,10 +267,10 @@ export default async function LandingPage() {
                 </div>
                 <div>
                   <p className="text-base font-semibold text-white">
-                    Custom build architecture
+                    Made for unattended screens
                   </p>
                   <p className="mt-2 text-sm leading-7 text-[#c2c6d6]">
-                    Purpose-built for signage operators who need steady release handling, proof of playback, and minimal overhead.
+                    Screens start playing on power-up, recover on their own after a power cut, and report back so you know they are on.
                   </p>
                 </div>
               </div>
@@ -283,12 +280,8 @@ export default async function LandingPage() {
           <div className="rounded-[28px] bg-[#131313] p-8 shadow-[0_24px_48px_rgba(0,0,0,0.4)]">
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm font-medium text-[#c2c6d6]">
-                Monthly infrastructure cost
+                What you need
               </span>
-              <span className="text-sm font-bold text-[#adc6ff]">80% lower</span>
-            </div>
-            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-[#2a2a2a]">
-              <div className="h-full w-[20%] bg-[#adc6ff]" />
             </div>
             <div className="mt-8 space-y-5">
               {pricingBullets.map((item) => (
@@ -300,7 +293,7 @@ export default async function LandingPage() {
             </div>
             <div className="mt-10 rounded-[22px] bg-[#1c1b1b] p-5">
               <InlineArrowLink href="/sign-up">
-                Open a workspace for your team
+                Create your workspace
               </InlineArrowLink>
             </div>
           </div>
@@ -319,10 +312,10 @@ export default async function LandingPage() {
         <div className="absolute bottom-0 right-0 size-[420px] translate-x-1/3 translate-y-1/3 rounded-full bg-[#adc6ff]/8 blur-[110px]" />
         <div className="relative mx-auto max-w-4xl text-center">
           <h2 className="text-4xl font-black tracking-[-0.05em] text-white sm:text-6xl">
-            Join the future of digital curation.
+            Set up your first screen today.
           </h2>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-[#c2c6d6]">
-            The public home page now follows the Stitch design direction, and the auth pages use the same system so the whole entry flow feels deliberate.
+            Create a workspace, download the screen image, and have a TV playing your content in about 15 minutes.
           </p>
           <div className="mt-10">
             <PublicCtaRow />

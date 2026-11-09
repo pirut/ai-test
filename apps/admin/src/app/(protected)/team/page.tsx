@@ -1,4 +1,4 @@
-import { OrganizationList } from "@clerk/nextjs";
+import { OrganizationList, OrganizationProfile } from "@clerk/nextjs";
 
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,7 @@ export default async function TeamPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Team"
-        description="Each workspace has its own screens, media and playlists. Invite people and manage roles from the workspace menu in the top bar."
+        description="Each workspace has its own screens, media and playlists. Admins can add screens and change content. Members can see everything, sync a screen, and turn its display on or off."
       />
       <div className="flex max-w-2xl flex-col gap-6">
         {session.orgId ? null : (
@@ -23,6 +23,17 @@ export default async function TeamPage() {
             </CardHeader>
           </Card>
         )}
+        {session.orgId && !mockMode ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>People</CardTitle>
+              <CardDescription>Invite teammates and choose who is an admin.</CardDescription>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <OrganizationProfile routing="hash" />
+            </CardContent>
+          </Card>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle>Workspaces</CardTitle>
@@ -31,11 +42,11 @@ export default async function TeamPage() {
           <CardContent>
             {mockMode ? (
               <p className="text-sm text-muted-foreground">
-                Demo workspace. Switching is available when sign-in is enabled.
+                Demo workspace. Inviting people and switching workspaces are available when sign-in is enabled.
               </p>
             ) : (
               <OrganizationList
-                afterCreateOrganizationUrl="/dashboard"
+                afterCreateOrganizationUrl="/get-started"
                 afterSelectOrganizationUrl="/dashboard"
                 hideSlug={false}
               />

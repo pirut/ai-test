@@ -72,7 +72,10 @@ export function MediaAssetSheet({
   onSave,
   onMove,
   onDelete,
+  canEdit = true,
 }: {
+  /** Members see the details without the editing controls. */
+  canEdit?: boolean;
   asset: MediaAsset | null;
   folders: LibraryFolder[];
   onOpenChange: (open: boolean) => void;
@@ -122,6 +125,7 @@ export function MediaAssetSheet({
                 )}
               </div>
 
+              {canEdit ? (
               <FieldGroup className="gap-4">
                 <Field>
                   <FieldLabel htmlFor="asset-title">Title</FieldLabel>
@@ -173,6 +177,9 @@ export function MediaAssetSheet({
                   </DropdownMenu>
                 </Field>
               </FieldGroup>
+              ) : asset.tags.length ? (
+                <p className="text-sm text-muted-foreground">Tags: {asset.tags.join(", ")}</p>
+              ) : null}
 
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
                 {facts.map(([label, value]) => (
@@ -184,12 +191,14 @@ export function MediaAssetSheet({
               </dl>
             </div>
 
-            <SheetFooter className="mt-auto border-t">
-              <Button onClick={() => onDelete(asset.id)} variant="destructive">
-                <Trash2 />
-                Delete from library
-              </Button>
-            </SheetFooter>
+            {canEdit ? (
+              <SheetFooter className="mt-auto border-t">
+                <Button onClick={() => onDelete(asset.id)} variant="destructive">
+                  <Trash2 />
+                  Delete from library
+                </Button>
+              </SheetFooter>
+            ) : null}
           </>
         ) : null}
       </SheetContent>

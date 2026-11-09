@@ -15,6 +15,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useDeferredValue, useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
@@ -27,6 +28,7 @@ import {
   Images,
   LayoutGrid,
   List,
+  ListVideo,
   MoreHorizontal,
   MoveRight,
   Pencil,
@@ -44,6 +46,8 @@ import { LibraryFolderTree } from "@/components/library-folder-tree";
 import { MediaAddDialog } from "@/components/media-add-dialog";
 import { FolderPickerItems, MediaAssetSheet } from "@/components/media-asset-sheet";
 import { PageHeader } from "@/components/page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ViewOnlyNotice } from "@/components/view-only-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -160,8 +164,8 @@ function ThumbBadge({ asset }: { asset: MediaAsset }) {
   return null;
 }
 
-function useAssetDrag(assetId: string) {
-  return useDraggable({ id: `media-asset:${assetId}`, data: { type: "asset", assetId } });
+function useAssetDrag(assetId: string, disabled = false) {
+  return useDraggable({ id: `media-asset:${assetId}`, data: { type: "asset", assetId }, disabled });
 }
 
 function MediaCard({
@@ -169,6 +173,7 @@ function MediaCard({
   folderLabel,
   isSelected,
   selectionMode,
+  canEdit,
   onActivate,
   onToggle,
 }: {
@@ -176,10 +181,11 @@ function MediaCard({
   folderLabel: string | null;
   isSelected: boolean;
   selectionMode: boolean;
+  canEdit: boolean;
   onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggle: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useAssetDrag(asset.id);
+  const { attributes, listeners, setNodeRef, isDragging } = useAssetDrag(asset.id, !canEdit);
 
   return (
     <li
@@ -217,19 +223,21 @@ function MediaCard({
           </p>
         </div>
       </button>
-      <Checkbox
-        aria-label={`Select ${asset.title}`}
-        checked={isSelected}
-        className={cn(
-          "absolute top-3 left-3 size-5 rounded-md border-white/80 bg-black/30 shadow-sm backdrop-blur transition-opacity data-[state=checked]:border-primary",
-          isSelected || selectionMode
-            ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-        )}
-        onCheckedChange={onToggle}
-        onClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      />
+      {canEdit ? (
+        <Checkbox
+          aria-label={`Select ${asset.title}`}
+          checked={isSelected}
+          className={cn(
+            "absolute top-3 left-3 size-5 rounded-md border-white/80 bg-black/30 shadow-sm backdrop-blur transition-opacity data-[state=checked]:border-primary",
+            isSelected || selectionMode
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+          )}
+          onCheckedChange={onToggle}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        />
+      ) : null}
     </li>
   );
 }
@@ -238,16 +246,18 @@ function MediaRow({
   asset,
   folderLabel,
   isSelected,
+  canEdit,
   onActivate,
   onToggle,
 }: {
   asset: MediaAsset;
   folderLabel: string | null;
   isSelected: boolean;
+  canEdit: boolean;
   onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
   onToggle: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useAssetDrag(asset.id);
+  const { attributes, listeners, setNodeRef, isDragging } = useAssetDrag(asset.id, !canEdit);
   const length =
     asset.type === "video" && asset.durationSeconds
       ? formatDuration(asset.durationSeconds)
@@ -264,12 +274,14 @@ function MediaRow({
       tabIndex={undefined}
     >
       <TableCell className="w-10 pl-4">
-        <Checkbox
-          aria-label={`Select ${asset.title}`}
-          checked={isSelected}
-          onCheckedChange={onToggle}
-          onPointerDown={(event) => event.stopPropagation()}
-        />
+        {canEdit ? (
+          <Checkbox
+            aria-label={`Select ${asset.title}`}
+            checked={isSelected}
+            onCheckedChange={onToggle}
+            onPointerDown={(event) => event.stopPropagation()}
+          />
+        ) : null}
       </TableCell>
       <TableCell>
         <button
@@ -499,9 +511,15 @@ function TagsDialog({
 export function MediaLibraryManager({
   initialAssets,
   initialFolders,
+  canEdit = true,
+  hasPlaylists = true,
 }: {
   initialAssets: MediaAsset[];
   initialFolders: LibraryFolder[];
+  /** False until the workspace has its first playlist, to point at the next step. */
+  hasPlaylists?: boolean;
+  /** Members can browse the library; only admins can change it. */
+  canEdit?: boolean;
 }) {
   const router = useRouter();
   const [assets, setAssets] = useState(initialAssets);
@@ -651,7 +669,7 @@ export function MediaLibraryManager({
         return;
       }
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      if (canEdit && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
         event.preventDefault();
         setSelectedAssetIds(visibleAssets.map((asset) => asset.id));
         setLastSelectedIndex(visibleAssets.length ? visibleAssets.length - 1 : null);
@@ -666,7 +684,7 @@ export function MediaLibraryManager({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedAssetIds.length, visibleAssets]);
+  }, [canEdit, selectedAssetIds.length, visibleAssets]);
 
   function refreshData() {
     startTransition(() => {
@@ -880,7 +898,7 @@ export function MediaLibraryManager({
     const index = visibleAssets.findIndex((asset) => asset.id === assetId);
     if (index === -1) return;
 
-    if (event.shiftKey && lastSelectedIndex !== null) {
+    if (canEdit && event.shiftKey && lastSelectedIndex !== null) {
       const start = Math.min(lastSelectedIndex, index);
       const end = Math.max(lastSelectedIndex, index);
       const range = visibleAssets.slice(start, end + 1).map((asset) => asset.id);
@@ -888,7 +906,7 @@ export function MediaLibraryManager({
       return;
     }
 
-    if (event.metaKey || event.ctrlKey || event.shiftKey || selectionCount > 0) {
+    if (canEdit && (event.metaKey || event.ctrlKey || event.shiftKey || selectionCount > 0)) {
       toggleAsset(assetId);
       return;
     }
@@ -946,7 +964,7 @@ export function MediaLibraryManager({
     { value: "video", label: "Videos", icon: Film },
   ];
 
-  const folderMenu = currentFolder ? (
+  const folderMenu = currentFolder && canEdit ? (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
@@ -988,15 +1006,19 @@ export function MediaLibraryManager({
             </EmptyMedia>
             <EmptyTitle>No media yet</EmptyTitle>
             <EmptyDescription>
-              Upload photos and videos, or add a YouTube link. You can also drag files onto this page.
+              {canEdit
+                ? "Upload photos and videos, or add a YouTube link. You can also drag files onto this page. Next, put them in a playlist."
+                : "Nothing has been added to this workspace yet."}
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
-            <Button onClick={() => openAddDialog()}>
-              <Plus />
-              Add media
-            </Button>
-          </EmptyContent>
+          {canEdit ? (
+            <EmptyContent>
+              <Button onClick={() => openAddDialog()}>
+                <Plus />
+                Add media
+              </Button>
+            </EmptyContent>
+          ) : null}
         </Empty>
       );
     } else if (isSearching || typeFilter !== "all") {
@@ -1032,14 +1054,18 @@ export function MediaLibraryManager({
               <Folder />
             </EmptyMedia>
             <EmptyTitle>This folder is empty</EmptyTitle>
-            <EmptyDescription>Add media here, or drag files in from another folder.</EmptyDescription>
+            <EmptyDescription>
+              {canEdit ? "Add media here, or drag files in from another folder." : "Nothing is in this folder."}
+            </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
-            <Button onClick={() => openAddDialog()} variant="outline">
-              <Plus />
-              Add media
-            </Button>
-          </EmptyContent>
+          {canEdit ? (
+            <EmptyContent>
+              <Button onClick={() => openAddDialog()} variant="outline">
+                <Plus />
+                Add media
+              </Button>
+            </EmptyContent>
+          ) : null}
         </Empty>
       );
     }
@@ -1060,26 +1086,43 @@ export function MediaLibraryManager({
           title="Media library"
           description="Images, videos and YouTube links your playlists draw from. Screens download what they need and keep playing it offline."
           action={
-            <Button onClick={() => openAddDialog()} size="lg">
-              <Plus />
-              Add media
-            </Button>
+            canEdit ? (
+              <Button onClick={() => openAddDialog()} size="lg">
+                <Plus />
+                Add media
+              </Button>
+            ) : undefined
           }
         />
+        {canEdit ? null : <ViewOnlyNotice what="the media library" />}
+        {canEdit && assets.length > 0 && !hasPlaylists ? (
+          <Alert>
+            <ListVideo />
+            <AlertTitle>Next: make a playlist</AlertTitle>
+            <AlertDescription>
+              Screens play playlists, not single files. Put this media in a playlist to get it on a screen.{" "}
+              <Link className="font-medium text-primary underline underline-offset-4" href="/playlists">
+                Open Playlists
+              </Link>
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         <div className="grid items-start gap-4 lg:grid-cols-[232px_minmax(0,1fr)]">
           <Card className="gap-2 py-3 lg:sticky lg:top-20" size="sm">
             <div className="flex items-center justify-between px-3">
               <p className="text-sm font-medium">Folders</p>
-              <Button
-                aria-label="New folder"
-                onClick={() => setFolderDialog({ mode: "create", parentId: selectedFolderId })}
-                size="icon-sm"
-                title="New folder"
-                variant="ghost"
-              >
-                <FolderPlus />
-              </Button>
+              {canEdit ? (
+                <Button
+                  aria-label="New folder"
+                  onClick={() => setFolderDialog({ mode: "create", parentId: selectedFolderId })}
+                  size="icon-sm"
+                  title="New folder"
+                  variant="ghost"
+                >
+                  <FolderPlus />
+                </Button>
+              ) : null}
             </div>
             <div className="flex flex-col gap-2 px-1.5">
               {folders.length > 8 ? (
@@ -1092,12 +1135,12 @@ export function MediaLibraryManager({
               ) : null}
               <LibraryFolderTree
                 activeDragType={dragActive ? "asset" : null}
-                droppableScope="media"
+                droppableScope={canEdit ? "media" : undefined}
                 filterQuery={deferredFolderSearch}
                 folders={folders}
                 itemCounts={folderAssetCounts}
-                onDelete={requestDeleteFolder}
-                onRename={(folder) => setFolderDialog({ mode: "rename", folder })}
+                onDelete={canEdit ? requestDeleteFolder : undefined}
+                onRename={canEdit ? (folder) => setFolderDialog({ mode: "rename", folder }) : undefined}
                 onSelect={openFolder}
                 rootLabel="Library"
                 // Nothing is highlighted while search results span every folder.
@@ -1112,13 +1155,13 @@ export function MediaLibraryManager({
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFileDragOver(false);
             }}
             onDragOver={(event) => {
-              if (event.dataTransfer.types.includes("Files")) {
+              if (canEdit && event.dataTransfer.types.includes("Files")) {
                 event.preventDefault();
                 setIsFileDragOver(true);
               }
             }}
             onDrop={(event) => {
-              if (!event.dataTransfer.files.length) return;
+              if (!canEdit || !event.dataTransfer.files.length) return;
               event.preventDefault();
               setIsFileDragOver(false);
               openAddDialog(Array.from(event.dataTransfer.files));
@@ -1339,6 +1382,7 @@ export function MediaLibraryManager({
                   {visibleAssets.map((asset) => (
                     <MediaCard
                       asset={asset}
+                      canEdit={canEdit}
                       folderLabel={folderLabelFor(asset)}
                       isSelected={selectedAssetSet.has(asset.id)}
                       key={asset.id}
@@ -1355,15 +1399,17 @@ export function MediaLibraryManager({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10 pl-4">
-                        <Checkbox
-                          aria-label="Select all"
-                          checked={allVisibleSelected ? true : selectionCount > 0 ? "indeterminate" : false}
-                          onCheckedChange={() =>
-                            allVisibleSelected
-                              ? clearSelection()
-                              : setSelectedAssetIds(visibleAssets.map((asset) => asset.id))
-                          }
-                        />
+                        {canEdit ? (
+                          <Checkbox
+                            aria-label="Select all"
+                            checked={allVisibleSelected ? true : selectionCount > 0 ? "indeterminate" : false}
+                            onCheckedChange={() =>
+                              allVisibleSelected
+                                ? clearSelection()
+                                : setSelectedAssetIds(visibleAssets.map((asset) => asset.id))
+                            }
+                          />
+                        ) : null}
                       </TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead className="hidden sm:table-cell">Type</TableHead>
@@ -1375,6 +1421,7 @@ export function MediaLibraryManager({
                     {visibleAssets.map((asset) => (
                       <MediaRow
                         asset={asset}
+                        canEdit={canEdit}
                         folderLabel={folderLabelFor(asset)}
                         isSelected={selectedAssetSet.has(asset.id)}
                         key={asset.id}
@@ -1448,6 +1495,7 @@ export function MediaLibraryManager({
       />
       <MediaAssetSheet
         asset={detailsAsset}
+        canEdit={canEdit}
         folders={folders}
         onDelete={(assetId) => requestDeleteAssets([assetId])}
         onMove={(assetId, folderId) => void moveAssetsToFolder([assetId], folderId)}
