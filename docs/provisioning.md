@@ -1,23 +1,28 @@
 # Provisioning
 
-## Flashing
+The full walk-through, from website setup to a playing screen, is in
+[`start-to-finish.md`](start-to-finish.md). This page keeps the device-side
+details.
 
-1. Build the image from `infra/pi-image`.
-2. Flash the image to an SD card.
-3. Boot the Raspberry Pi with HDMI connected.
-4. If the device starts offline, use the on-screen Wi-Fi setup form to connect it.
+## Images
 
-If you prefer to preload Wi-Fi instead, create `infra/pi-image/boot/network.env` before the build so the image includes `/boot/firmware/network-config`.
+- New screens: Showroom OS (`infra/buildroot`), downloaded from the Get
+  started page and written with Raspberry Pi Imager.
+- Screens deployed before Showroom OS: the Raspberry Pi OS appliance
+  (`infra/pi-image`). To preload Wi-Fi on that image, create
+  `infra/pi-image/boot/network.env` before the build.
 
-## Claiming
+## First boot
 
-1. Wait for the claim code screen.
-2. Open the admin dashboard.
-3. Enter the claim code and assign the screen.
-4. The device stores a permanent credential and begins polling for manifests.
+1. Connect HDMI, then power. Showroom OS restarts once while it grows its data partition.
+2. Offline screens show Wi-Fi setup: a QR code for the phone setup page, or a USB keyboard on the TV.
+3. Online screens show a 6-character pairing code and a QR code that opens the dashboard with the code filled in.
+4. After an admin adds the screen, it stores its credential and downloads its playlist.
 
-## Local cache
+## Where things live on the screen
 
-- Media cache root: `/var/lib/showroom/cache`
-- Device state: `/var/lib/showroom/state`
-- Agent config: `/etc/showroom-agent/config.env`
+| | Showroom OS | Raspberry Pi OS appliance |
+| --- | --- | --- |
+| Media cache | `/data/showroom/cache` (bind-mounted at `/var/lib/showroom/cache`) | `/var/lib/showroom/cache` |
+| Device state | `/var/lib/showroom/state` | `/var/lib/showroom/state` |
+| Agent config | `/etc/showroom-agent/config.env` | `/etc/showroom-agent/config.env` |

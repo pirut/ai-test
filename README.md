@@ -1,15 +1,19 @@
 # Digital Curator
 
-Private Raspberry Pi digital signage stack for small showroom fleets. The product name in the UI is Digital Curator; internal package names keep the `showroom` prefix.
+Raspberry Pi digital signage for showrooms: a website to manage content and screens, and an image that turns a Pi 5 and any TV into a managed display. The product name in the UI is Digital Curator; internal package names keep the `showroom` prefix.
+
+Start with [`docs/start-to-finish.md`](docs/start-to-finish.md): operator setup, a customer's first screen, daily use and updates, in order.
 
 ## Workspace
 
 - `apps/admin`: Next.js admin dashboard and API routes
-- `apps/player`: React/Vite fullscreen kiosk player
+- `apps/pi-player`: native Rust player (libmpv on DRM), the default on new screens
+- `apps/player`: React/Vite kiosk player, the Chromium fallback on older screens
 - `apps/agent`: Go device agent
 - `convex`: Convex schema, queries, mutations, and deployment config
 - `packages/contracts`: shared OpenAPI and Zod contracts
-- `infra/pi-image`: Raspberry Pi image build and provisioning assets
+- `infra/buildroot`: Showroom OS, the minimal image for new Pi 5 screens
+- `infra/pi-image`: Raspberry Pi OS appliance image that earlier screens run, plus the shared scripts and units
 - `infra/vercel`: deployment configuration and cron notes
 - `docs`: operator and provisioning guides
 
