@@ -41,6 +41,13 @@ const RELOAD_BACKOFF_MAX: Duration = Duration::from_secs(300);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 const DISPLAY_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 const WATCHDOG_PING_INTERVAL: Duration = Duration::from_secs(10);
+/// How long "Starting player" may show before the screen admits it is slow.
+const SLOW_START_AFTER: Duration = Duration::from_secs(90);
+/// The agent counts as online for two minutes after its last contact, and
+/// right after a boot it has none yet; wait before saying "Offline".
+const OFFLINE_BADGE_AFTER: Duration = Duration::from_secs(30);
+/// Success notes on the Wi-Fi screen give way to live status after this.
+const WIFI_NOTE_FOR: Duration = Duration::from_secs(30);
 const DRM_CLASS: &str = "/sys/class/drm";
 
 struct Config {
@@ -97,7 +104,7 @@ impl Config {
 
 enum Msg {
     State(Result<PlayerState, String>),
-    Wifi(Result<WifiStatus, String>),
+    Wifi(Result<WifiStatus, agent::WifiError>),
 }
 
 enum Job {
@@ -315,6 +322,17 @@ struct Player {
     /// backoff unless the agent sends a different one.
     failed_items: Vec<Item>,
     loading_path: String,
+    /// No item in the playlist plays; a message replaces the black screen
+    /// until one loads.
+    playback_failed: bool,
+    created_at: Instant,
+    slow_start: bool,
+    offline_since: Option<Instant>,
+    offline_badge: bool,
+    wifi_note_at: Option<Instant>,
+    /// The person at the screen asked for Wi-Fi setup from the "no pairing
+    /// code" screen (connected, but to a network that cannot reach us).
+    wifi_requested: bool,
 }
 
 impl Player {
@@ -357,6 +375,13 @@ impl Player {
             restart_requested: false,
             failed_items: Vec::new(),
             loading_path: String::new(),
+            playback_failed: false,
+            created_at: now,
+            slow_start: false,
+            offline_since: None,
+            offline_badge: false,
+            wifi_note_at: None,
+            wifi_requested: false,
         }
     }
 
@@ -374,8 +399,17 @@ impl Player {
                 match messages.try_recv() {
                     Ok(Msg::State(result)) => self.on_state(result),
                     Ok(Msg::Wifi(result)) => {
-                        self.form
-                            .finish(result.map(|status| (status.connected, status.ssid)));
+                        match result {
+                            Ok(status) => self.form.finish(Ok((status.connected, status.ssid))),
+                            Err(agent::WifiError::Message(message)) => {
+                                self.form.finish(Err(message))
+                            }
+                            Err(agent::WifiError::NoAnswer(detail)) => {
+                                eprintln!("showroom-player: no answer to Wi-Fi setup: {detail}");
+                                self.form.finish_unanswered();
+                            }
+                        }
+                        self.wifi_note_at = Some(Instant::now());
                         self.redraw();
                     }
                     Err(TryRecvError::Empty) => break,
@@ -411,7 +445,12 @@ impl Player {
                 self.loading_path = self.mpv.get_string("path").unwrap_or_default();
             }
             Event::FileLoaded => self.on_file_loaded(),
-            Event::EndFile { reason, error } if reason == mpv::END_FILE_REASON_ERROR => {
+            Event::EndFile { reason, .. } if reason != mpv::END_FILE_REASON_ERROR => {
+                // Stopped or replaced before it opened: nothing is loading
+                // any more, so the load timeout must not fire for it.
+                self.load_started_at = None;
+            }
+            Event::EndFile { error, .. } => {
                 self.load_started_at = None;
                 self.consecutive_errors += 1;
                 eprintln!(
@@ -463,6 +502,9 @@ impl Player {
         self.failed_items = std::mem::take(&mut self.applied);
         self.current = None;
         self.consecutive_errors = 0;
+        self.idle_since = Instant::now();
+        self.playback_failed = true;
+        self.redraw();
         self.reload_not_before = Instant::now() + self.reload_backoff;
         self.reload_backoff = (self.reload_backoff * 2).min(RELOAD_BACKOFF_MAX);
     }
@@ -486,6 +528,10 @@ impl Player {
             .filter(|item| item.is_video())
             .map(|_| 0.0);
         self.progress_pos = self.time_pos;
+        if self.playback_failed {
+            self.playback_failed = false;
+            self.redraw();
+        }
         self.report();
     }
 
@@ -504,7 +550,14 @@ impl Player {
             }
         };
 
-        let screen = screens::choose(Some(&state));
+        let mut screen = screens::choose(Some(&state));
+        if matches!(screen, Screen::Claim { code: None, .. }) {
+            if self.wifi_requested {
+                screen = Screen::WifiSetup;
+            }
+        } else if screen != Screen::WifiSetup {
+            self.wifi_requested = false;
+        }
         if screen == Screen::Playing {
             let backing_off =
                 Instant::now() < self.reload_not_before && state.items == self.failed_items;
@@ -517,6 +570,21 @@ impl Player {
             self.current = None;
             self.idle_since = Instant::now();
         }
+        if screen != Screen::Playing {
+            self.playback_failed = false;
+        }
+
+        // Only a paired screen that has been out of touch for a while says so.
+        if state.claimed && state.online == Some(false) {
+            self.offline_since.get_or_insert_with(Instant::now);
+        } else {
+            self.offline_since = None;
+        }
+        let offline_badge = self
+            .offline_since
+            .is_some_and(|since| since.elapsed() >= OFFLINE_BADGE_AFTER);
+        let badge_changed = offline_badge != self.offline_badge;
+        self.offline_badge = offline_badge;
 
         if self.volume != Some(state.volume) {
             let volume = state.volume.clamp(0, 100);
@@ -536,9 +604,16 @@ impl Player {
 
         let screen_changed = self.screen != screen;
         let wifi_changed = self.state.as_ref().map(|s| &s.wifi) != Some(&state.wifi);
+        let error_changed = self.state.as_ref().map(|s| &s.last_error) != Some(&state.last_error);
+        if screen_changed && self.screen == Screen::WifiSetup && !self.form.saving {
+            // Setup is over; a later visit starts clean instead of showing
+            // the old "Connected to…" note or a half-typed password.
+            self.form = WifiForm::default();
+            self.wifi_note_at = None;
+        }
         self.screen = screen;
         self.state = Some(state);
-        if screen_changed || wifi_changed {
+        if screen_changed || wifi_changed || error_changed || badge_changed {
             self.redraw();
         }
     }
@@ -600,7 +675,26 @@ impl Player {
     }
 
     fn on_key(&mut self, key: Key) {
+        if matches!(self.screen, Screen::Claim { code: None, .. }) && key == Key::Enter {
+            self.wifi_requested = true;
+            self.form = WifiForm::default();
+            self.screen = Screen::WifiSetup;
+            self.redraw();
+            return;
+        }
         if self.screen != Screen::WifiSetup {
+            return;
+        }
+        if self.wifi_requested
+            && key == Key::Escape
+            && !self.form.saving
+            && self.form.ssid.is_empty()
+            && self.form.password.is_empty()
+        {
+            // Back to the "no pairing code" screen; the next state update
+            // (within two seconds) draws it.
+            self.wifi_requested = false;
+            self.form = WifiForm::default();
             return;
         }
         let networks = self
@@ -631,8 +725,24 @@ impl Player {
             state.and_then(|s| s.wifi.as_ref()),
             state.and_then(|s| s.last_error.as_deref()),
         );
-        if self.screen == Screen::Playing && self.recovering {
-            events = Some(screens::recovering_badge());
+        if self.screen == Screen::Starting && self.slow_start {
+            events = Some(screens::starting_slowly());
+        }
+        if self.screen == Screen::Playing {
+            if self.playback_failed {
+                events = Some(screens::playback_failed());
+            } else {
+                let mut badges = Vec::new();
+                if self.recovering {
+                    badges.push(screens::recovering_badge());
+                }
+                if self.offline_badge {
+                    badges.push(screens::offline_badge());
+                }
+                if !badges.is_empty() {
+                    events = Some(badges.join("\n"));
+                }
+            }
         }
         if events == self.overlay {
             return;
@@ -681,13 +791,34 @@ impl Player {
             .load_started_at
             .is_some_and(|at| at.elapsed() > LOAD_TIMEOUT)
         {
-            eprintln!("showroom-player: a file did not open within {LOAD_TIMEOUT:?}; skipping it");
             self.load_started_at = None;
+            if self.applied.is_empty() {
+                // Nothing is meant to be loading (stopped meanwhile).
+                return true;
+            }
+            eprintln!("showroom-player: a file did not open within {LOAD_TIMEOUT:?}; skipping it");
             self.consecutive_errors += 1;
             if self.consecutive_errors as usize >= self.applied.len().max(1) {
                 self.back_off("every item in the playlist failed to open");
             } else {
                 self.command(&["playlist-next", "force"]);
+            }
+        }
+
+        if !self.slow_start && self.state.is_none() && self.created_at.elapsed() >= SLOW_START_AFTER
+        {
+            self.slow_start = true;
+            self.redraw();
+        }
+
+        if self
+            .wifi_note_at
+            .is_some_and(|at| at.elapsed() >= WIFI_NOTE_FOR)
+        {
+            self.wifi_note_at = None;
+            if !self.form.saving && !self.form.message_is_error && self.form.message.is_some() {
+                self.form.message = None;
+                self.redraw();
             }
         }
 
@@ -725,11 +856,18 @@ impl Player {
             // Not playing on purpose (setup or waiting screens): keep the
             // agent's health check fed so it does not restart the kiosk
             // every two minutes while a screen waits for content.
-            if self.screen != Screen::Playing {
+            // The same goes for a playlist that will not play: the player is
+            // alive and retrying, and restarting it would not fix the file
+            // (and would fail the health check that confirms an update).
+            if self.screen != Screen::Playing || self.playback_failed {
                 let report = PlaybackReport {
                     asset_id: String::new(),
                     playlist_id: self.state.as_ref().and_then(|s| s.playlist_id.clone()),
-                    state: "idle",
+                    state: if self.playback_failed {
+                        "recovering"
+                    } else {
+                        "idle"
+                    },
                     position_seconds: Some(self.idle_since.elapsed().as_secs_f64()),
                 };
                 let _ = self.jobs.try_send(Job::Report(report));
@@ -807,6 +945,33 @@ fn main() {
                 error: Some("YouTube content could not be prepared.".into()),
             },
             "wifi" | "wifi-password" | "wifi-manual" | "wifi-keyboard" => Screen::WifiSetup,
+            "no-code" | "unreachable" => {
+                let wifi = WifiStatus {
+                    supported: true,
+                    connected: true,
+                    ssid: Some("Showroom Guest".into()),
+                    ..Default::default()
+                };
+                let error = (name == "unreachable").then_some("dial tcp: i/o timeout");
+                let screen = Screen::Claim {
+                    code: None,
+                    qr: Vec::new(),
+                };
+                println!(
+                    "{}",
+                    screens::render(&screen, &WifiForm::default(), Some(&wifi), error)
+                        .unwrap_or_default()
+                );
+                return;
+            }
+            "failed" => {
+                println!("{}", screens::playback_failed());
+                return;
+            }
+            "starting-slowly" => {
+                println!("{}", screens::starting_slowly());
+                return;
+            }
             _ => Screen::Starting,
         };
         let mode = match name.as_str() {

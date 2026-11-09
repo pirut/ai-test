@@ -3,6 +3,15 @@ import test from "node:test";
 
 import type { DeviceManifest, ManifestPlaylistItem } from "@showroom/contracts";
 import { choosePlaylistId, chooseSchedule, reconcilePlaylistIndex } from "../apps/player/src/player-app";
+import {
+  CANNOT_REACH,
+  OFFLINE_BADGE_AFTER_MS,
+  friendlyError,
+  isConnectivityError,
+  networkName,
+  showOfflineBadge,
+  videoProgressed,
+} from "../apps/player/src/screen-text";
 
 function item(id: string): ManifestPlaylistItem {
   return {
@@ -104,4 +113,48 @@ test("manifest refresh preserves the currently playing item", () => {
 test("manifest refresh resets safely when the active item was removed", () => {
   assert.equal(reconcilePlaylistIndex([item("one"), item("two")], 1, [item("three")]), 0);
   assert.equal(reconcilePlaylistIndex([item("one")], 0, []), 0);
+});
+
+test("agent errors become lines a customer can act on", () => {
+  const dns = 'Post "https://app.example/api/device/register": dial tcp: lookup app.example: no such host';
+  assert.equal(isConnectivityError(dns), true);
+  assert.equal(friendlyError(dns), CANNOT_REACH);
+  // A paired screen with nothing assigned already says "choose a playlist".
+  assert.equal(friendlyError("no playable media assets were available after 0 hydration failures"), null);
+  assert.match(
+    friendlyError("no playable media assets were available after 2 hydration failures") ?? "",
+    /couldn't be downloaded/,
+  );
+  assert.equal(friendlyError("device credential was rejected (1): 401"), null);
+  assert.equal(friendlyError("  "), null);
+  assert.equal(friendlyError(undefined), null);
+  assert.equal(friendlyError("something new"), "something new");
+});
+
+test("a looping video's clock starting over counts as progress", () => {
+  assert.equal(videoProgressed(12, 12.02), false);
+  assert.equal(videoProgressed(12, 12.3), true);
+  // A single video loops in place: 59.8 -> 0.4 is playback, not a stall.
+  assert.equal(videoProgressed(59.8, 0.4), true);
+});
+
+test("the offline badge waits until the screen has been out of touch for a while", () => {
+  assert.equal(showOfflineBadge(null, 100_000), false);
+  assert.equal(showOfflineBadge(100_000, 100_000 + OFFLINE_BADGE_AFTER_MS - 1), false);
+  assert.equal(showOfflineBadge(100_000, 100_000 + OFFLINE_BADGE_AFTER_MS), true);
+});
+
+test("the agent's new download summary is reworded too", () => {
+  assert.match(
+    friendlyError("1 of 3 items are not on the screen yet: dial tcp: i/o timeout") ?? "",
+    /couldn't be downloaded/,
+  );
+});
+
+test("a cabled screen has a network to name", () => {
+  assert.equal(networkName({ connected: true, ssid: "Shop" }), "Shop");
+  assert.equal(networkName({ connected: true, wired: true }), "a network cable");
+  assert.equal(networkName({ connected: true }), null);
+  assert.equal(networkName({ connected: false, ssid: "Shop" }), null);
+  assert.equal(networkName(null), null);
 });
