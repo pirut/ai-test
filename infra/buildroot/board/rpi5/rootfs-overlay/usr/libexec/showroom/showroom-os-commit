@@ -1,0 +1,58 @@
+#!/bin/bash
+# Runs on every boot. After the first boot into a newly installed OS slot it
+# waits for the agent and player to be healthy and then commits the slot; if
+# they are not healthy within five minutes it marks the slot bad and reboots
+# into the previous one. It also records an update whose trial boot never came
+# up (the firmware already fell back), so the dashboard shows the rollback.
+set -uo pipefail
+
+BACKEND=/usr/libexec/showroom/rauc-tryboot-backend
+PENDING=/data/rauc/tryboot-pending
+ATTEMPTED=/data/rauc/tryboot-attempted
+STATE_ROOT=/var/lib/showroom/state
+
+record_rollback() {
+  local reason="$1" count
+  echo "showroom-os-commit: ${reason}" >&2
+  mkdir -p "${STATE_ROOT}"
+  count="$(cat "${STATE_ROOT}/rollback-count" 2>/dev/null || echo 0)"
+  [[ "${count}" =~ ^[0-9]+$ ]] || count=0
+  printf '%s\n' "$((count + 1))" >"${STATE_ROOT}/rollback-count.next"
+  mv "${STATE_ROOT}/rollback-count.next" "${STATE_ROOT}/rollback-count"
+  printf '%s\n' "${reason}" >"${STATE_ROOT}/last-boot-reason"
+}
+
+booted="$("${BACKEND}" get-current)" || exit 0
+pending="$(cat "${PENDING}" 2>/dev/null || true)"
+
+if [[ -z "${pending}" ]]; then
+  exit 0
+fi
+
+if [[ "${booted}" != "${pending}" ]]; then
+  # Installed but never tried yet: the next showroom-reboot tries it. Tried
+  # but we are back on the old slot: the new one did not boot.
+  if [[ -s "${ATTEMPTED}" ]]; then
+    "${BACKEND}" set-state "${pending}" bad || rm -f "${PENDING}" "${ATTEMPTED}"
+    record_rollback "OS update to slot ${pending} did not boot; still running slot ${booted}"
+  fi
+  exit 0
+fi
+
+for _ in $(seq 1 60); do
+  if systemctl is-active --quiet showroom-agent.service \
+    && systemctl is-active --quiet showroom-kiosk.service \
+    && curl -fsS --max-time 2 'http://127.0.0.1:4173/healthz?deep=1' >/dev/null; then
+    if rauc status mark-good booted; then
+      echo "showroom-os-commit: committed slot ${booted}" >&2
+      exit 0
+    fi
+    break
+  fi
+  sleep 5
+done
+
+rauc status mark-bad booted || "${BACKEND}" set-state "${booted}" bad || true
+record_rollback "OS update to slot ${booted} failed its health check; returned to the previous slot"
+sync
+systemctl reboot

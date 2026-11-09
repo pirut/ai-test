@@ -1,0 +1,8 @@
+config BR2_PACKAGE_RPI_VCGENCMD
+	bool "rpi-vcgencmd"
+	depends on BR2_arm || BR2_aarch64
+	help
+	  vcgencmd from Raspberry Pi's utils repository, vendored from
+	  https://github.com/raspberrypi/utils (commit
+	  b57c48e97f7f43d95d86334798650cfda1ebc8a1). The agent uses it
+	  for display power and throttling reports.

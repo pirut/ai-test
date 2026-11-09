@@ -1,0 +1,28 @@
+#!/bin/bash
+# Creates the persistent directories on the data partition before they are
+# bind-mounted over the read-only root (see /etc/fstab). It never fails, so a
+# damaged data partition still leaves a bootable screen with tmpfs state.
+set -uo pipefail
+
+install -d -m 0755 /data/showroom /data/showroom/cache /data/showroom/state /data/showroom/recovery
+install -d -m 0700 /data/network /data/network/system-connections
+install -d -m 0755 /data/rauc
+install -d -m 0700 /data/tailscale
+install -d -m 0755 /data/timesync
+install -d -m 2755 -g systemd-journal /data/journal
+
+# Signed app releases switch releases/<kind>/current between versions and
+# roll back to the previous target, so the link must exist before the first
+# update. Start on the versions built into the image.
+for kind in agent player; do
+  install -d -m 0755 "/data/showroom/releases/${kind}"
+  if [[ ! -L "/data/showroom/releases/${kind}/current" ]]; then
+    ln -sfn "/usr/lib/showroom/releases/${kind}/1.0.0" "/data/showroom/releases/${kind}/current"
+  fi
+done
+
+# The read-only root gets a new machine ID every boot, so journald starts a
+# new directory each time. Keep the three most recent previous boots.
+find /data/journal -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
+  | sort -rn | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
+exit 0

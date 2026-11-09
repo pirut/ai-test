@@ -1,0 +1,5 @@
+# Showroom OS: let the physical-console maintenance account inspect and test
+# A/B OS updates. RAUC still refuses bundles not signed under the image's CA.
+Cmnd_Alias SHOWROOM_OS = /usr/bin/rauc status, /usr/bin/rauc status *, /usr/libexec/showroom/showroom-os-install *, /usr/libexec/showroom/showroom-reboot
+
+showroom-maint ALL=(root) NOPASSWD: SHOWROOM_OS

@@ -116,7 +116,6 @@ fn start_mpv(config: &Config) -> Result<Mpv, mpv::Error> {
         ("loop-playlist", "inf"),
         ("image-display-duration", "10"),
         ("prefetch-playlist", "yes"),
-        ("osc", "no"),
         ("input-default-bindings", "no"),
         ("input-vo-keyboard", "no"),
         ("terminal", "no"),
@@ -130,7 +129,9 @@ fn start_mpv(config: &Config) -> Result<Mpv, mpv::Error> {
     if config.vo == "gpu" || config.vo == "gpu-next" {
         mpv.set_option("gpu-context", "drm")?;
     }
+    // osc exists only in an mpv built with Lua, which Showroom OS leaves out.
     let optional = [
+        ("osc", "no"),
         ("profile", "fast"),
         ("background-color", "#030608"),
         ("drm-mode", config.display_mode.as_str()),

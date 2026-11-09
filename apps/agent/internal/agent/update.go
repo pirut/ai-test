@@ -62,7 +62,10 @@ func (s *Service) applyReleaseUpdate(
 	if payload.SystemURL != "" && normalizeSHA256(payload.SystemSHA256) == "" {
 		return fmt.Errorf("systemSha256 is required when systemUrl is provided")
 	}
-	if payload.SystemURL != "" {
+	// Only images that install signed A/B OS bundles (Showroom OS) set
+	// SystemUpdateCommand; everywhere else OS updates stay on their own lane.
+	systemUpdateCommand := strings.TrimSpace(s.config.SystemUpdateCommand)
+	if payload.SystemURL != "" && systemUpdateCommand == "" {
 		return fmt.Errorf("system bundles are not installed live; publish an A/B OS update instead")
 	}
 	if err := verifyReleaseSignature(payload.AgentSHA256, payload.AgentSignature, s.config.ReleasePublicKey); payload.AgentURL != "" && err != nil {
@@ -70,6 +73,9 @@ func (s *Service) applyReleaseUpdate(
 	}
 	if err := verifyReleaseSignature(payload.PlayerSHA256, payload.PlayerSignature, s.config.ReleasePublicKey); payload.PlayerURL != "" && err != nil {
 		return fmt.Errorf("verify player release signature: %w", err)
+	}
+	if err := verifyReleaseSignature(payload.SystemSHA256, payload.SystemSignature, s.config.ReleasePublicKey); payload.SystemURL != "" && err != nil {
+		return fmt.Errorf("verify system release signature: %w", err)
 	}
 
 	workDir := filepath.Join(s.config.StateRoot, "updates", commandID)
@@ -145,6 +151,24 @@ func (s *Service) applyReleaseUpdate(
 		}
 	}
 
+	// The OS bundle goes last: if it fails, the deferred rollback undoes the
+	// agent and player slots installed above, so the release applies whole or
+	// not at all.
+	systemInstalled := false
+	if payload.SystemURL != "" {
+		bundlePath := filepath.Join(workDir, archiveFileName(payload.SystemURL, "system.raucb"))
+		if err := s.downloadResuming(ctx, payload.SystemURL, bundlePath); err != nil {
+			return fmt.Errorf("download system bundle: %w", err)
+		}
+		if err := verifySHA256(bundlePath, payload.SystemSHA256); err != nil {
+			return fmt.Errorf("verify system bundle: %w", err)
+		}
+		if err := installSystemBundle(ctx, systemUpdateCommand, bundlePath); err != nil {
+			return fmt.Errorf("install system bundle: %w", err)
+		}
+		systemInstalled = true
+	}
+
 	if nextAgentVersion != "" || nextPlayerVersion != "" || nextSystemVersion != "" {
 		if err := s.store.Update(func(next *state.DeviceState) {
 			if nextAgentVersion != "" {
@@ -161,6 +185,21 @@ func (s *Service) applyReleaseUpdate(
 		}
 	}
 
+	if systemInstalled {
+		// The new OS slot only runs after a reboot, which also restarts the
+		// agent and player; the update guard checks them at boot.
+		if len(restartCommands) > 0 {
+			if err := writeJSONFile(filepath.Join(s.config.StateRoot, "pending-update.json"), pending); err != nil {
+				return fmt.Errorf("record pending update: %w", err)
+			}
+		}
+		if err := scheduleShell(s.config.RebootCommand, 5*time.Second); err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	}
+
 	if len(restartCommands) == 0 {
 		return nil
 	}
@@ -172,6 +211,56 @@ func (s *Service) applyReleaseUpdate(
 		return err
 	}
 	committed = true
+	return nil
+}
+
+const systemInstallTimeout = 30 * time.Minute
+
+// downloadResuming fetches a large file (an OS bundle is ~100 MB) through
+// the client's 45-second request timeout by resuming the partial download
+// until a few attempts in a row make no progress.
+func (s *Service) downloadResuming(ctx context.Context, sourceURL string, destPath string) error {
+	const maxStalls = 3
+	stalls := 0
+	lastSize := int64(-1)
+	for {
+		err := s.client.DownloadFile(ctx, sourceURL, destPath)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		size := int64(0)
+		if info, statErr := os.Stat(destPath + ".part"); statErr == nil {
+			size = info.Size()
+		}
+		if size > lastSize {
+			stalls = 0
+		} else {
+			stalls++
+		}
+		if stalls >= maxStalls {
+			return err
+		}
+		lastSize = size
+	}
+}
+
+// installSystemBundle runs the image's OS installer (on Showroom OS,
+// showroom-os-install, which hands the bundle to RAUC) with the verified
+// bundle path as its only argument.
+func installSystemBundle(ctx context.Context, command string, bundlePath string) error {
+	installCtx, cancel := context.WithTimeout(ctx, systemInstallTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(installCtx, command, bundlePath).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if len(message) > 600 {
+			message = "..." + message[len(message)-600:]
+		}
+		return fmt.Errorf("%s: %w: %s", filepath.Base(command), err, message)
+	}
 	return nil
 }
 

@@ -1,0 +1,17 @@
+# Showroom OS units. Buildroot applies presets with "systemctl preset-all"
+# when it assembles the root filesystem; anything not enabled here or in
+# systemd's own presets stays disabled.
+enable NetworkManager.service
+enable showroom-agent.service
+enable showroom-kiosk.service
+enable showroom-kiosk-retry.timer
+enable showroom-update-guard.service
+enable showroom-network-recovery.service
+enable showroom-network-onboarding.service
+enable showroom-os-commit.service
+enable showroom-os-follow.timer
+enable showroom-debug-log.service
+enable tailscaled.service
+enable showroom-tailscale-join.timer
+# showroom-os-commit decides when a new slot is good, after a health check.
+disable rauc-mark-good.service

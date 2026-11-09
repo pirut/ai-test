@@ -1,0 +1,10 @@
+#!/bin/bash
+# Installs a signed RAUC bundle into the inactive A/B slot. The agent runs this
+# for an update_release command that carries a system bundle (after checking
+# its SHA-256 and Ed25519 signature) and then calls showroom-reboot. RAUC
+# checks the bundle's own signature against /etc/rauc/keyring.pem and its
+# compatible string before writing anything.
+set -euo pipefail
+
+bundle="${1:?usage: showroom-os-install BUNDLE.raucb}"
+exec rauc install "${bundle}"

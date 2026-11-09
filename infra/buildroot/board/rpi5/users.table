@@ -1,0 +1,2 @@
+pi -1 pi -1 * /home/pi /bin/sh audio,video,render,input,tty Showroom player
+showroom-maint -1 showroom-maint -1 * /home/showroom-maint /bin/bash adm,audio,users,video,input,render,systemd-journal Showroom physical-console maintenance

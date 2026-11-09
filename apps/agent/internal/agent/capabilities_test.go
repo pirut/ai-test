@@ -3,7 +3,7 @@ package agent
 import "testing"
 
 func TestApplianceDescriptorAdvertisesFleetContract(t *testing.T) {
-	descriptor := applianceDescriptor()
+	descriptor := applianceDescriptor(false)
 	if descriptor["generation"] != "showroom-appliance-v2" {
 		t.Fatalf("unexpected appliance generation: %v", descriptor["generation"])
 	}
@@ -32,5 +32,22 @@ func TestApplianceDescriptorAdvertisesFleetContract(t *testing.T) {
 		if !present {
 			t.Errorf("missing capability %q", capability)
 		}
+	}
+}
+
+func TestApplianceDescriptorAdvertisesSystemBundlesOnlyWhenConfigured(t *testing.T) {
+	has := func(descriptor map[string]interface{}) bool {
+		for _, capability := range descriptor["capabilities"].([]string) {
+			if capability == "system_bundles" {
+				return true
+			}
+		}
+		return false
+	}
+	if has(applianceDescriptor(false)) {
+		t.Fatal("system_bundles advertised without an OS installer")
+	}
+	if !has(applianceDescriptor(true)) {
+		t.Fatal("system_bundles missing with an OS installer")
 	}
 }
