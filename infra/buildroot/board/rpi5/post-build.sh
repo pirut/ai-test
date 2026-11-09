@@ -47,13 +47,22 @@ rm -rf "${TARGET}/opt/showroom/player"
 mkdir -p "${TARGET}/opt/showroom/player"
 cp -a "${ARTIFACTS}/player/." "${TARGET}/opt/showroom/player/"
 
-# The built-in versions as release 1.0.0, like the Raspberry Pi OS image
-# seeds /var/lib/showroom/releases. showroom-data-layout points the
-# persistent "current" links here on first boot; the agent needs them to
-# install and roll back signed app releases.
-install -d "${TARGET}/usr/lib/showroom/releases/agent/1.0.0" "${TARGET}/usr/lib/showroom/releases/player"
-ln -sfn /usr/local/libexec/showroom-agent "${TARGET}/usr/lib/showroom/releases/agent/1.0.0/showroom-agent"
-ln -sfn /opt/showroom/player "${TARGET}/usr/lib/showroom/releases/player/1.0.0"
+# The built-in versions as a release named after the image version, which is
+# what the agent then reports for them. showroom-data-layout points the
+# persistent "current" links here, and back here when an OS update carries a
+# newer agent and player than the app release a screen had installed (it
+# compares the release's install time with build-epoch). 1.0.0 is the name
+# earlier images used; screens flashed with them still point at it until
+# their first boot of this image.
+[[ "${VERSION}" =~ ^[A-Za-z0-9._-]+$ && "${VERSION}" != current && "${VERSION}" != 1.0.0 ]] \
+  || fail "SHOWROOM_IMAGE_VERSION '${VERSION}' cannot name the built-in release"
+rm -rf "${TARGET}/usr/lib/showroom/releases"
+install -d "${TARGET}/usr/lib/showroom/releases/agent/${VERSION}" "${TARGET}/usr/lib/showroom/releases/player"
+ln -sfn /usr/local/libexec/showroom-agent "${TARGET}/usr/lib/showroom/releases/agent/${VERSION}/showroom-agent"
+ln -sfn /opt/showroom/player "${TARGET}/usr/lib/showroom/releases/player/${VERSION}"
+ln -sfn "${VERSION}" "${TARGET}/usr/lib/showroom/releases/agent/1.0.0"
+ln -sfn "${VERSION}" "${TARGET}/usr/lib/showroom/releases/player/1.0.0"
+date -u +%s >"${TARGET}/usr/lib/showroom/build-epoch"
 
 # Appliance scripts and units, unchanged from the Raspberry Pi OS image. The
 # legacy Chromium kiosk (start-kiosk.sh) is left out: there is no X11 here.
@@ -82,18 +91,17 @@ if [[ -L "${TARGET}/usr/bin/tailscaled" ]]; then
   install -m 0755 "${tailscaled}" "${TARGET}/usr/bin/tailscaled"
 fi
 
-# Remote SSH over Tailscale and the setup hotspot's captive DNS, from the
-# Raspberry Pi OS image once they are there.
-if [[ -f "${SYSTEMD_SRC}/showroom-tailscale-join" ]]; then
-  install -D -m 0755 "${SYSTEMD_SRC}/showroom-tailscale-join" "${TARGET}/usr/local/bin/showroom-tailscale-join"
-  for unit in showroom-tailscale-join.service showroom-tailscale-join.timer; do
-    install -D -m 0644 "${SYSTEMD_SRC}/${unit}" "${TARGET}/etc/systemd/system/${unit}"
-  done
-fi
-if [[ -f "${CONFIG_SRC}/showroom-setup-dnsmasq.conf" ]]; then
-  install -D -m 0644 "${CONFIG_SRC}/showroom-setup-dnsmasq.conf" \
-    "${TARGET}/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf"
-fi
+# Remote SSH over Tailscale (the screen asks the dashboard for its key, see
+# showroom-tailscale-join) and the setup hotspot's captive DNS, shared with
+# the Raspberry Pi OS image. Both are required: without the first a screen in
+# a showroom cannot be reached, without the second a phone that joins the
+# setup hotspot never opens the setup page.
+install -D -m 0755 "${SYSTEMD_SRC}/showroom-tailscale-join" "${TARGET}/usr/local/bin/showroom-tailscale-join"
+for unit in showroom-tailscale-join.service showroom-tailscale-join.timer; do
+  install -D -m 0644 "${SYSTEMD_SRC}/${unit}" "${TARGET}/etc/systemd/system/${unit}"
+done
+install -D -m 0644 "${CONFIG_SRC}/showroom-setup-dnsmasq.conf" \
+  "${TARGET}/etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf"
 
 install -D -m 0644 "${CONFIG_SRC}/getty-tty1-override.conf" "${TARGET}/etc/systemd/system/getty@tty1.service.d/override.conf"
 install -D -m 0644 "${CONFIG_SRC}/20-showroom-console.sh" "${TARGET}/etc/profile.d/20-showroom-console.sh"

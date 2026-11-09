@@ -19,9 +19,12 @@ first-boot Wi-Fi setup on tty1, recovery screen, update guard, maintenance
 console and its sudo rules, watchdog and journal limits). The agent and the
 player bundle are the same artifacts `prepare-artifacts.sh` builds for signed
 app releases, so app releases install and roll back exactly as today.
-Tailscale and dnsmasq are in the image already; the Tailscale join script
-and the setup hotspot's DNS file are picked up from `infra/pi-image` as soon
-as they exist there.
+The Tailscale join script and timer and the setup hotspot's DNS file come
+from `infra/pi-image` too, and the build fails without them.
+
+While the player starts, the screen shows one line, "Digital Curator is
+starting...". Customer images send kernel and boot messages to tty3 and
+development images show them on the screen.
 
 Differences, all in `board/rpi5`:
 
@@ -69,9 +72,24 @@ data partition is fixed at 12 GB), so it flashes in about a minute.
    Either kind of rollback sets `last-boot-reason` and `rollback-count`, which
    heartbeats already report.
 
-The dashboard does not send OS bundles yet (`createRelease` refuses
-`systemUrl`), and screens on this image advertise a `system_bundles`
-capability so a later server change can target only them.
+Screens on this image advertise a `system_bundles` capability, so the
+dashboard sends OS bundles only to them. Publishing a stable release (below)
+prints what the dashboard's release form needs: the version (the same as the
+image's `VERSION_ID`), the bundle URL
+`https://github.com/pirut/showroom-os/releases/download/v<version>/showroom-os-rpi5-<version>.raucb`
+and its SHA-256. They are also in the release notes, `release.json` and
+`<bundle>.sha256` of that release.
+
+### The agent and player an image carries
+
+The image's own agent and player are a release named after the image version
+(`/usr/lib/showroom/releases/<kind>/<version>`), so a screen reports the image
+version for them until a signed app release is installed. An app release
+lives on the data partition and survives OS updates. On every boot
+`showroom-data-layout` compares the time it was installed with the time the
+image was built and runs the newer one, so an OS update never leaves a screen
+on an agent or player older than the ones it carries. The release it replaces
+is remembered, and a fall back to the previous OS slot returns to it.
 
 ## Build
 
@@ -106,7 +124,7 @@ card reader.
 | --- | --- | --- |
 | Player or agent | `./infra/pi-image/dev-push.sh root@<test screen>` builds them and swaps them in over SSH | seconds |
 | Anything in the image | push to a branch; CI builds, smoke-tests and publishes to the dev channel; the test screen installs it into its spare slot, health-checks it and keeps it or falls back | CI time, then about 5 minutes |
-| Field release | manual workflow run with `signing: production` and `publish_stable` | CI time |
+| Customer release | manual workflow run with `signing: production` and `publish_stable` | CI time |
 
 **Development images** are CI builds signed with the development keys. They
 carry `/etc/showroom/os-channel.env`, so `showroom-os-follow` checks the dev
@@ -141,7 +159,13 @@ secrets of this repository. The next CI build publishes to
 `https://github.com/pirut/showroom-os/releases/tag/dev`; flash
 `showroom-os-rpi5-dev.img.xz` from there onto the test screen. Stable releases
 appear at
-`https://github.com/pirut/showroom-os/releases/latest/download/showroom-os-rpi5.img.xz`.
+`https://github.com/pirut/showroom-os/releases/latest/download/showroom-os-rpi5.img.xz`,
+which is the download the website's Get started page links to. That link
+does not work until the first stable release is published.
+
+`publish.sh` refuses to put a development image on the stable channel or a
+customer image on the dev channel, and never replaces a published stable
+version.
 
 ## Signing keys
 
@@ -167,6 +191,9 @@ sudo ./infra/buildroot/tests/tryboot-backend.sh   # A/B state machine, in a moun
 ./infra/buildroot/tests/post-image-dry-run.sh     # card layout and signed bundle, with stand-in inputs
 ./infra/buildroot/tests/check-defconfig.sh        # every defconfig option resolves as written
 ./infra/buildroot/tests/os-follow.sh              # development OS channel follower
+./infra/buildroot/tests/post-build-dry-run.sh     # appliance files, enabled units, agent config, customer or development image
+./infra/buildroot/tests/data-layout.sh            # built-in or installed agent and player after an OS update
+./infra/buildroot/tests/publish-dry-run.sh        # release channels and the files a stable release carries
 ./infra/buildroot/tests/rootfs-smoke.py out/images/rootfs.erofs   # a built image
 ```
 

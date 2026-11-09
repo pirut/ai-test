@@ -50,7 +50,18 @@ REQUIRED_FILES = [
     "etc/showroom-agent/config.env",
     "usr/lib/os-release",
     "usr/lib/showroom/releases/player/1.0.0/index.html",
+    # When the image was built, to tell an older installed app release from
+    # the agent and player the image carries (showroom-data-layout).
+    "usr/lib/showroom/build-epoch",
     "etc/NetworkManager/dnsmasq-shared.d/showroom-setup.conf",
+    # Remote SSH: the join script, its units, and the directory its node key
+    # is bind-mounted over.
+    "usr/local/bin/showroom-tailscale-join",
+    "etc/systemd/system/showroom-tailscale-join.service",
+    "etc/systemd/system/showroom-tailscale-join.timer",
+    # What tty1 shows while the player starts.
+    "etc/profile.d/10-showroom-starting.sh",
+    "etc/profile.d/20-showroom-console.sh",
     # Clock: the boot-time floor, DNSSEC off and the timesync restart on Wi-Fi.
     "usr/lib/clock-epoch",
     "etc/systemd/resolved.conf.d/20-showroom.conf",
@@ -64,7 +75,10 @@ ENABLED_UNITS = [
     "showroom-os-commit.service",
     "showroom-os-follow.timer",
     "showroom-network-onboarding.service",
+    "showroom-network-recovery.service",
+    "showroom-kiosk-retry.timer",
     "tailscaled.service",
+    "showroom-tailscale-join.timer",
 ]
 DISABLED_UNITS = ["rauc-mark-good.service", "systemd-networkd.service"]
 # Drivers built as modules that a screen cannot work without: Wi-Fi, display,
@@ -344,7 +358,10 @@ def check_files(fs, errors):
                 errors.append("20-showroom-watchdog.conf does not set RuntimeWatchdogSec=15s")
     else:
         errors.append("/etc/systemd/system.conf.d/20-showroom-watchdog.conf is missing")
+    # A customer image must not turn the watchdog off; test images do.
     channel = fs.resolve("/etc/showroom/os-channel.env")
+    if (fs.resolve("/etc/systemd/system.conf.d/90-showroom-dev.conf") is not None) != (channel is not None):
+        errors.append("90-showroom-dev.conf (watchdog off) must be present on development images only")
     os_release = fs.resolve("/usr/lib/os-release")
     if os_release:
         with open(os_release, encoding="utf-8") as handle:

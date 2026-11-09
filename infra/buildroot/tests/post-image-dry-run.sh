@@ -65,6 +65,9 @@ if [[ -n "${SHOWROOM_OS_CHANNEL_URL:-}" ]]; then
 else
   grep -q '^kernel_watchdog_timeout=15' <<<"${config}" || fail "config.txt lacks the watchdog"
   grep -q ' quiet ' <<<"${cmdline}" || fail "cmdline.txt is not quiet"
+  # A customer never sees boot text: kernel and systemd messages go to tty3.
+  grep -q ' console=tty3 ' <<<"${cmdline}" || fail "cmdline.txt does not send boot messages to tty3"
+  ! grep -q 'console=tty1' <<<"${cmdline}" || fail "cmdline.txt shows boot messages on the screen"
 fi
 mdir -b -i "${IMAGES}/boot.vfat" ::/overlays | grep -q vc4-kms-v3d-pi5.dtbo || fail "vc4-kms-v3d-pi5 overlay missing"
 if mdir -b -i "${IMAGES}/boot.vfat" ::/overlays | grep -q hifiberry; then

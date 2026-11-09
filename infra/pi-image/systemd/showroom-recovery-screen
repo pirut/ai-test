@@ -41,7 +41,8 @@ device_id() {
 }
 
 render() {
-  local hostname_short device_id claim_code claim_state network_state ip_address failed_state kiosk_state failure_count
+  local hostname_short device_id claim_code claim_state network_state ip_address failed_state kiosk_state failure_count image_variant
+  image_variant="$(head -n 1 /etc/showroom/image-variant 2>/dev/null || true)"
   hostname_short="$(hostname -s 2>/dev/null || hostname)"
   device_id="$(device_id)"
   claim_code="$(state_value '.claimCode' 'none')"
@@ -78,10 +79,17 @@ render() {
   printf '  sudo systemctl reset-failed showroom-kiosk.service\n'
   printf '  sudo systemctl restart showroom-kiosk.service\n'
   printf '  sudo showroom-network-setup\n'
-  printf '  sudo -u pi rpi-connect status\n'
-  printf '  sudo reboot\n\n'
-  printf 'Remote access: open https://connect.raspberrypi.com and select this device.\n'
-  printf 'SSH password login is disabled; SSH requires an installed public key.\n'
+  if [[ "${image_variant}" == "buildroot" ]]; then
+    # Showroom OS has no Raspberry Pi Connect and no SSH server of its own.
+    printf '  sudo reboot\n\n'
+    printf 'Remote access: Tailscale SSH, once this screen is claimed and remote\n'
+    printf 'access is set up on the dashboard. There is no password login.\n'
+  else
+    printf '  sudo -u pi rpi-connect status\n'
+    printf '  sudo reboot\n\n'
+    printf 'Remote access: open https://connect.raspberrypi.com and select this device.\n'
+    printf 'SSH password login is disabled; SSH requires an installed public key.\n'
+  fi
   printf 'When the kiosk is healthy, use Ctrl+Alt+F7 to return to it.\n\n'
 }
 

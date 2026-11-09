@@ -4,25 +4,88 @@
 # damaged data partition still leaves a bootable screen with tmpfs state.
 set -uo pipefail
 
-install -d -m 0755 /data/showroom /data/showroom/cache /data/showroom/state /data/showroom/recovery
-install -d -m 0700 /data/network /data/network/system-connections
-install -d -m 0755 /data/rauc
-install -d -m 0700 /data/tailscale
-install -d -m 0755 /data/timesync
-install -d -m 2755 -g systemd-journal /data/journal
+DATA="${SHOWROOM_DATA_ROOT:-/data}"
+BUILTIN="${SHOWROOM_BUILTIN_RELEASES:-/usr/lib/showroom/releases}"
+OS_RELEASE="${SHOWROOM_OS_RELEASE:-/usr/lib/os-release}"
+BUILD_EPOCH="${SHOWROOM_BUILD_EPOCH_FILE:-/usr/lib/showroom/build-epoch}"
 
-# Signed app releases switch releases/<kind>/current between versions and
-# roll back to the previous target, so the link must exist before the first
-# update. Start on the versions built into the image.
-for kind in agent player; do
-  install -d -m 0755 "/data/showroom/releases/${kind}"
-  if [[ ! -L "/data/showroom/releases/${kind}/current" ]]; then
-    ln -sfn "/usr/lib/showroom/releases/${kind}/1.0.0" "/data/showroom/releases/${kind}/current"
+log() {
+  echo "showroom-data-layout: $*" >&2
+}
+
+install -d -m 0755 "${DATA}/showroom" "${DATA}/showroom/cache" "${DATA}/showroom/state" "${DATA}/showroom/recovery"
+install -d -m 0700 "${DATA}/network" "${DATA}/network/system-connections"
+install -d -m 0755 "${DATA}/rauc"
+install -d -m 0700 "${DATA}/tailscale"
+install -d -m 0755 "${DATA}/timesync"
+install -d -m 2755 -g systemd-journal "${DATA}/journal"
+
+# The agent and player: releases/<kind>/current on the data partition is what
+# runs. It points either at the versions built into this image (named after
+# the image version, which is what the screen then reports) or at a signed
+# app release the agent installed. An app release survives OS updates, so
+# without a check an OS update that carries a newer agent and player would
+# keep running the older installed ones. Every boot picks the newer of the
+# two by time: an app release installed before this image was built is older
+# than what the image carries. The release it replaces is remembered, so
+# falling back to an older OS slot goes back to it.
+image_version="$(sed -n 's/^VERSION_ID=//p' "${OS_RELEASE}" 2>/dev/null | tr -d '"')"
+image_built="$(cat "${BUILD_EPOCH}" 2>/dev/null || true)"
+[[ "${image_built}" =~ ^[0-9]+$ ]] || image_built=0
+
+point_current() {
+  local dir="$1" target="$2"
+  ln -sfn "${target}" "${dir}/current.layout" && mv -T "${dir}/current.layout" "${dir}/current"
+}
+
+# True when the app release TARGET (a link target of "current") is usable and
+# was installed after this image was built.
+release_is_newer() {
+  local kind="$1" dir="$2" target="$3" path installed
+  path="${target}"
+  [[ "${path}" == /* ]] || path="${dir}/${target}"
+  if [[ "${kind}" == agent ]]; then
+    [[ -x "${path}/showroom-agent" ]] || return 1
+  else
+    [[ -d "${path}" ]] || return 1
   fi
+  # An image without a build time keeps whatever is installed.
+  (( image_built > 0 )) || return 0
+  installed="$(stat -c %Y "${path}" 2>/dev/null || echo 0)"
+  (( installed >= image_built ))
+}
+
+for kind in agent player; do
+  dir="${DATA}/showroom/releases/${kind}"
+  install -d -m 0755 "${dir}"
+  builtin_release="${BUILTIN}/${kind}/${image_version:-1.0.0}"
+  [[ -e "${builtin_release}" ]] || builtin_release="${BUILTIN}/${kind}/1.0.0"
+  target="$(readlink "${dir}/current" 2>/dev/null || true)"
+  superseded="$(readlink "${dir}/superseded" 2>/dev/null || true)"
+  case "${target}" in
+    "" | "${BUILTIN}"/*)
+      if [[ -n "${superseded}" ]] && release_is_newer "${kind}" "${dir}" "${superseded}"; then
+        # Back on an older OS slot than the app release it had replaced.
+        log "${kind}: release ${superseded} is newer than this image; using it again"
+        point_current "${dir}" "${superseded}" && rm -f "${dir}/superseded"
+      elif [[ "${target}" != "${builtin_release}" ]]; then
+        point_current "${dir}" "${builtin_release}"
+      fi
+      ;;
+    *)
+      if release_is_newer "${kind}" "${dir}" "${target}"; then
+        rm -f "${dir}/superseded"
+      else
+        log "${kind}: release ${target} is older than this image (or unusable); using the built-in ${builtin_release##*/}"
+        ln -sfn "${target}" "${dir}/superseded"
+        point_current "${dir}" "${builtin_release}"
+      fi
+      ;;
+  esac
 done
 
 # The read-only root gets a new machine ID every boot, so journald starts a
 # new directory each time. Keep the three most recent previous boots.
-find /data/journal -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
+find "${DATA}/journal" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
   | sort -rn | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
 exit 0

@@ -33,5 +33,12 @@ jobs:
       - run: cargo build --locked --release --manifest-path apps/pi-player/Cargo.toml --target aarch64-unknown-linux-gnu
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-      - run: bash -n infra/pi-image/*.sh infra/pi-image/systemd/showroom-* scripts/*.sh
+      # bash -n reads only its first file argument, so check them one by one
+      # (unit files are not scripts).
+      - name: Shell script syntax
+        run: |
+          for script in infra/pi-image/*.sh infra/pi-image/systemd/* scripts/*.sh; do
+            case "${script}" in *.service | *.timer) continue ;; esac
+            bash -n "${script}"
+          done
       - run: ./infra/pi-image/validate-appliance.sh --source

@@ -42,9 +42,12 @@ on:
 permissions:
   contents: read
 
+# A newer development build replaces an older one of the same branch. A
+# production build is in a group of its own and is never cancelled, so a push
+# cannot stop a release halfway through publishing.
 concurrency:
-  group: buildroot-image-${{ github.ref }}
-  cancel-in-progress: true
+  group: buildroot-image-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'development' }}
+  cancel-in-progress: ${{ !(github.event_name == 'workflow_dispatch' && inputs.signing == 'production') }}
 
 env:
   SHOWROOM_BUILDROOT_VERSION: 2026.02.3
@@ -61,12 +64,21 @@ jobs:
           shellcheck infra/buildroot/*.sh infra/buildroot/board/rpi5/*.sh infra/buildroot/tests/*.sh \
             infra/buildroot/board/rpi5/rootfs-overlay/usr/libexec/showroom/* \
             infra/pi-image/systemd/showroom-update-guard infra/pi-image/dev-push.sh
+          shellcheck -s sh infra/buildroot/board/rpi5/rootfs-overlay/etc/profile.d/*.sh
       - name: A/B tryboot backend
         run: sudo ./infra/buildroot/tests/tryboot-backend.sh
+      - name: Built-in or installed agent and player
+        run: ./infra/buildroot/tests/data-layout.sh
       - name: Development OS channel
         run: ./infra/buildroot/tests/os-follow.sh
+      - name: Appliance files, units and agent configuration
+        run: ./infra/buildroot/tests/post-build-dry-run.sh
       - name: Card layout and signed bundle
-        run: ./infra/buildroot/tests/post-image-dry-run.sh
+        run: |
+          ./infra/buildroot/tests/post-image-dry-run.sh
+          SHOWROOM_OS_CHANNEL_URL=https://example.com/latest.json ./infra/buildroot/tests/post-image-dry-run.sh
+      - name: Publishing channels and release files
+        run: ./infra/buildroot/tests/publish-dry-run.sh
       - name: Defconfig resolves as written
         run: ./infra/buildroot/tests/check-defconfig.sh
       - name: FFmpeg patch gives every pixel format a descriptor
@@ -102,6 +114,7 @@ jobs:
       - name: Signing keys
         env:
           SIGNING: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'development' }}
+          PUBLISH_STABLE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_stable || false }}
           PROD_CA_CERT: ${{ secrets.SHOWROOM_RAUC_CA_CERT }}
           PROD_SIGNING_CERT: ${{ secrets.SHOWROOM_RAUC_SIGNING_CERT }}
           PROD_SIGNING_KEY: ${{ secrets.SHOWROOM_RAUC_SIGNING_KEY }}
@@ -123,6 +136,15 @@ jobs:
               echo "SHOWROOM_RAUC_KEY=${keys}/signing.key.pem"
             } >>"${GITHUB_ENV}"
           }
+          # Say so now, not after a two-hour build that then publishes nothing.
+          if [[ "${PUBLISH_STABLE}" == true && "${SIGNING}" != production ]]; then
+            echo "A stable release needs production signing: run again with signing set to production" >&2
+            exit 1
+          fi
+          if [[ "${PUBLISH_STABLE}" == true && -z "${IMAGES_TOKEN}" ]]; then
+            echo "A stable release needs the SHOWROOM_IMAGES_TOKEN secret (infra/buildroot/setup-image-publishing.sh)" >&2
+            exit 1
+          fi
           if [[ "${SIGNING}" == production ]]; then
             if [[ -z "${PROD_CA_CERT}" || -z "${PROD_SIGNING_CERT}" || -z "${PROD_SIGNING_KEY}" ]]; then
               echo "Production signing needs the SHOWROOM_RAUC_CA_CERT, SHOWROOM_RAUC_SIGNING_CERT and SHOWROOM_RAUC_SIGNING_KEY secrets (setup-image-publishing.sh --production)" >&2
