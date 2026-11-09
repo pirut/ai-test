@@ -40,7 +40,9 @@ chroot "${root}" visudo -cf /etc/sudoers.d/020-showroom-maintenance
   showroom-kiosk-retry.timer \
   showroom-update-guard \
   showroom-network-recovery \
-  showroom-network-onboarding
+  showroom-network-onboarding \
+  tailscaled \
+  showroom-tailscale-join.timer
 
 # The bdebstrap enable-units helper only recognizes concrete unit files and
 # skips template instances. systemctl resolves getty@.service and creates the

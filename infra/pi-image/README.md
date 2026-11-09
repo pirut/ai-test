@@ -150,6 +150,48 @@ alone. The result is recorded in `/persistent/common/showroom-grow-persistent`.
 eMMC layers (`cm4`, `cm5`) keep the fixed 12G partition because their
 partition table is write-protected.
 
+## Remote SSH (Tailscale)
+
+Every image carries Tailscale. On boot, and every 15 minutes until it has
+joined, `showroom-tailscale-join` asks the dashboard for an auth key
+(`GET /api/device/tailscale`, authenticated with the screen's agent credential)
+and runs `tailscale up --ssh` as `showroom-<device id>` with `tag:showroom`.
+No key is baked into the image or the OTA archive, and until the dashboard is
+configured the endpoint returns 404 and the screen does nothing. Node state in
+`/var/lib/tailscale` is slot-shared, so a screen keeps its tailnet identity
+across A/B updates. `--accept-dns=false` leaves the screen's resolver alone.
+OpenSSH (key-only) and Raspberry Pi Connect are unchanged.
+
+One-time tailnet setup:
+
+1. In the Tailscale admin console, add this to the access controls policy.
+   Screens can be reached by tailnet admins and cannot reach anything
+   themselves. If the policy still has the default allow-all rule, keep a
+   grant for your own devices in its place.
+
+   ```json
+   "tagOwners": { "tag:showroom": ["autogroup:admin"] },
+   "grants": [
+     { "src": ["autogroup:admin"], "dst": ["tag:showroom"], "ip": ["*"] }
+   ],
+   "ssh": [
+     { "action": "accept", "src": ["autogroup:admin"], "dst": ["tag:showroom"], "users": ["pi", "root"] }
+   ]
+   ```
+
+2. Under Settings, Trust credentials, create an OAuth client with the
+   `auth_keys` write scope and the `tag:showroom` tag.
+3. Set `TAILSCALE_OAUTH_CLIENT_ID` and `TAILSCALE_OAUTH_CLIENT_SECRET` on the
+   dashboard deployment and redeploy. Each screen then gets its own
+   single-use key that expires in 10 minutes. A reusable, pre-approved
+   `tag:showroom` auth key in `TAILSCALE_AUTH_KEY` also works, but Tailscale
+   expires those after at most 90 days.
+
+Then `ssh pi@showroom-<device id>` from any machine signed in to the tailnet.
+Tagged nodes do not expire, so no re-login is needed. To bring one screen in
+by hand, write a key to `/var/lib/showroom/tailscale/authkey`; it takes
+precedence over the dashboard.
+
 ## OS OTA
 
 Publish `update.tar.zst` through Raspberry Pi Connect OTA. Connect OTA and

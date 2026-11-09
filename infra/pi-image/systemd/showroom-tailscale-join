@@ -1,0 +1,114 @@
+#!/bin/bash
+set -euo pipefail
+
+# Joins this screen to the fleet tailnet so it can be reached with Tailscale
+# SSH. Runs from a timer and does nothing once the node is logged in. The auth
+# key comes from the dashboard (GET /api/device/tailscale) using the agent's
+# device credential, so no key is ever baked into the image or OTA archive.
+# A key file at ${LOCAL_KEY_FILE} overrides the dashboard, for one-off use.
+# Until the dashboard is configured the endpoint returns 404 and this exits
+# quietly, so the image behaves exactly as before.
+
+CONFIG_FILE="${SHOWROOM_AGENT_CONFIG:-/etc/showroom-agent/config.env}"
+STATE_FILE="${SHOWROOM_DEVICE_STATE:-/var/lib/showroom/state/device-state.json}"
+LOCAL_KEY_FILE="${SHOWROOM_TAILSCALE_KEY_FILE:-/var/lib/showroom/tailscale/authkey}"
+DEFAULT_TAGS="tag:showroom"
+
+log() {
+  printf 'showroom-tailscale-join: %s\n' "$*" >&2
+}
+
+# Tailscale hostnames are DNS labels: lowercase letters, digits and dashes,
+# at most 63 characters.
+node_hostname() {
+  local id="$1" name
+  name="$(printf 'showroom-%s' "${id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-\n' '-')"
+  printf '%s\n' "${name:0:63}"
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  [[ "$(node_hostname 'K57Ab_c9')" == "showroom-k57ab-c9" ]]
+  [[ "$(node_hostname "$(printf 'x%.0s' {1..80})" | wc -c)" -eq 64 ]]
+  echo ok
+  exit 0
+fi
+
+if ! command -v tailscale >/dev/null 2>&1; then
+  log "tailscale is not installed; nothing to do"
+  exit 0
+fi
+
+backend_state="$(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty' || true)"
+if [[ "${backend_state}" == "Running" ]]; then
+  exit 0
+fi
+
+device_id=""
+credential=""
+if [[ -r "${STATE_FILE}" ]]; then
+  device_id="$(jq -r '.deviceId // empty' "${STATE_FILE}" 2>/dev/null || true)"
+  credential="$(jq -r '.credential // empty' "${STATE_FILE}" 2>/dev/null || true)"
+fi
+
+hostname_arg="$(hostname)"
+if [[ -n "${device_id}" ]]; then
+  hostname_arg="$(node_hostname "${device_id}")"
+fi
+
+key_file="$(mktemp /run/showroom-tailscale-key.XXXXXX)"
+trap 'rm -f "${key_file}"' EXIT
+chmod 0600 "${key_file}"
+tags="${DEFAULT_TAGS}"
+
+if [[ -s "${LOCAL_KEY_FILE}" ]]; then
+  tr -d '\r\n' <"${LOCAL_KEY_FILE}" >"${key_file}"
+else
+  if [[ -z "${credential}" ]]; then
+    log "screen is not enrolled yet; will retry"
+    exit 0
+  fi
+  api_base=""
+  if [[ -r "${CONFIG_FILE}" ]]; then
+    api_base="$(sed -n 's/^SHOWROOM_API_BASE_URL=//p' "${CONFIG_FILE}" | tail -n 1)"
+  fi
+  if [[ -z "${api_base}" ]]; then
+    log "SHOWROOM_API_BASE_URL is not set in ${CONFIG_FILE}"
+    exit 0
+  fi
+
+  # The credential goes through a header file so it never shows up in ps.
+  response="$(mktemp /run/showroom-tailscale-response.XXXXXX)"
+  headers="$(mktemp /run/showroom-tailscale-headers.XXXXXX)"
+  trap 'rm -f "${key_file}" "${response}" "${headers}"' EXIT
+  chmod 0600 "${response}" "${headers}"
+  printf 'Authorization: Bearer %s\n' "${credential}" >"${headers}"
+  status="$(curl -sS --max-time 30 -o "${response}" -w '%{http_code}' \
+    -H "@${headers}" \
+    "${api_base%/}/api/device/tailscale" || true)"
+  case "${status}" in
+    200) ;;
+    404) log "remote access is not configured on the dashboard"; exit 0 ;;
+    *) log "dashboard returned HTTP ${status:-none}; will retry"; exit 0 ;;
+  esac
+  jq -r '.authKey // empty' "${response}" | tr -d '\r\n' >"${key_file}"
+  server_tags="$(jq -r '(.tags // []) | join(",")' "${response}")"
+  [[ -n "${server_tags}" ]] && tags="${server_tags}"
+fi
+
+if [[ ! -s "${key_file}" ]]; then
+  log "no auth key available; will retry"
+  exit 0
+fi
+
+# --accept-dns=false keeps the screen's own resolver so the dashboard and
+# media hosts resolve exactly as they did before joining.
+log "joining tailnet as ${hostname_arg} (${tags})"
+tailscale up \
+  --auth-key="file:${key_file}" \
+  --hostname="${hostname_arg}" \
+  --advertise-tags="${tags}" \
+  --ssh \
+  --accept-dns=false \
+  --accept-routes=false \
+  --timeout=90s
+log "joined tailnet"
