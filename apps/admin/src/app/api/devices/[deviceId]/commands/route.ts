@@ -4,13 +4,14 @@ import { commandTypeSchema } from "@showroom/contracts";
 import { z } from "zod";
 
 import { issueCommand } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   commandType: commandTypeSchema,
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
-export async function POST(
+export const POST = withApiErrors(async function POST(
   request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
@@ -58,4 +59,4 @@ export async function POST(
   });
 
   return NextResponse.json({ command }, { status: 201 });
-}
+});

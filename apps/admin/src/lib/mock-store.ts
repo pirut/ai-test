@@ -17,7 +17,11 @@ import {
   deviceManifestSchema,
   heartbeatPayloadSchema,
   isFleetManagedDevice,
+  planReleaseRollout,
+  releaseCommandPayloadForDevice,
+  releaseVersionPattern,
   requiresFleetManagedDevice,
+  supportsSystemBundles,
   libraryFolderKindSchema,
   mockDashboardStats,
   mockDevices,
@@ -67,7 +71,14 @@ type MockState = {
   // Delivery state per command id; a command with no entry is still queued.
   commandStates?: Record<string, MockCommandState>;
   registrations: RegistrationRecord[];
+  // Wrong claim codes per workspace, as timestamps (the real backend's
+  // claimFailures table).
+  claimFailures?: Record<string, number[]>;
 };
+
+// Same limits as convex/admin.ts claimDeviceByCode.
+const maxClaimFailures = 10;
+const claimLockoutWindowMs = 15 * 60_000;
 
 type MockCommandState = {
   status: "in_progress" | "succeeded" | "failed";
@@ -699,11 +710,20 @@ export function createRelease(input: {
   notes?: string;
   playerUrl?: string;
   playerSha256?: string;
+  playerSignature?: string;
   agentUrl?: string;
   agentSha256?: string;
+  agentSignature?: string;
   systemUrl?: string;
   systemSha256?: string;
+  systemSignature?: string;
+  signingKeyId?: string;
 }) {
+  if (!releaseVersionPattern.test(input.version)) {
+    throw new Error(
+      "Use only letters, numbers, dots, dashes and underscores in the version. Screens reject anything else.",
+    );
+  }
   const now = new Date().toISOString();
   const release: ReleaseSummary = {
     id: crypto.randomUUID(),
@@ -716,6 +736,11 @@ export function createRelease(input: {
     agentSha256: input.agentSha256 ?? null,
     systemUrl: input.systemUrl ?? null,
     systemSha256: input.systemSha256 ?? null,
+    playerSignature: input.playerSignature ?? null,
+    agentSignature: input.agentSignature ?? null,
+    systemSignature: input.systemSignature ?? null,
+    signingKeyId: input.signingKeyId ?? null,
+    rolloutStatus: "draft",
     createdAt: now,
     updatedAt: now,
     rolloutSummary: {
@@ -741,17 +766,27 @@ export function deployRelease(input: {
     throw new Error("Release not found");
   }
 
-  const selectedDevices = input.deviceIds?.length
-    ? state().devices.filter((device) => input.deviceIds!.includes(device.id))
-    : state().devices;
-  const eligibleDevices = selectedDevices.filter(isFleetManagedDevice);
-  if (!eligibleDevices.length) {
-    throw new Error("No flashed fleet appliances are eligible for this rollout");
+  const active = new Set(
+    release.latestRollouts
+      .filter((entry) => entry.status === "queued" || entry.status === "in_progress" || entry.status === "waiting")
+      .map((entry) => entry.deviceId),
+  );
+  const plan = planReleaseRollout({
+    release,
+    releaseOrganizationId: "org-demo",
+    devices: state().devices.map((device) => ({
+      ...device,
+      organizationId: device.orgId,
+      lastHeartbeatAt: Date.parse(device.lastHeartbeatAt) || 0,
+    })),
+    requestedIds: input.deviceIds,
+    activeDeviceIds: active,
+  });
+  if (!plan.ok) {
+    throw new Error(plan.error);
   }
-  if (input.deviceIds?.length && eligibleDevices.length !== input.deviceIds.length) {
-    throw new Error("One or more selected devices must be flashed before joining a rollout");
-  }
-  const targetDevices = eligibleDevices.map((device) => ({
+  // The mock has no cron to advance rings, so every screen is queued at once.
+  const targetDevices = plan.targets.map(({ device, ring, includesSystem }) => ({
     id: crypto.randomUUID(),
     deviceId: device.id,
     deviceName: device.name,
@@ -760,6 +795,8 @@ export function deployRelease(input: {
     startedAt: null,
     completedAt: null,
     message: null,
+    ring,
+    includesSystem,
   }));
 
   release.latestRollouts = [...targetDevices, ...release.latestRollouts].slice(0, 8);
@@ -778,17 +815,17 @@ export function deployRelease(input: {
       deviceId: device.deviceId,
       commandType: "update_release",
       issuedAt: device.queuedAt,
-      payload: {
-        version: release.version,
-        playerUrl: release.playerUrl ?? undefined,
-        playerSha256: release.playerSha256 ?? undefined,
-        agentUrl: release.agentUrl ?? undefined,
-        agentSha256: release.agentSha256 ?? undefined,
-        systemUrl: release.systemUrl ?? undefined,
-        systemSha256: release.systemSha256 ?? undefined,
-      },
+      // Same per-screen payload as the real backend: the system bundle only
+      // goes to screens that advertise system_bundles.
+      payload: JSON.parse(JSON.stringify(
+        releaseCommandPayloadForDevice(
+          release,
+          state().devices.find((entry) => entry.id === device.deviceId)!,
+        ) ?? {},
+      )),
     });
   }
+  release.rolloutStatus = "active";
 
   return {
     queuedDeviceCount: targetDevices.length,
@@ -802,16 +839,29 @@ export function claimDevice(input: {
   name: string;
   siteName: string;
 }) {
-  const registration = state().registrations.find(
+  const mockState = state();
+  const now = Date.now();
+  mockState.claimFailures ??= {};
+  const recentFailures = (mockState.claimFailures[input.orgId] ?? []).filter(
+    (failedAt) => failedAt > now - claimLockoutWindowMs,
+  );
+  mockState.claimFailures[input.orgId] = recentFailures;
+  if (recentFailures.length >= maxClaimFailures) {
+    return { error: "too_many_attempts" as const };
+  }
+
+  const registration = mockState.registrations.find(
     (entry) => entry.claimCode === input.claimCode,
   );
 
-  if (!registration) {
-    return null;
+  // Like the real backend, a code that was already used counts as wrong.
+  if (!registration || registration.claimedDeviceId) {
+    recentFailures.push(now);
+    return { error: "invalid_code" as const };
   }
 
-  const deviceId = registration.claimedDeviceId ?? crypto.randomUUID();
-  const credential = registration.credential ?? `device_${crypto.randomBytes(12).toString("hex")}`;
+  const deviceId = crypto.randomUUID();
+  const credential = `device_${crypto.randomBytes(12).toString("hex")}`;
   registration.claimedDeviceId = deviceId;
   registration.credential = credential;
 
@@ -871,6 +921,9 @@ export function issueCommand(input: {
   const commandType = commandTypeSchema.parse(input.commandType);
   if (requiresFleetManagedDevice(commandType) && !isFleetManagedDevice(device)) {
     throw new Error("Flash this device with the fleet appliance before using this command");
+  }
+  if (commandType === "update_release" && input.payload?.systemUrl && !supportsSystemBundles(device)) {
+    throw new Error("Only screens running Showroom OS can install system updates");
   }
   const command = deviceCommandSchema.parse({
     id: crypto.randomUUID(),

@@ -1,4 +1,4 @@
-import { isFleetManagedDevice } from "@showroom/contracts";
+import { isFleetManagedDevice, supportsSystemBundles } from "@showroom/contracts";
 
 import type { Doc } from "./_generated/dataModel";
 import * as showroom from "./showroom";
@@ -32,6 +32,10 @@ export function serializeScreenDetail(
       ? new Date(device.applianceActivatedAt).toISOString()
       : null,
     health: device.health ?? null,
+    osVersion: typeof device.health?.osVersion === "string" ? device.health.osVersion : null,
+    bootSlot: typeof device.health?.bootSlot === "string" ? device.health.bootSlot : null,
+    desiredSystemVersion: device.desiredSystemVersion ?? null,
+    supportsSystemUpdates: supportsSystemBundles(device),
     timezone: device.timezone,
     orientation: device.orientation,
     volume: device.volume,

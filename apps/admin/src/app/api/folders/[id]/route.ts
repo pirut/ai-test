@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { deleteLibraryFolder, updateLibraryFolder } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const patchSchema = z
   .object({
@@ -13,7 +14,7 @@ const patchSchema = z
     message: "Provide at least one field to update",
   });
 
-export async function PATCH(
+export const PATCH = withApiErrors(async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -36,9 +37,9 @@ export async function PATCH(
       ...("parentId" in payload ? { parentId: payload.parentId } : {}),
     }),
   });
-}
+});
 
-export async function DELETE(
+export const DELETE = withApiErrors(async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -54,4 +55,4 @@ export async function DELETE(
   const { id } = await params;
   await deleteLibraryFolder(id);
   return NextResponse.json({ ok: true });
-}
+});

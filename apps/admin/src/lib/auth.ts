@@ -10,7 +10,10 @@ export function isLocalMockMode() {
 const localMockSession = {
   userId: "mock-user",
   orgId: "org-demo",
-  has: ({ role }: { role?: string }) => role === "org:admin" || role === "org:member",
+  // SHOWROOM_MOCK_ROLE=member previews the dashboard as a view-only member.
+  has: ({ role }: { role?: string }) =>
+    role === "org:member" ||
+    (role === "org:admin" && (process.env.SHOWROOM_MOCK_ROLE ?? "").toLowerCase() !== "member"),
   getToken: async () => null,
 };
 

@@ -11,7 +11,7 @@ export default async function ReleasesPage() {
       <div className="space-y-8">
         <PageHeader
           title="Releases"
-          description="Player and agent updates are published by the platform and reach your screens automatically."
+          description="Software updates for your screens are published by Digital Curator. There is nothing to do here."
         />
       </div>
     );
@@ -27,7 +27,11 @@ export default async function ReleasesPage() {
         title="Releases"
         description="Signed software updates for your screens. Roll out to a few screens first, then the rest."
       />
-      <ReleaseManager initialDevices={devices} initialReleases={releases} />
+      <ReleaseManager
+        initialDevices={devices}
+        initialReleases={releases}
+        canDeployToAllWorkspaces={access.canDeployToAllWorkspaces}
+      />
     </div>
   );
 }

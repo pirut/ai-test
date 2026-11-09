@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { savePlaylist } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   playlistId: z.string().optional(),
@@ -17,7 +18,7 @@ const schema = z.object({
   makeDefault: z.boolean().optional(),
 });
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async function POST(request: Request) {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,4 +35,4 @@ export async function POST(request: Request) {
     },
     { status: 201 },
   );
-}
+});

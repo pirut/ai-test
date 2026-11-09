@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { removeScreen, updateScreen } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -13,7 +14,7 @@ const schema = z.object({
   defaultPlaylistId: z.string().nullable().optional(),
 });
 
-export async function PATCH(
+export const PATCH = withApiErrors(async function PATCH(
   request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
@@ -34,9 +35,9 @@ export async function PATCH(
       ...payload,
     }),
   });
-}
+});
 
-export async function DELETE(
+export const DELETE = withApiErrors(async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
@@ -57,4 +58,4 @@ export async function DELETE(
     const status = /not found/i.test(message) ? 404 : 500;
     return NextResponse.json({ error: message }, { status });
   }
-}
+});

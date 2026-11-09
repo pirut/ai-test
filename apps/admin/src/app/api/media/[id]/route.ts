@@ -3,8 +3,9 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { deleteMediaAsset, updateMediaAsset } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
-export async function DELETE(
+export const DELETE = withApiErrors(async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -20,7 +21,7 @@ export async function DELETE(
   const { id } = await params;
   await deleteMediaAsset(id);
   return NextResponse.json({ ok: true });
-}
+});
 
 const patchSchema = z.object({
   title: z.string().min(1).optional(),
@@ -30,7 +31,7 @@ const patchSchema = z.object({
   message: "Provide at least one field to update",
 });
 
-export async function PATCH(
+export const PATCH = withApiErrors(async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -52,4 +53,4 @@ export async function PATCH(
     folderId: payload.folderId,
   });
   return NextResponse.json({ asset });
-}
+});

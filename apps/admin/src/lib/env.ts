@@ -14,6 +14,8 @@ export const env = {
   convexDeployment: normalizeEnv(process.env.CONVEX_DEPLOYMENT),
   clerkJwtIssuerDomain: normalizeEnv(process.env.CLERK_JWT_ISSUER_DOMAIN),
   clerkWebhookSigningSecret: normalizeEnv(process.env.CLERK_WEBHOOK_SIGNING_SECRET),
+  // Shared with the Convex deployment so the Clerk webhook can write there.
+  clerkSyncSecret: normalizeEnv(process.env.CLERK_SYNC_SECRET),
   resendApiKey: normalizeEnv(process.env.RESEND_API_KEY),
   sentryDsn: normalizeEnv(process.env.SENTRY_DSN),
   imageDownloadUrl: normalizeEnv(process.env.NEXT_PUBLIC_SHOWROOM_IMAGE_URL),

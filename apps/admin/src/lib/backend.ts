@@ -214,11 +214,14 @@ export async function listPlaylistFolders() {
 
 export async function getWorkspaceAccess() {
   if (!hasConvexBackend()) {
-    return { isPlatformOperator: true };
+    return { isPlatformOperator: true, canDeployToAllWorkspaces: false };
   }
 
   return z
-    .object({ isPlatformOperator: z.boolean() })
+    .object({
+      isPlatformOperator: z.boolean(),
+      canDeployToAllWorkspaces: z.boolean().default(false),
+    })
     .parse(await convexQuery(api.admin.getWorkspaceAccess, {}));
 }
 
@@ -439,14 +442,19 @@ export async function publishReleaseArtifacts(input: {
 export async function deployRelease(input: {
   releaseId: string;
   deviceIds?: string[];
+  allWorkspaces?: boolean;
 }) {
   if (!hasConvexBackend()) {
+    if (input.allWorkspaces) {
+      throw new Error("Deploying to every workspace needs SHOWROOM_PLATFORM_ORG_IDS to be set");
+    }
     return mock.deployRelease(input);
   }
 
   return z
     .object({
       queuedDeviceCount: z.number(),
+      targetDeviceCount: z.number().optional(),
       releaseId: z.string(),
     })
     .parse(await convexMutation(api.admin.deployRelease, input));
@@ -470,15 +478,13 @@ export async function claimDevice(input: {
   name: string;
   siteName: string;
 }) {
-  if (!hasConvexBackend()) {
-    return mock.claimDevice(input);
-  }
-
-  const result = await convexMutation(api.admin.claimDeviceByCode, {
-    claimCode: input.claimCode,
-    name: input.name,
-    siteName: input.siteName,
-  });
+  const result = hasConvexBackend()
+    ? await convexMutation(api.admin.claimDeviceByCode, {
+        claimCode: input.claimCode,
+        name: input.name,
+        siteName: input.siteName,
+      })
+    : mock.claimDevice(input);
   const parsed = z
     .union([
       z.object({
@@ -992,27 +998,35 @@ export async function deleteLibraryFolder(folderId: string) {
   await convexMutation(api.admin.deleteLibraryFolder, { folderId: folderId as never });
 }
 
+// The Clerk webhook has no signed-in user, so it writes to Convex with a
+// shared secret instead of a Clerk token. Nothing reads these records yet
+// (workspaces are keyed by the Clerk org id in the session), so syncing is
+// skipped, not failed, until CLERK_SYNC_SECRET is set on both sides.
+export function canSyncClerkRecords() {
+  return hasConvexBackend() && Boolean(env.clerkSyncSecret);
+}
+
 export async function upsertOrganizationFromClerkWebhook(input: {
   clerkOrgId: string;
   name: string;
   slug: string;
   metadata: Record<string, unknown>;
 }) {
-  if (!hasConvexBackend()) {
-    return input;
+  if (!canSyncClerkRecords()) {
+    return null;
   }
 
-  return convexMutation(api.sync.upsertOrganizationFromClerk, input);
+  return publicConvexMutation(api.sync.upsertOrganizationFromClerk, { ...input, secret: env.clerkSyncSecret });
 }
 
 export async function deleteOrganizationFromClerkWebhook(input: {
   clerkOrgId: string;
 }) {
-  if (!hasConvexBackend()) {
-    return input;
+  if (!canSyncClerkRecords()) {
+    return null;
   }
 
-  return convexMutation(api.sync.deleteOrganizationFromClerk, input);
+  return publicConvexMutation(api.sync.deleteOrganizationFromClerk, { ...input, secret: env.clerkSyncSecret });
 }
 
 export async function upsertUserFromClerkWebhook(input: {
@@ -1021,19 +1035,19 @@ export async function upsertUserFromClerkWebhook(input: {
   firstName?: string;
   lastName?: string;
 }) {
-  if (!hasConvexBackend()) {
-    return input;
+  if (!canSyncClerkRecords()) {
+    return null;
   }
 
-  return convexMutation(api.sync.upsertUserFromClerk, input);
+  return publicConvexMutation(api.sync.upsertUserFromClerk, { ...input, secret: env.clerkSyncSecret });
 }
 
 export async function deleteUserFromClerkWebhook(input: {
   clerkUserId: string;
 }) {
-  if (!hasConvexBackend()) {
-    return input;
+  if (!canSyncClerkRecords()) {
+    return null;
   }
 
-  return convexMutation(api.sync.deleteUserFromClerk, input);
+  return publicConvexMutation(api.sync.deleteUserFromClerk, { ...input, secret: env.clerkSyncSecret });
 }

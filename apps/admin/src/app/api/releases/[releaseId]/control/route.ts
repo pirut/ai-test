@@ -3,12 +3,13 @@ import { z } from "zod";
 
 import { getAuthSession } from "@/lib/auth";
 import { controlReleaseRollout } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   action: z.enum(["pause", "resume", "retry_failed"]),
 });
 
-export async function POST(
+export const POST = withApiErrors(async function POST(
   request: Request,
   { params }: { params: Promise<{ releaseId: string }> },
 ) {
@@ -22,4 +23,4 @@ export async function POST(
   const { releaseId } = await params;
   const payload = schema.parse(await request.json());
   return NextResponse.json(await controlReleaseRollout({ releaseId, action: payload.action }));
-}
+});

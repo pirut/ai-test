@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 
 import { deleteSchedule } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
-export async function DELETE(
+export const DELETE = withApiErrors(async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -19,4 +20,4 @@ export async function DELETE(
   const { id } = await params;
   await deleteSchedule(id);
   return NextResponse.json({ ok: true });
-}
+});

@@ -1,9 +1,21 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { mutation } from "./_generated/server";
 
+// These mutations are called by the dashboard's Clerk webhook, which has no
+// signed-in user. They are public Convex functions, so they only run for a
+// caller that knows CLERK_SYNC_SECRET (set the same value on Convex and on the
+// dashboard). Without it they refuse everyone.
+function requireSyncSecret(secret: string | undefined) {
+  const expected = process.env.CLERK_SYNC_SECRET?.trim();
+  if (!expected || !secret || secret !== expected) {
+    throw new ConvexError("Clerk sync is not authorized");
+  }
+}
+
 export const upsertOrganizationFromClerk = mutation({
   args: {
+    secret: v.optional(v.string()),
     clerkOrgId: v.string(),
     name: v.string(),
     slug: v.string(),
@@ -11,6 +23,7 @@ export const upsertOrganizationFromClerk = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
+    requireSyncSecret(args.secret);
     const existing = await ctx.db
       .query("organizations")
       .withIndex("by_clerk_org_id", (q) => q.eq("clerkOrgId", args.clerkOrgId))
@@ -39,10 +52,12 @@ export const upsertOrganizationFromClerk = mutation({
 
 export const deleteOrganizationFromClerk = mutation({
   args: {
+    secret: v.optional(v.string()),
     clerkOrgId: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    requireSyncSecret(args.secret);
     const existing = await ctx.db
       .query("organizations")
       .withIndex("by_clerk_org_id", (q) => q.eq("clerkOrgId", args.clerkOrgId))
@@ -58,6 +73,7 @@ export const deleteOrganizationFromClerk = mutation({
 
 export const upsertUserFromClerk = mutation({
   args: {
+    secret: v.optional(v.string()),
     clerkUserId: v.string(),
     email: v.string(),
     firstName: v.optional(v.string()),
@@ -65,6 +81,7 @@ export const upsertUserFromClerk = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    requireSyncSecret(args.secret);
     const users = await ctx.db
       .query("users")
       .filter((q) => q.eq(q.field("clerkUserId"), args.clerkUserId))
@@ -85,10 +102,12 @@ export const upsertUserFromClerk = mutation({
 
 export const deleteUserFromClerk = mutation({
   args: {
+    secret: v.optional(v.string()),
     clerkUserId: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    requireSyncSecret(args.secret);
     const users = await ctx.db
       .query("users")
       .filter((q) => q.eq(q.field("clerkUserId"), args.clerkUserId))
