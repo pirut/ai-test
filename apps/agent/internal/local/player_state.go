@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // nativePlayerState is everything the native Pi player needs to decide what to
@@ -80,7 +81,7 @@ func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
 	result.Volume = manifest.Volume
 	result.Orientation = manifest.Orientation
 
-	playlist, playlistID := chooseActivePlaylist(manifest)
+	playlist, playlistID := chooseActivePlaylist(manifest, time.Now())
 	result.PlaylistID = playlistID
 	current := s.store.Snapshot()
 	result.PendingItems = 0

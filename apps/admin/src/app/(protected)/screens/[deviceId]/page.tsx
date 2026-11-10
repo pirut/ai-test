@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Cable,
   Cpu,
+  HardDriveDownload,
   ListVideo,
   MonitorPlay,
   RefreshCw,
@@ -38,7 +39,7 @@ import {
   listPlaylists,
 } from "@/lib/backend";
 import { commandLabel, isCommandPending } from "@/lib/commands";
-import { contentStateLabels, deviceIssues } from "@/lib/device-health";
+import { contentStateLabels, deviceIssues, savedContent } from "@/lib/device-health";
 import { isTailscaleConfigured, readTailscaleConfig } from "@/lib/tailscale";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
 
@@ -168,6 +169,11 @@ export default async function ScreenDetailPage({
         : device.lastError ? "warn" : device.contentState === "current" ? "good" : "warn") as Tone,
     },
     {
+      icon: HardDriveDownload,
+      label: "Saved on screen",
+      ...savedContent(device),
+    },
+    {
       icon: Thermometer,
       label: "Temperature",
       value: health?.cpuTemperatureC != null ? `${health.cpuTemperatureC.toFixed(0)}°C` : "Unknown",
@@ -262,7 +268,7 @@ export default async function ScreenDetailPage({
               reporting={reporting}
             />
 
-            <section aria-label="Health" className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-5">
+            <section aria-label="Health" className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
               {tiles.map((tile) => (
                 <HealthTile key={tile.label} {...tile} />
               ))}

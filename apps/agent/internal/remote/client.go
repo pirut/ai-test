@@ -29,6 +29,16 @@ type ManifestPlaylistItem struct {
 	DurationSeconds int    `json:"durationSeconds,omitempty"`
 }
 
+// ScheduleRecurrence is a schedule that repeats by time of day. Days are 0
+// (Sunday) to 6 (Saturday) and minutes count from midnight, both on the
+// screen's own clock. An end at or before the start runs past midnight;
+// equal start and end is all day.
+type ScheduleRecurrence struct {
+	DaysOfWeek  []int `json:"daysOfWeek"`
+	StartMinute int   `json:"startMinute"`
+	EndMinute   int   `json:"endMinute"`
+}
+
 type ScheduleWindow struct {
 	ID         string                 `json:"id"`
 	Label      string                 `json:"label"`
@@ -37,6 +47,9 @@ type ScheduleWindow struct {
 	Priority   int                    `json:"priority"`
 	PlaylistID string                 `json:"playlistId,omitempty"`
 	Playlist   []ManifestPlaylistItem `json:"playlist"`
+	// Recurrence is set on repeating windows only; StartsAt and EndsAt are
+	// then unused.
+	Recurrence *ScheduleRecurrence `json:"recurrence,omitempty"`
 }
 
 type DeviceManifest struct {

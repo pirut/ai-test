@@ -18,12 +18,17 @@ export default async function SchedulesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Schedules"
-        description="Play a different playlist at certain times. When windows overlap, the higher priority wins."
+        description="Play a different playlist at certain times of day, every week or one time. When schedules overlap, the higher priority wins."
       />
       {canEdit ? null : <ViewOnlyNotice what="schedules" />}
       <ScheduleManager
         canEdit={canEdit}
-        devices={devices.map((device) => ({ id: device.id, name: device.name }))}
+        devices={devices.map((device) => ({
+          id: device.id,
+          name: device.name,
+          // Unpaired screens have no software to update yet.
+          supportsRepeatingSchedules: device.status === "unclaimed" ? undefined : Boolean(device.supportsRepeatingSchedules),
+        }))}
         initialSchedules={schedules}
         playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
       />
