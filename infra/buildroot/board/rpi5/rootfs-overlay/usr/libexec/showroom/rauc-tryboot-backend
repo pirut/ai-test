@@ -8,8 +8,14 @@
 # slot good makes it the [all] slot. Slot A is boot partition 2 with root
 # partition 5, slot B is boot partition 3 with root partition 6.
 #
+# The slot that was committed before the current one still holds the previous
+# OS until the next install overwrites it. It is remembered as the fallback
+# slot, and "fallback" (not a RAUC command; showroom-os-commit calls it when
+# the committed slot keeps failing to start) makes it the committed slot again.
+#
 # Usage (called by RAUC): get-primary | set-primary SLOT | get-state SLOT |
 #                         set-state SLOT good|bad | get-current
+# Also:                   get-fallback | fallback
 set -euo pipefail
 
 DISK_ID=53484f57
@@ -17,6 +23,7 @@ AUTOBOOT_DEVICE="/dev/disk/by-partuuid/${DISK_ID}-01"
 STATE_DIR=/data/rauc
 PENDING="${STATE_DIR}/tryboot-pending"
 ATTEMPTED="${STATE_DIR}/tryboot-attempted"
+FALLBACK="${STATE_DIR}/fallback-slot"
 MOUNT_DIR=""
 
 cleanup() {
@@ -132,6 +139,27 @@ clear_pending() {
   rm -f "${PENDING}" "${ATTEMPTED}"
 }
 
+# Prints the slot that holds the previous, once committed OS, if there is one
+# and it is not the slot the firmware boots now.
+fallback_slot() {
+  local slot
+  slot="$(cat "${FALLBACK}" 2>/dev/null || true)"
+  [[ "${slot}" == A || "${slot}" == B ]] || return 1
+  [[ "$(partition_of "${slot}")" != "$(committed_partition)" ]] || return 1
+  echo "${slot}"
+}
+
+# A slot can only be booted if its boot partition still has a kernel and a
+# cmdline.txt that names it.
+check_bootable() {
+  local slot="$1" ok=1
+  mount_vfat "/dev/disk/by-partuuid/${DISK_ID}-0$(partition_of "${slot}")" ro
+  grep -qs "rauc.slot=${slot}" "${MOUNT_DIR}/cmdline.txt" || ok=0
+  [[ -s "${MOUNT_DIR}/config.txt" ]] || ok=0
+  unmount_vfat
+  [[ "${ok}" == 1 ]]
+}
+
 command="${1:-}"
 case "${command}" in
   get-current)
@@ -185,6 +213,11 @@ case "${command}" in
         elif [[ "${slot}" == "$(booted_slot)" ]]; then
           write_autoboot "${target}" "${committed}"
           clear_pending
+          # The slot it replaces keeps the previous OS until the next install.
+          mkdir -p "${STATE_DIR}"
+          slot_of "${committed}" >"${FALLBACK}.new"
+          sync
+          mv -f "${FALLBACK}.new" "${FALLBACK}"
         else
           fail "slot ${slot} is neither committed nor running, so it cannot be marked good"
         fi
@@ -198,11 +231,30 @@ case "${command}" in
         if [[ "$(cat "${PENDING}" 2>/dev/null || true)" == "${slot}" ]]; then
           clear_pending
         fi
+        if [[ "$(cat "${FALLBACK}" 2>/dev/null || true)" == "${slot}" ]]; then
+          rm -f "${FALLBACK}"
+        fi
         ;;
       *)
         fail "unknown state '${state}'"
         ;;
     esac
+    ;;
+
+  get-fallback)
+    fallback_slot
+    ;;
+
+  fallback)
+    slot="$(fallback_slot)" || fail "there is no previous OS slot to fall back to"
+    [[ "${slot}" != "$(booted_slot)" ]] || fail "slot ${slot} is already running"
+    check_bootable "${slot}" || fail "slot ${slot} no longer has a bootable OS"
+    failed="$(committed_partition)"
+    # One way: the slot being left is not kept as a fallback, so two bad
+    # slots can never bounce the screen between them.
+    rm -f "${FALLBACK}"
+    clear_pending
+    write_autoboot "$(partition_of "${slot}")" "${failed}"
     ;;
 
   *)

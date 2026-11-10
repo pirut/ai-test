@@ -45,6 +45,7 @@ func Collect(ctx context.Context, input Input) state.HealthSnapshot {
 		PlayerRestarts:       input.PlayerRestarts,
 		RollbackCount:        max(input.RollbackCount, readInteger("/var/lib/showroom/state/rollback-count")),
 	}
+	snapshot.SystemUpdateState = systemUpdateState(snapshot.BootSlot, readTrimmed(trybootPendingPath))
 	livenessAt := input.LastPlayerHeartbeatAt
 	if input.LastPlayerProgressAt != "" {
 		livenessAt = input.LastPlayerProgressAt
@@ -128,7 +129,36 @@ func memoryAvailable() int64 {
 	return 0
 }
 
+var (
+	kernelCommandLinePath = "/proc/cmdline"
+	trybootPendingPath    = "/data/rauc/tryboot-pending"
+)
+
+// systemUpdateState is "trial" while the running OS slot is a newly installed
+// one that has not been committed (Showroom OS keeps the slot in
+// tryboot-pending until its health check commits it or rolls it back).
+func systemUpdateState(bootSlot string, pendingSlot string) string {
+	if pendingSlot != "" && pendingSlot == bootSlot {
+		return "trial"
+	}
+	return ""
+}
+
+// kernelBootSlot is the A/B slot named on the kernel command line
+// (rauc.slot=A), which is how Showroom OS says which slot is running.
+func kernelBootSlot() string {
+	for _, argument := range strings.Fields(readTrimmed(kernelCommandLinePath)) {
+		if slot, ok := strings.CutPrefix(argument, "rauc.slot="); ok {
+			return slot
+		}
+	}
+	return ""
+}
+
 func readBootSlot(ctx context.Context) string {
+	if slot := kernelBootSlot(); slot != "" {
+		return slot
+	}
 	activeBoot := command(ctx, "readlink", "-f", "/dev/disk/by-slot/active/boot")
 	if strings.HasSuffix(activeBoot, "p2") || strings.HasSuffix(activeBoot, "2") {
 		return "A"

@@ -23,14 +23,17 @@ type CompletedCommand struct {
 }
 
 type HealthSnapshot struct {
-	CapturedAt           string  `json:"capturedAt"`
-	HardwareProfile      string  `json:"hardwareProfile"`
-	Model                string  `json:"model,omitempty"`
-	SerialNumber         string  `json:"serialNumber,omitempty"`
-	OSVersion            string  `json:"osVersion,omitempty"`
-	KernelVersion        string  `json:"kernelVersion,omitempty"`
-	BootSlot             string  `json:"bootSlot,omitempty"`
-	BootReason           string  `json:"bootReason,omitempty"`
+	CapturedAt      string `json:"capturedAt"`
+	HardwareProfile string `json:"hardwareProfile"`
+	Model           string `json:"model,omitempty"`
+	SerialNumber    string `json:"serialNumber,omitempty"`
+	OSVersion       string `json:"osVersion,omitempty"`
+	KernelVersion   string `json:"kernelVersion,omitempty"`
+	BootSlot        string `json:"bootSlot,omitempty"`
+	BootReason      string `json:"bootReason,omitempty"`
+	// SystemUpdateState is "trial" while the screen runs a newly installed OS
+	// slot that it has not committed yet (it may still fall back).
+	SystemUpdateState    string  `json:"systemUpdateState,omitempty"`
 	CPUTemperatureC      float64 `json:"cpuTemperatureC,omitempty"`
 	Load1                float64 `json:"load1,omitempty"`
 	MemoryAvailableBytes int64   `json:"memoryAvailableBytes,omitempty"`

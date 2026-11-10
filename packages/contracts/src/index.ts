@@ -215,11 +215,15 @@ export function systemUpdateOutcome(input: {
   // Heartbeat details; leave out when checking for a timeout only.
   agentStartedAt?: number;
   osVersion?: string | null;
+  // True while the screen says it is still trying the new OS: it has not
+  // committed it yet and may fall back. Older agents never say so.
+  trial?: boolean;
 }): SystemUpdateOutcome {
   const restarted =
     typeof input.agentStartedAt === "number" && input.agentStartedAt > input.installedAt;
   if (restarted && input.osVersion) {
-    return osVersionMatches(input.osVersion, input.expectedVersion) ? "confirmed" : "rolled_back";
+    if (!osVersionMatches(input.osVersion, input.expectedVersion)) return "rolled_back";
+    if (!input.trial) return "confirmed";
   }
   return input.now - input.installedAt >= systemUpdateConfirmTimeoutMs ? "timed_out" : "pending";
 }
@@ -509,6 +513,8 @@ export const heartbeatPayloadSchema = z.object({
     kernelVersion: z.string().optional(),
     bootSlot: z.string().optional(),
     bootReason: z.string().optional(),
+    // "trial" while a newly installed OS has not been committed yet.
+    systemUpdateState: z.string().optional(),
     cpuTemperatureC: z.number().optional(),
     load1: z.number().optional(),
     memoryAvailableBytes: z.number().int().nonnegative().optional(),

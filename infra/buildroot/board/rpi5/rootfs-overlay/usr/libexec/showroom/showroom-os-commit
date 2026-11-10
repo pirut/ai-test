@@ -1,19 +1,50 @@
 #!/bin/bash
-# Runs on every boot. After the first boot into a newly installed OS slot it
-# waits for the agent and player to be healthy and then commits the slot; if
-# they are not healthy within five minutes it marks the slot bad and reboots
-# into the previous one. It also records an update whose trial boot never came
-# up (the firmware already fell back), so the dashboard shows the rollback.
+# Runs on every boot and decides which OS slot the screen keeps.
+#
+# Trial boot (the first boot into a newly installed slot): waits for the
+# agent and player to be healthy and for the agent to reach the control
+# plane, then commits the slot. If that does not happen in time the slot is
+# marked bad and the screen reboots into the previous one. An update that
+# cannot get the screen back online is never kept.
+#
+# An installed update whose restart never happened (power cut): restarts
+# into it now.
+#
+# An update whose trial boot never came up (the firmware already fell back):
+# records the rollback, so the dashboard shows it.
+#
+# Committed slot: counts the boots in a row on which the screen never became
+# stable. After BOOT_LIMIT of them, and only while the other slot still holds
+# the previous OS, it returns to that OS for good. This catches a build that
+# passed its trial but cannot start any more.
 set -uo pipefail
 
-BACKEND=/usr/libexec/showroom/rauc-tryboot-backend
-PENDING=/data/rauc/tryboot-pending
-ATTEMPTED=/data/rauc/tryboot-attempted
-STATE_ROOT=/var/lib/showroom/state
+BACKEND="${SHOWROOM_TRYBOOT_BACKEND:-/usr/libexec/showroom/rauc-tryboot-backend}"
+REBOOT="${SHOWROOM_OS_REBOOT:-/usr/libexec/showroom/showroom-reboot}"
+RAUC_STATE="${SHOWROOM_RAUC_STATE:-/data/rauc}"
+STATE_ROOT="${SHOWROOM_STATE_ROOT:-/var/lib/showroom/state}"
+UPTIME_FILE="${SHOWROOM_UPTIME_FILE:-/proc/uptime}"
+HEALTH_URL="${SHOWROOM_LOCAL_HEALTH_URL:-http://127.0.0.1:4173/healthz}"
+POLL_SECONDS="${SHOWROOM_OS_COMMIT_POLL_SECONDS:-5}"
+# Eight minutes for a trial boot to prove itself, and for a committed boot to
+# become stable.
+POLLS="${SHOWROOM_OS_COMMIT_POLLS:-96}"
+# A committed boot counts as stable once the agent answers and the screen
+# has been up this long.
+STABLE_SECONDS="${SHOWROOM_OS_STABLE_SECONDS:-120}"
+BOOT_LIMIT="${SHOWROOM_OS_BOOT_LIMIT:-3}"
+
+PENDING="${RAUC_STATE}/tryboot-pending"
+ATTEMPTED="${RAUC_STATE}/tryboot-attempted"
+BOOT_COUNT="${RAUC_STATE}/boot-count"
+
+log() {
+  echo "showroom-os-commit: $*" >&2
+}
 
 record_rollback() {
   local reason="$1" count
-  echo "showroom-os-commit: ${reason}" >&2
+  log "${reason}"
   mkdir -p "${STATE_ROOT}"
   count="$(cat "${STATE_ROOT}/rollback-count" 2>/dev/null || echo 0)"
   [[ "${count}" =~ ^[0-9]+$ ]] || count=0
@@ -22,37 +53,131 @@ record_rollback() {
   printf '%s\n' "${reason}" >"${STATE_ROOT}/last-boot-reason"
 }
 
+write_boot_count() {
+  mkdir -p "${RAUC_STATE}"
+  printf '%s\n' "$1" >"${BOOT_COUNT}.next" && mv "${BOOT_COUNT}.next" "${BOOT_COUNT}"
+  sync
+}
+
+# The last time the agent heard from the control plane. Only a change is
+# meaningful: the clock of a Pi can jump while it boots.
+cloud_contact() {
+  jq -r '.lastCloudContactAt // .lastHeartbeatAt // ""' "${STATE_ROOT}/device-state.json" 2>/dev/null || true
+}
+
+agent_answers() {
+  systemctl is-active --quiet showroom-agent.service \
+    && curl -fsS --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1
+}
+
+screen_healthy() {
+  systemctl is-active --quiet showroom-agent.service \
+    && systemctl is-active --quiet showroom-kiosk.service \
+    && curl -fsS --max-time 2 "${HEALTH_URL}?deep=1" >/dev/null 2>&1
+}
+
+uptime_seconds() {
+  local value
+  read -r value _ <"${UPTIME_FILE}" 2>/dev/null || value=0
+  echo "${value%%.*}"
+}
+
 booted="$("${BACKEND}" get-current)" || exit 0
 pending="$(cat "${PENDING}" 2>/dev/null || true)"
 
-if [[ -z "${pending}" ]]; then
-  exit 0
-fi
-
-if [[ "${booted}" != "${pending}" ]]; then
-  # Installed but never tried yet: the next showroom-reboot tries it. Tried
-  # but we are back on the old slot: the new one did not boot.
+if [[ -n "${pending}" && "${booted}" != "${pending}" ]]; then
   if [[ -s "${ATTEMPTED}" ]]; then
+    # Tried, but we are back on the old slot: the new one did not boot.
     "${BACKEND}" set-state "${pending}" bad || rm -f "${PENDING}" "${ATTEMPTED}"
     record_rollback "OS update to slot ${pending} did not boot; still running slot ${booted}"
+    pending=""
+  else
+    # Installed in an earlier boot, and the restart into it never happened.
+    log "an OS update is installed in slot ${pending} but was never tried; restarting into it"
+    exec "${REBOOT}"
   fi
+fi
+
+if [[ -n "${pending}" ]]; then
+  # Trial boot of a new slot.
+  contact_before="$(cloud_contact)"
+  healthy=0
+  online=0
+  for _ in $(seq 1 "${POLLS}"); do
+    if screen_healthy; then healthy=1; else healthy=0; fi
+    contact_now="$(cloud_contact)"
+    if [[ -n "${contact_now}" && "${contact_now}" != "${contact_before}" ]]; then online=1; fi
+    if [[ "${healthy}" == 1 && "${online}" == 1 ]]; then
+      if rauc status mark-good booted; then
+        log "committed slot ${booted}"
+        rm -f "${BOOT_COUNT}"
+        rm -f "${STATE_ROOT}/last-boot-reason"
+        exit 0
+      fi
+      break
+    fi
+    sleep "${POLL_SECONDS}"
+  done
+
+  rauc status mark-bad booted || "${BACKEND}" set-state "${booted}" bad || true
+  if [[ "${healthy}" == 1 && "${online}" == 0 ]]; then
+    record_rollback "OS update to slot ${booted} could not reach the service; returned to the previous system"
+  else
+    record_rollback "OS update to slot ${booted} failed its health check; returned to the previous system"
+  fi
+  sync
+  systemctl reboot
   exit 0
 fi
 
-for _ in $(seq 1 60); do
-  if systemctl is-active --quiet showroom-agent.service \
-    && systemctl is-active --quiet showroom-kiosk.service \
-    && curl -fsS --max-time 2 'http://127.0.0.1:4173/healthz?deep=1' >/dev/null; then
-    if rauc status mark-good booted; then
-      echo "showroom-os-commit: committed slot ${booted}" >&2
-      exit 0
-    fi
-    break
+# Committed slot.
+failed_boots="$(cat "${BOOT_COUNT}" 2>/dev/null || echo 0)"
+[[ "${failed_boots}" =~ ^[0-9]+$ ]] || failed_boots=0
+fallback="$("${BACKEND}" get-fallback 2>/dev/null || true)"
+
+fall_back() {
+  if "${BACKEND}" fallback; then
+    rm -f "${BOOT_COUNT}"
+    record_rollback "The system in slot ${booted} failed to start ${failed_boots} times in a row; returned to the previous system in slot ${fallback}"
+    sync
+    systemctl reboot
+    exit 0
   fi
-  sleep 5
+  log "could not fall back to slot ${fallback}; staying on slot ${booted}"
+  fallback=""
+}
+
+if [[ -n "${fallback}" ]] && ((failed_boots >= BOOT_LIMIT)); then
+  fall_back
+fi
+
+# Counted as failed until it proves stable, so a boot that ends in a hang, a
+# crash or a watchdog reset stays counted. Without a previous OS to return
+# to there is nothing to decide, so the count stops growing.
+if ((failed_boots < BOOT_LIMIT)); then
+  failed_boots=$((failed_boots + 1))
+fi
+write_boot_count "${failed_boots}"
+
+for _ in $(seq 1 "${POLLS}"); do
+  if agent_answers && (($(uptime_seconds) >= STABLE_SECONDS)); then
+    rm -f "${BOOT_COUNT}"
+    sync
+    exit 0
+  fi
+  sleep "${POLL_SECONDS}"
 done
 
-rauc status mark-bad booted || "${BACKEND}" set-state "${booted}" bad || true
-record_rollback "OS update to slot ${booted} failed its health check; returned to the previous slot"
-sync
-systemctl reboot
+log "the agent never became stable on this boot (${failed_boots} in a row)"
+if [[ -n "${fallback}" ]]; then
+  # Without the agent nobody can repair this screen remotely, and the previous
+  # OS is still in the other slot: restart, and return to it once the limit
+  # is reached.
+  if ((failed_boots >= BOOT_LIMIT)); then
+    fall_back
+  fi
+  if [[ -n "${fallback}" ]]; then
+    systemctl reboot
+  fi
+fi
+exit 0

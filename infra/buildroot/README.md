@@ -66,11 +66,40 @@ data partition is fixed at 12 GB), so it flashes in about a minute.
 3. The agent reboots through `showroom-reboot`, which uses `reboot "0 tryboot"`.
    The firmware boots the new slot once. A crash or hang there resets through
    the hardware watchdog into the old slot, because the tryboot flag is gone.
-4. `showroom-os-commit` waits up to five minutes for the agent, the player and
-   `/healthz?deep=1`. Healthy: the slot becomes `[all]` (committed). Not
-   healthy: the slot is marked bad and the screen reboots into the old one.
-   Either kind of rollback sets `last-boot-reason` and `rollback-count`, which
-   heartbeats already report.
+4. `showroom-os-commit` gives the trial boot eight minutes to show the
+   agent, the player and `/healthz?deep=1` healthy, and the agent a fresh
+   contact with the service (a new `lastCloudContactAt`). Both: the slot
+   becomes `[all]` (committed). Otherwise the slot is marked bad and the
+   screen reboots into the old one, so an update that boots but cannot get
+   online is never kept. Either kind of rollback sets `last-boot-reason` and
+   `rollback-count`, which heartbeats report and the screen's page shows.
+5. While the trial lasts, heartbeats carry `systemUpdateState: "trial"`, and
+   a rollout counts the screen as updated only after the commit.
+
+Three more cases are handled on every boot by the same script:
+
+- **The restart never happened.** If power is cut between the install and
+  the restart, the next boot finds the installed slot untried and restarts
+  into it once.
+- **The trial boot never came up.** The firmware is already back on the old
+  slot; the new one is marked bad and the rollback is recorded.
+- **A committed OS stops starting.** The slot that was committed before
+  keeps the previous OS until the next install overwrites it
+  (`/data/rauc/fallback-slot`). Every boot of the committed slot is counted
+  in `/data/rauc/boot-count` until the agent answers and the screen has been
+  up for two minutes. After three boots in a row that never get there
+  (hangs, watchdog resets, crashes, or an agent that never starts, which
+  also restarts the screen after eight minutes), the screen makes the
+  previous OS the committed one again and restarts into it. This happens
+  once: the slot it left is not a fallback, so two bad slots cannot bounce
+  the screen between them. A freshly flashed card has no previous OS and
+  never falls back. Three power cuts in a row within two minutes of
+  switching on look the same and also return to the previous OS, which is
+  harmless: deploy the release again.
+
+What this cannot catch: a committed slot whose kernel no longer loads at all
+(the firmware does not try the other slot by itself), and a damaged data
+partition, where the counter lives.
 
 Screens on this image advertise a `system_bundles` capability, so the
 dashboard sends OS bundles only to them. Publishing a stable release (below)
@@ -258,6 +287,12 @@ On one spare Pi 5, not a showroom screen:
    comes back on the other slot, and `sudo rauc status` shows it committed.
 5. Pull power during the trial boot of a later build and confirm it comes
    back on the previous slot (and does not retry that build).
+6. With two builds installed (so there is a previous OS), pull power within
+   a minute of switching on, three times in a row. The fourth boot returns
+   to the previous build, and the screen's page in the dashboard says why.
+7. Switch the router off just before a new build's restart and leave it off
+   for ten minutes: the trial boot cannot reach the service, so the screen
+   returns to the previous build.
 
 ## Moving an existing screen over
 
