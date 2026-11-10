@@ -74,6 +74,7 @@ ENABLED_UNITS = [
     "showroom-update-guard.service",
     "showroom-os-commit.service",
     "showroom-os-follow.timer",
+    "showroom-selftest.timer",
     "showroom-network-onboarding.service",
     "showroom-network-recovery.service",
     "showroom-kiosk-retry.timer",

@@ -146,6 +146,46 @@ of the agent and player (built outside Buildroot), the programs of every
 systemd unit, script interpreters, enabled units and the links to the built-in
 agent and player. It runs in CI before anything is published.
 
+**Boot test.** `tests/boot-and-play.py <flash image>` boots the image in QEMU
+from an emulated SD card, next to a stand-in dashboard, and passes only if the
+screen gets all the way to playing by itself: the first boot grows the data
+partition and restarts exactly once, the screen shows a pairing code, is
+paired, downloads a two-clip playlist (H.264 with sound and HEVC) and plays
+it, the display shows a picture, a dashboard screenshot and a dashboard
+restart both work, and after the restart it is still paired and playing. Any
+restart nobody asked for fails the run, which is how a restart loop is caught.
+CI runs it on every image build, before anything is published; the serial
+console, a picture of the screen and the journal are kept as the
+`boot-test-<version>` artifact. It takes about 15 minutes.
+
+```bash
+sudo apt-get install qemu-system-arm erofs-utils mtools fdisk zstd
+./infra/buildroot/tests/boot-and-play.py out/images/showroom-os-rpi5-<version>.img.xz
+```
+
+The image is booted as built. QEMU has no Raspberry Pi 5, so the image's own
+kernel is replaced by Ubuntu's arm64 kernel and the player draws through
+plain KMS instead of the Pi's GPU. That leaves these to a real screen: the
+VideoCore display path, hardware HEVC decoding, HDMI sound, Wi-Fi, the
+firmware's boot slots, the watchdog and the power supply.
+
+**Self-test on a screen.** Every image carries
+`/usr/libexec/showroom/showroom-selftest`. It reads the screen's state and
+prints one line per check and a final `SHOWROOM-SELFTEST: PASS` or `FAIL`:
+boot finished with no failed units, data partition mounted and grown, agent,
+player and network running without restarts, a TV detected, the pairing
+screen up or content playing and its position moving, the OS slot committed,
+power supply, temperature and watchdog, and nothing alarming in the journal.
+
+| Where | How |
+| --- | --- |
+| From a laptop | `./infra/buildroot/pi-check.sh root@<test screen>` runs it over SSH, restarts the screen, checks it again and watches for a restart nobody asked for (`--restarts 3 --soak 30` for a longer run) |
+| At the screen's console | `sudo /usr/libexec/showroom/showroom-selftest` |
+| Development images | by themselves three minutes after every boot; the result is in the journal and so in `showroom-logs/current-boot.txt` on the card |
+
+Run `pi-check.sh` on a spare Pi 5 before a stable release: it is the check for
+everything the QEMU boot test cannot see.
+
 ### Setting up publishing (once)
 
 ```bash
@@ -195,6 +235,8 @@ sudo ./infra/buildroot/tests/tryboot-backend.sh   # A/B state machine, in a moun
 ./infra/buildroot/tests/data-layout.sh            # built-in or installed agent and player after an OS update
 ./infra/buildroot/tests/publish-dry-run.sh        # release channels and the files a stable release carries
 ./infra/buildroot/tests/rootfs-smoke.py out/images/rootfs.erofs   # a built image
+./infra/buildroot/tests/boot-and-play.py out/images/showroom-os-rpi5-<version>.img.xz   # boots it in QEMU until it plays
+./infra/buildroot/pi-check.sh root@<test screen>   # the same checks on a real screen, with a restart
 ```
 
 The build itself fails if FFmpeg lost the `hevc_v4l2request` decoder (for
@@ -207,7 +249,8 @@ On one spare Pi 5, not a showroom screen:
 
 1. Flash `showroom-os-rpi5-dev.img.xz` from the dev channel with Raspberry Pi Imager
    (Use custom, no OS customisation).
-2. Wi-Fi setup appears on the screen; pair the screen as usual.
+2. Wi-Fi setup appears on the screen; pair the screen as usual and give it a
+   playlist. Then run `./infra/buildroot/pi-check.sh root@<screen> --restarts 3`.
 3. Check a 1080p and a 4K HEVC video play smoothly with sound over HDMI, and
    that `vcgencmd get_throttled` and screenshots work in the dashboard.
 4. Use a development image from the dev channel. Push any change to a

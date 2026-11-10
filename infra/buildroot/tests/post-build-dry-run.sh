@@ -137,7 +137,7 @@ has_line "${field}/usr/lib/os-release" 'VERSION_ID=2026.11.09.1'
 has_line "${field}/usr/lib/os-release" 'PRETTY_NAME="Showroom OS 2026.11.09.1 (Buildroot 2026.02.3)"'
 has_line "${field}/etc/showroom/image-variant" 'buildroot'
 cmp -s "${WORK}/keys/ca.cert.pem" "${field}/etc/rauc/keyring.pem" || fail "the RAUC keyring is not the given CA"
-for unit in showroom-os-follow.service showroom-os-follow.timer showroom-debug-log.service; do
+for unit in showroom-os-follow.service showroom-os-follow.timer showroom-debug-log.service showroom-selftest.service showroom-selftest.timer; do
   has_line "${field}/usr/lib/systemd/system/${unit}" 'ConditionPathExists=/etc/showroom/os-channel.env'
 done
 

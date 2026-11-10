@@ -15,3 +15,4 @@ enable tailscaled.service
 enable showroom-tailscale-join.timer
 # showroom-os-commit decides when a new slot is good, after a health check.
 disable rauc-mark-good.service
+enable showroom-selftest.timer
