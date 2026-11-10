@@ -588,6 +588,9 @@ async function settleSystemUpdates(
       now,
       agentStartedAt: uptimeSeconds === null ? undefined : now - uptimeSeconds * 1000,
       osVersion,
+      // The screen keeps a new OS only after its own health check; until
+      // then it can still fall back, so the rollout is not finished.
+      trial: payload?.health?.systemUpdateState === "trial",
     });
     if (outcome === "confirmed") {
       await ctx.db.patch(rollout._id, {

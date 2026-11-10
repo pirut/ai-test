@@ -121,6 +121,10 @@ export default async function ScreenDetailPage({
   const systemUpdatePending = Boolean(
     device.desiredSystemVersion && !osVersionMatches(osVersion, device.desiredSystemVersion),
   );
+  // Showroom OS screens: a new system is on trial until the screen's own
+  // health check keeps it, and the reason for the last automatic fallback.
+  const systemUpdateOnTrial = health?.systemUpdateState === "trial";
+  const lastRecovery = health?.bootReason?.trim() || null;
   const noPlaylist = device.status !== "unclaimed" && !device.currentPlaylistName;
   // The screen's own report (for example "2 of 9 items are not on the screen yet") stays set until
   // the cause is fixed. It is a content warning, not a failure, and is shown in full below.
@@ -417,7 +421,18 @@ export default async function ScreenDetailPage({
                     value={isManaged ? `${device.applianceGeneration ?? "appliance"} · protocol ${device.agentProtocolVersion ?? "?"}` : "Legacy"}
                   />
                 </dl>
-                {systemUpdatePending ? (
+                {systemUpdateOnTrial ? (
+                  <p role="status" className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    The screen restarted into its new system and is checking that it works. It keeps the update
+                    after a few healthy minutes online, and goes back to the previous version on its own otherwise.
+                  </p>
+                ) : systemUpdatePending && lastRecovery ? (
+                  <p role="status" className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    This screen is not on system version{" "}
+                    <span className="font-medium text-foreground">{device.desiredSystemVersion}</span>. It went back to
+                    the version that worked: {lastRecovery}.
+                  </p>
+                ) : systemUpdatePending ? (
                   <p role="status" className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                     A system update to <span className="font-medium text-foreground">{device.desiredSystemVersion}</span>{" "}
                     is in progress. The screen downloads it, restarts once, and goes back to the previous version on

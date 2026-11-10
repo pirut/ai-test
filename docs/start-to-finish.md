@@ -107,9 +107,11 @@ previous one if the player or agent does not come up healthy.
 and SHA-256 to a release, using the image version as the release version. The
 bundle is sent only to screens running Showroom OS. A screen installs it to
 its spare slot, restarts into it once on trial, and keeps it only after the
-agent and player pass a health check; otherwise it returns to the previous
-system. The rollout counts a screen as updated when it reports the new
-version after the restart.
+agent and player pass a health check and the screen is back online; otherwise
+it returns to the previous system. The rollout counts a screen as updated
+once it has kept the new version. If a kept version later fails to start
+three times in a row, the screen returns to the previous system by itself and
+its page in the dashboard says so.
 
 **Raspberry Pi OS appliance.** Operating system updates still go through
 Raspberry Pi Connect OTA. See [`fleet-operations.md`](fleet-operations.md).
@@ -124,3 +126,4 @@ customers, run these once on a spare Pi 5:
 3. Remove all content from the screen, then remove the screen itself.
 4. An app release with a deliberately broken agent (expect an automatic return to the previous one).
 5. An OS update from the Releases page, then one with power pulled during the trial boot.
+6. With two OS versions installed, pull power within a minute of switching on, three times in a row (expect the previous system on the fourth start).

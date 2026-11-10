@@ -30,6 +30,8 @@ for n in 2 3; do
   done
 done
 cp "${WORK}/part-02/cmdline-A.txt" "${WORK}/part-02/cmdline.txt"
+# RAUC writes the same boot image into either slot.
+for n in 2 3; do echo "kernel=Image" >"${WORK}/part-0${n}/config.txt"; done
 
 # A mount wrapper that turns "mount -t vfat -o OPTS DEVICE DIR" into a bind
 # mount of the matching directory.
@@ -97,6 +99,7 @@ expect "B committed" 3 "$(section '[all]')"
 expect "A is now the tryboot slot" 2 "$(section '[tryboot]')"
 expect "pending cleared" no "$([[ -e /data/rauc/tryboot-pending ]] && echo yes || echo no)"
 expect "B is primary" B "$("${BACKEND}" get-primary)"
+expect "A holds the previous OS to fall back to" A "$("${BACKEND}" get-fallback)"
 
 # The next update goes to A and its trial boot never comes up: the firmware
 # falls back to B, where showroom-os-commit marks A bad.
@@ -110,6 +113,45 @@ expect "still on B after the failed trial" B "$("${BACKEND}" get-current)"
 expect "failed slot cleared from pending" no "$([[ -e /data/rauc/tryboot-pending ]] && echo yes || echo no)"
 expect "B still committed" 3 "$(section '[all]')"
 expect "B primary" B "$("${BACKEND}" get-primary)"
+expect "a slot that was written over is no fallback" "" "$("${BACKEND}" get-fallback 2>/dev/null || true)"
+if "${BACKEND}" fallback 2>/dev/null; then
+  echo "FAIL: falling back without a previous OS must be refused" >&2
+  exit 1
+fi
+echo "ok: refuses to fall back without a previous OS"
+unboot
+
+# A good update to A, which later stops starting: fall back to B for good.
+boot_as B
+"${BACKEND}" set-state A bad
+"${BACKEND}" set-primary A
+cp /data/rauc/tryboot-pending /data/rauc/tryboot-attempted
+unboot
+boot_as A
+"${BACKEND}" set-state A good
+expect "A committed" 2 "$(section '[all]')"
+expect "B holds the previous OS" B "$("${BACKEND}" get-fallback)"
+"${BACKEND}" fallback
+expect "B is committed again" 3 "$(section '[all]')"
+expect "the slot that was left is not a fallback" "" "$("${BACKEND}" get-fallback 2>/dev/null || true)"
+unboot
+boot_as B
+expect "B primary after the fallback" B "$("${BACKEND}" get-primary)"
+expect "B good after the fallback" good "$("${BACKEND}" get-state B)"
+
+# A fallback slot whose boot partition lost its files is refused.
+"${BACKEND}" set-state A bad
+"${BACKEND}" set-primary A
+cp /data/rauc/tryboot-pending /data/rauc/tryboot-attempted
+unboot
+boot_as A
+"${BACKEND}" set-state A good
+rm "${WORK}/part-03/config.txt"
+if "${BACKEND}" fallback 2>/dev/null; then
+  echo "FAIL: falling back to a slot without boot files must be refused" >&2
+  exit 1
+fi
+expect "A stays committed when the fallback is unusable" 2 "$(section '[all]')"
 unboot
 
 echo "tryboot backend: all checks passed"

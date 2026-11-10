@@ -192,6 +192,14 @@ test("a system update is confirmed only by a restarted screen on the new version
     systemUpdateOutcome({ ...base, now: installedAt + 90_000, agentStartedAt: installedAt + 60_000, osVersion: null }),
     "pending",
   );
+  // A screen still trying the new OS has not kept it yet.
+  const trying = { ...base, agentStartedAt: installedAt + 60_000, osVersion: newOs, trial: true };
+  assert.equal(systemUpdateOutcome({ ...trying, now: installedAt + 90_000 }), "pending");
+  assert.equal(systemUpdateOutcome({ ...trying, now: installedAt + systemUpdateConfirmTimeoutMs }), "timed_out");
+  assert.equal(
+    systemUpdateOutcome({ ...trying, now: installedAt + 90_000, osVersion: oldOs }),
+    "rolled_back",
+  );
   assert.equal(systemUpdateOutcome({ ...base, now: installedAt + systemUpdateConfirmTimeoutMs }), "timed_out");
   assert.equal(systemUpdateOutcome({ ...base, now: installedAt + systemUpdateConfirmTimeoutMs - 1 }), "pending");
 });

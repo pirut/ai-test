@@ -2,7 +2,7 @@
 Description=Commit or roll back a Showroom OS update
 # Not ordered after the agent or player: a start job that keeps restarting
 # never finishes, which would keep a broken trial boot from ever rolling
-# back. The script polls them for five minutes instead.
+# back. The script polls them instead.
 After=local-fs.target
 RequiresMountsFor=/data /var/lib/showroom
 
@@ -10,7 +10,7 @@ RequiresMountsFor=/data /var/lib/showroom
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/libexec/showroom/showroom-os-commit
-TimeoutStartSec=10min
+TimeoutStartSec=15min
 
 [Install]
 WantedBy=multi-user.target

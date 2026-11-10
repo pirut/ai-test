@@ -7,4 +7,10 @@
 set -euo pipefail
 
 bundle="${1:?usage: showroom-os-install BUNDLE.raucb}"
+# The inactive slot is about to be overwritten, so it stops being the OS to
+# fall back to (RAUC also marks it bad, which clears this; be sure of it).
+rm -f /data/rauc/fallback-slot
+# What the last update did is history once a new one starts; the dashboard
+# shows this reason as the latest outcome.
+rm -f /var/lib/showroom/state/last-boot-reason
 exec rauc install "${bundle}"

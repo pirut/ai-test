@@ -67,6 +67,8 @@ jobs:
           shellcheck -s sh infra/buildroot/board/rpi5/rootfs-overlay/etc/profile.d/*.sh
       - name: A/B tryboot backend
         run: sudo ./infra/buildroot/tests/tryboot-backend.sh
+      - name: Commit, rollback and failed-boot fallback
+        run: ./infra/buildroot/tests/os-commit.sh
       - name: Built-in or installed agent and player
         run: ./infra/buildroot/tests/data-layout.sh
       - name: Development OS channel
