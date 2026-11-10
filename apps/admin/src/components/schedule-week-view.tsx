@@ -1,11 +1,13 @@
 "use client";
 
+import type { ScheduleRecurrence } from "@showroom/contracts";
 import { addDays, format, isSameDay, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { describeDays, describeTimes, recurrenceLength } from "@/lib/schedule-format";
 import { cn } from "@/lib/utils";
 
 export type WeekViewWindow = {
@@ -13,6 +15,8 @@ export type WeekViewWindow = {
   label: string;
   startsAt: string;
   endsAt: string;
+  /** Set when the schedule repeats by time of day; it is then drawn on each of its days. */
+  recurrence?: ScheduleRecurrence | null;
   priority: number;
   playlistId: string | null;
   playlistName: string | null;
@@ -40,16 +44,39 @@ type Segment = {
   lanes: number;
 };
 
+/**
+ * When a window is on during the visible week, as [start, end) times. A
+ * weekly schedule is drawn at its clock times as they are (9:00 is 9:00 on
+ * every screen, whatever its time zone), once for each of its days.
+ */
+function runsInWeek(window: WeekViewWindow, weekStart: Date) {
+  if (!window.recurrence) {
+    return [[Date.parse(window.startsAt), Date.parse(window.endsAt)] as const];
+  }
+  const runs: Array<readonly [number, number]> = [];
+  // Start a day early: a late run from the day before can spill into Monday.
+  for (let offset = -1; offset < 7; offset += 1) {
+    const day = addDays(weekStart, offset);
+    if (!window.recurrence.daysOfWeek.includes(day.getDay())) continue;
+    const start = day.getTime() + window.recurrence.startMinute * 60_000;
+    runs.push([start, start + recurrenceLength(window.recurrence) * 60_000]);
+  }
+  return runs;
+}
+
 /** Splits each window into per-day segments for the visible week and packs overlaps into side-by-side lanes. */
 function layoutWeek(windows: WeekViewWindow[], weekStart: Date) {
   const segments: Segment[] = [];
+  const runs = windows.flatMap((window) =>
+    runsInWeek(window, weekStart).map(([startsAt, endsAt]) => ({ window, startsAt, endsAt })),
+  );
   for (let day = 0; day < 7; day += 1) {
     const dayStart = addDays(weekStart, day).getTime();
     const dayEnd = dayStart + DAY_MS;
-    const daySegments = windows
-      .map((window) => {
-        const start = Math.max(Date.parse(window.startsAt), dayStart);
-        const end = Math.min(Date.parse(window.endsAt), dayEnd);
+    const daySegments = runs
+      .map(({ window, startsAt, endsAt }) => {
+        const start = Math.max(startsAt, dayStart);
+        const end = Math.min(endsAt, dayEnd);
         return end > start ? { window, start, end } : null;
       })
       .filter((value): value is NonNullable<typeof value> => value !== null)
@@ -105,7 +132,9 @@ export function ScheduleWeekView({
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const weekEnd = addDays(weekStart, 7);
   const inWeek = windows.filter(
-    (window) => Date.parse(window.startsAt) < weekEnd.getTime() && Date.parse(window.endsAt) > weekStart.getTime(),
+    (window) =>
+      window.recurrence ||
+      (Date.parse(window.startsAt) < weekEnd.getTime() && Date.parse(window.endsAt) > weekStart.getTime()),
   ).length;
 
   return (
@@ -116,7 +145,7 @@ export function ScheduleWeekView({
         </CardTitle>
         <CardDescription>
           {inWeek
-            ? "Side-by-side blocks overlap; the higher priority plays. Empty time plays each screen's default playlist."
+            ? "Side-by-side blocks overlap; the higher priority plays. Empty time plays each screen's default playlist. Weekly schedules are shown at each screen's local time."
             : "No schedules this week. Screens play their default playlist."}
         </CardDescription>
         <CardAction className="flex items-center gap-1">
@@ -173,10 +202,20 @@ export function ScheduleWeekView({
                 .filter((segment) => segment.day === dayIndex)
                 .map((segment) => (
                   <button
-                    key={`${segment.window.id}-${dayIndex}`}
+                    key={`${segment.window.id}-${dayIndex}-${segment.top}`}
                     type="button"
                     onClick={() => onSelect?.(segment.window.id)}
-                    title={`${segment.window.label} · ${segment.window.playlistName ?? "No playlist"} · ${segment.window.targetLabel} · P${segment.window.priority}`}
+                    title={[
+                      segment.window.label,
+                      segment.window.recurrence
+                        ? `${describeDays(segment.window.recurrence.daysOfWeek)}, ${describeTimes(segment.window.recurrence)}`
+                        : null,
+                      segment.window.playlistName ?? "No playlist",
+                      segment.window.targetLabel,
+                      `P${segment.window.priority}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                     className={cn(
                       "absolute overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight transition-shadow hover:shadow-md",
                       colorFor(segment.window),

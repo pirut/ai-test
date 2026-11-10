@@ -712,7 +712,25 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		}
 	}
 	s.pruneCachedAssets(previousState.PreviousCachedAssets, retained)
+	if savedNewAsset(previousAssets, cachedAssets) && manifestAssetCount(manifest) > len(cachedAssets) {
+		// More is waiting and the last download worked: fetch the next item
+		// now instead of after the poll interval, so the whole playlist is on
+		// the card (and safe from a network drop) as soon as possible. Items
+		// that failed are in backoff and do not count, so this cannot spin.
+		s.requestSync()
+	}
 	return nil
+}
+
+// savedNewAsset reports whether a sync put a file on the card that the
+// previous sync did not have.
+func savedNewAsset(previous, current map[string]state.AssetRecord) bool {
+	for id, record := range current {
+		if before, ok := previous[id]; !ok || before.Checksum != record.Checksum {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceManifest) (map[string]state.AssetRecord, *remote.DeviceManifest, error) {
@@ -1370,6 +1388,12 @@ func (s *Service) sendHeartbeat(ctx context.Context, current state.DeviceState, 
 		"sync": map[string]interface{}{
 			"lastSyncAt": current.LastSyncAt,
 			"lastError":  redactURLQueries(syncError),
+			// How much of the assigned content is saved on the card, so the
+			// dashboard can say whether the screen would play without internet.
+			"savedItems": len(current.CachedAssets),
+			"totalItems": len(current.CachedAssets) + current.PendingItems,
+			// This agent follows repeating (time of day) schedules.
+			"repeatingSchedules": true,
 		},
 	}
 

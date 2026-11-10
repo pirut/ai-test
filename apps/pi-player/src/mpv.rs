@@ -22,6 +22,9 @@ const EVENT_PLAYBACK_RESTART: c_int = 21;
 const EVENT_PROPERTY_CHANGE: c_int = 22;
 
 pub const END_FILE_REASON_ERROR: c_int = 4;
+/// mpv's end-file error for a file whose sound could not be opened. The
+/// picture still played to the end.
+pub const ERROR_AO_INIT_FAILED: c_int = -14;
 
 #[repr(C)]
 struct RawEvent {

@@ -1,6 +1,7 @@
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { ConvexError } from "convex/values";
+import { recurringWindowInstant } from "@showroom/contracts";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -39,7 +40,13 @@ export function deriveDeviceStatus(device: Pick<Doc<"devices">, "status" | "last
 export function serializeLinkState(
   device: Pick<
     Doc<"devices">,
-    "manifestVersion" | "desiredManifestVersion" | "lastSyncAt" | "lastAgentError"
+    | "manifestVersion"
+    | "desiredManifestVersion"
+    | "lastSyncAt"
+    | "lastAgentError"
+    | "savedItems"
+    | "totalItems"
+    | "repeatingSchedules"
   >,
 ) {
   const desired = device.desiredManifestVersion ?? null;
@@ -53,6 +60,9 @@ export function serializeLinkState(
         : ("updating" as const),
     lastSyncAt: device.lastSyncAt ? new Date(device.lastSyncAt).toISOString() : null,
     lastError: device.lastAgentError ?? null,
+    savedItems: device.savedItems ?? null,
+    totalItems: device.totalItems ?? null,
+    supportsRepeatingSchedules: device.repeatingSchedules === true,
   };
 }
 
@@ -217,11 +227,15 @@ export async function buildManifestForDevice(
       return {
         id: schedule._id,
         label: schedule.name,
-        startsAt: new Date(schedule.startsAt).toISOString(),
-        endsAt: new Date(schedule.endsAt).toISOString(),
+        // A repeating window carries 1970 here: screens that predate
+        // repeating schedules read only these two fields and so never play
+        // it, instead of playing it at the wrong times.
+        startsAt: schedule.recurrence ? recurringWindowInstant : new Date(schedule.startsAt).toISOString(),
+        endsAt: schedule.recurrence ? recurringWindowInstant : new Date(schedule.endsAt).toISOString(),
         priority: schedule.priority,
         playlistId: target.playlistId,
         playlist: await buildManifestPlaylistItems(ctx, target.playlistId),
+        ...(schedule.recurrence ? { recurrence: schedule.recurrence } : {}),
       };
     }),
   );

@@ -44,7 +44,6 @@ const Switch = React.forwardRef<
           "pointer-events-none block size-5 rounded-full bg-background shadow-[0_2px_8px_rgba(0,0,0,0.35)] ring-0 transition-transform duration-200 ease-out",
           resolvedChecked ? "translate-x-5" : "translate-x-0",
         )}
-        style={{ transform: `translateX(${resolvedChecked ? 20 : 0}px)` }}
       />
     </SwitchPrimitive.Root>
   );

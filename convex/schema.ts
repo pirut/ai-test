@@ -107,6 +107,11 @@ export default defineSchema({
     desiredManifestVersion: v.optional(v.string()),
     lastSyncAt: v.optional(v.number()),
     lastAgentError: v.optional(v.string()),
+    // Reported by newer agents: items saved on the screen out of those
+    // assigned, and whether it follows repeating schedules.
+    savedItems: v.optional(v.number()),
+    totalItems: v.optional(v.number()),
+    repeatingSchedules: v.optional(v.boolean()),
     lastHeartbeatAt: v.optional(v.number()),
     lastSeenIp: v.optional(v.string()),
     appVersion: v.optional(v.string()),
@@ -128,12 +133,17 @@ export default defineSchema({
     health: v.optional(v.any()),
     lastHealthAt: v.optional(v.number()),
     connectDeviceId: v.optional(v.string()),
+    // Fleet health: the agent uptime from the last heartbeat (a drop means
+    // the agent restarted) and when uptime tracking began for this screen.
+    lastUptimeSeconds: v.optional(v.number()),
+    healthTrackedSince: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_claim_code", ["claimCode"])
     .index("by_org", ["organizationId"])
-    .index("by_org_and_status", ["organizationId", "status"]),
+    .index("by_org_and_status", ["organizationId", "status"])
+    .index("by_status_and_last_heartbeat", ["status", "lastHeartbeatAt"]),
 
   deviceCredentials: defineTable({
     deviceId: v.id("devices"),
@@ -321,6 +331,14 @@ export default defineSchema({
     startsAt: v.number(),
     endsAt: v.number(),
     priority: v.number(),
+    // Set on schedules that repeat by time of day on each screen's own clock;
+    // startsAt and endsAt are then 0 and unused. Days are 0 (Sunday) to 6,
+    // minutes count from midnight.
+    recurrence: v.optional(v.object({
+      daysOfWeek: v.array(v.number()),
+      startMinute: v.number(),
+      endMinute: v.number(),
+    })),
     fallbackPlaylistId: v.optional(v.id("playlists")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -405,9 +423,16 @@ export default defineSchema({
     openedAt: v.number(),
     resolvedAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
+    // Email progress for alerts that notify people: "pending" until the
+    // problem is emailed, "sent" after, "recovery_pending" once it clears and
+    // the all-clear is still to send. Unset for records that never email.
+    notifyState: v.optional(v.string()),
   })
     .index("by_device", ["deviceId"])
-    .index("by_org_and_state", ["organizationId", "state"]),
+    .index("by_org_and_state", ["organizationId", "state"])
+    .index("by_org_and_resolved_at", ["organizationId", "resolvedAt"])
+    .index("by_notify_state", ["notifyState"])
+    .index("by_state_and_type", ["state", "alertType"]),
 
   hardwareProfiles: defineTable({
     organizationId: v.string(),

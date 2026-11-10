@@ -358,6 +358,22 @@ export const manifestPlaylistItemSchema = z.object({
   durationSeconds: z.number().int().positive().optional(),
 });
 
+// A schedule that repeats by time of day. Days are 0 (Sunday) to 6 (Saturday)
+// and minutes count from midnight, both on the screen's own clock (its time
+// zone), so 9:00 means 9:00 wherever the screen is. An end at or before the
+// start runs past midnight into the next day; equal start and end is all day.
+export const scheduleRecurrenceSchema = z.object({
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+  startMinute: z.number().int().min(0).max(1439),
+  endMinute: z.number().int().min(0).max(1439),
+});
+
+// startsAt and endsAt of a repeating window in a manifest. Screens whose
+// software predates repeating schedules only read those two fields, so a
+// window that ended in 1970 is one they never play (they keep their default
+// playlist) while still saving its media for after their update.
+export const recurringWindowInstant = "1970-01-01T00:00:00.000Z";
+
 export const scheduleWindowSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -366,7 +382,94 @@ export const scheduleWindowSchema = z.object({
   priority: z.number().int(),
   playlistId: z.string().optional(),
   playlist: z.array(manifestPlaylistItemSchema),
+  // Present on repeating windows only; startsAt and endsAt are then unused.
+  // A malformed value is dropped rather than rejecting the whole manifest.
+  recurrence: scheduleRecurrenceSchema.optional().catch(undefined),
 });
+
+export type ScheduleRecurrence = z.infer<typeof scheduleRecurrenceSchema>;
+
+const weekdayIndex: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+const clockFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** The day of week and minute of day at `now` in a time zone. Unknown zones read as UTC. */
+export function localClock(now: number, timeZone: string) {
+  let format = clockFormats.get(timeZone);
+  if (!format) {
+    const options = { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+    try {
+      format = new Intl.DateTimeFormat("en-US", { ...options, timeZone });
+    } catch {
+      format = new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" });
+    }
+    clockFormats.set(timeZone, format);
+  }
+  const parts = Object.fromEntries(format.formatToParts(new Date(now)).map((part) => [part.type, part.value]));
+  return {
+    day: weekdayIndex[parts.weekday ?? ""] ?? 0,
+    minute: (Number(parts.hour) % 24) * 60 + Number(parts.minute),
+  };
+}
+
+/** Whether a repeating schedule is on at a local day and minute. */
+export function recurrenceActiveAt(recurrence: ScheduleRecurrence, clock: { day: number; minute: number }) {
+  const { daysOfWeek, startMinute, endMinute } = recurrence;
+  const today = daysOfWeek.includes(clock.day);
+  if (startMinute < endMinute) {
+    return today && clock.minute >= startMinute && clock.minute < endMinute;
+  }
+  // Past midnight: the late part belongs to the day it started on.
+  const yesterday = daysOfWeek.includes((clock.day + 6) % 7);
+  return (today && clock.minute >= startMinute) || (yesterday && clock.minute < endMinute);
+}
+
+type SchedulableWindow = {
+  startsAt: string;
+  endsAt: string;
+  priority: number;
+  recurrence?: ScheduleRecurrence;
+};
+
+// A clock this far behind the manifest is a screen that lost its time (no
+// battery clock, not online yet). Schedules wait until it is set again.
+const clockTrustSlackMs = 24 * 60 * 60 * 1000;
+
+/**
+ * The schedule window that plays at `now`, or undefined for the default
+ * playlist. Higher priority wins; at equal priority a dated window beats a
+ * repeating one, then the earlier one in the list.
+ */
+export function chooseActiveScheduleWindow<T extends SchedulableWindow>(
+  manifest: { timezone: string; generatedAt?: string; scheduleWindows: T[] },
+  now = Date.now(),
+): T | undefined {
+  const generatedAt = manifest.generatedAt ? Date.parse(manifest.generatedAt) : NaN;
+  if (Number.isFinite(generatedAt) && now < generatedAt - clockTrustSlackMs) {
+    return undefined;
+  }
+  let clock: ReturnType<typeof localClock> | null = null;
+  let best: T | undefined;
+  for (const window of manifest.scheduleWindows) {
+    let active: boolean;
+    if (window.recurrence) {
+      clock ??= localClock(now, manifest.timezone);
+      active = recurrenceActiveAt(window.recurrence, clock);
+    } else {
+      const startsAt = Date.parse(window.startsAt);
+      const endsAt = Date.parse(window.endsAt);
+      active = Number.isFinite(startsAt) && Number.isFinite(endsAt) && startsAt <= now && now <= endsAt;
+    }
+    if (!active) continue;
+    if (
+      !best ||
+      window.priority > best.priority ||
+      (window.priority === best.priority && !window.recurrence && Boolean(best.recurrence))
+    ) {
+      best = window;
+    }
+  }
+  return best;
+}
 
 export const deviceManifestSchema = z.object({
   manifestVersion: z.string(),
@@ -434,6 +537,12 @@ export const heartbeatPayloadSchema = z.object({
   sync: z.object({
     lastSyncAt: z.string().optional(),
     lastError: z.string().optional(),
+    // How much of the assigned content is saved on the screen, so the
+    // dashboard can say whether it would keep playing without internet.
+    savedItems: z.number().int().nonnegative().optional(),
+    totalItems: z.number().int().nonnegative().optional(),
+    // The screen follows repeating (time of day) schedules.
+    repeatingSchedules: z.boolean().optional(),
   }).optional().catch(undefined),
 });
 
@@ -506,6 +615,11 @@ export const deviceSummarySchema = z.object({
   desiredManifestVersion: z.string().nullable().optional(),
   lastSyncAt: z.string().nullable().optional(),
   lastError: z.string().nullable().optional(),
+  // Items saved on the screen out of those assigned to it; null for screens
+  // whose software does not report it.
+  savedItems: z.number().nullable().optional(),
+  totalItems: z.number().nullable().optional(),
+  supportsRepeatingSchedules: z.boolean().optional(),
   // Showroom OS screens only: the OS the screen reports running, its active
   // A/B slot, and the OS version last rolled out to it.
   osVersion: z.string().nullable().optional(),
@@ -806,6 +920,9 @@ export const mockDevices: DeviceSummary[] = [
     agentProtocolVersion: fleetManagedProtocolVersion,
     capabilities: [...fleetManagedCapabilities],
     applianceActivatedAt: new Date(mockNow - 24 * 60 * 60_000).toISOString(),
+    savedItems: 3,
+    totalItems: 3,
+    supportsRepeatingSchedules: true,
     health: {
       capturedAt: new Date(mockNow - 25_000).toISOString(),
       hardwareProfile: "rpi5-industrial-sd",
@@ -833,6 +950,9 @@ export const mockDevices: DeviceSummary[] = [
     agentProtocolVersion: fleetManagedProtocolVersion,
     capabilities: [...fleetManagedCapabilities],
     applianceActivatedAt: new Date(mockNow - 12 * 60 * 60_000).toISOString(),
+    savedItems: 2,
+    totalItems: 3,
+    supportsRepeatingSchedules: true,
     health: {
       capturedAt: new Date(mockNow - 7 * 60_000).toISOString(),
       hardwareProfile: "rpi5-industrial-sd",
@@ -877,3 +997,4 @@ export const acceptedMimeTypes = new Set([
 ]);
 
 export const maxMediaBytes = 250 * 1024 * 1024;
+export * from "./fleet-health";

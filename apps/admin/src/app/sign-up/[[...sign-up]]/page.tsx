@@ -9,7 +9,7 @@ export default async function SignUpPage() {
     const session = await auth();
 
     if (session.userId) {
-      redirect(session.orgId ? "/dashboard" : "/team");
+      redirect(session.orgId ? "/dashboard" : "/welcome");
     }
   }
 
@@ -32,9 +32,9 @@ export default async function SignUpPage() {
     <PublicAuthShell
       mode="sign-up"
       title="Create your account"
-      description="Next you name your workspace, then we walk you through setting up your first screen."
+      description="Three short steps: your account, a name for your workspace, then a guide that takes your first screen from an empty Raspberry Pi to playing."
     >
-      <SignUp />
+      <SignUp fallbackRedirectUrl="/welcome" />
     </PublicAuthShell>
   );
 }

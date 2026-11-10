@@ -1,4 +1,5 @@
-import { ArrowRight, ChevronLeft, ShieldCheck } from "lucide-react";
+import { SignOutButton } from "@clerk/nextjs";
+import { ArrowRight, Check, ChevronLeft, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -164,28 +165,46 @@ export function PublicAuthShell({
   description,
   children,
 }: {
-  mode: "sign-in" | "sign-up";
+  /** "workspace" is the signed-in step where a new account names its workspace. */
+  mode: "sign-in" | "sign-up" | "workspace";
   title: string;
   description: string;
   children: React.ReactNode;
 }) {
   const oppositeHref = mode === "sign-in" ? "/sign-up" : "/sign-in";
   const oppositeLabel = mode === "sign-in" ? "Create account" : "Sign in";
+  const topLinkClass =
+    "inline-flex h-9 items-center justify-center rounded-xl border border-[#424754]/30 px-4 text-sm font-medium text-white transition-colors hover:bg-white/5";
 
   return (
     <main className="min-h-screen bg-[#131313] text-[#e5e2e1]">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-6">
         <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-[#c2c6d6] transition-colors hover:text-white">
-            <ChevronLeft className="size-4" />
-            Back to home
-          </Link>
-          <Link
-            href={oppositeHref}
-            className="inline-flex h-9 items-center justify-center rounded-xl border border-[#424754]/30 px-4 text-sm font-medium text-white transition-colors hover:bg-white/5"
-          >
-            {oppositeLabel}
-          </Link>
+          {mode === "workspace" ? (
+            <>
+              <span className="flex items-center gap-3 text-sm font-semibold text-white">
+                <span className="flex size-8 items-center justify-center rounded-lg bg-white text-xs font-black text-[#131313]">
+                  DC
+                </span>
+                Digital Curator
+              </span>
+              <SignOutButton redirectUrl="/">
+                <button className={topLinkClass} type="button">
+                  Sign out
+                </button>
+              </SignOutButton>
+            </>
+          ) : (
+            <>
+              <Link href="/" className="inline-flex items-center gap-2 text-sm text-[#c2c6d6] transition-colors hover:text-white">
+                <ChevronLeft className="size-4" />
+                Back to home
+              </Link>
+              <Link href={oppositeHref} className={topLinkClass}>
+                {oppositeLabel}
+              </Link>
+            </>
+          )}
         </div>
 
         <div className="grid flex-1 gap-6 py-6 lg:grid-cols-[minmax(0,1.08fr)_440px]">
@@ -244,9 +263,11 @@ export function PublicAuthShell({
 
           <section className="flex items-center justify-center">
             <div className="w-full max-w-md rounded-[28px] border border-[#424754]/25 bg-[#1c1b1b] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.38)] sm:p-8">
-              <div className="text-[11px] uppercase tracking-[0.3em] text-[#adc6ff]">
-                {mode === "sign-in" ? "Welcome back" : "Create your workspace"}
-              </div>
+              {mode === "sign-in" ? (
+                <div className="text-[11px] uppercase tracking-[0.3em] text-[#adc6ff]">Welcome back</div>
+              ) : (
+                <SignupSteps current={mode === "sign-up" ? 0 : 1} />
+              )}
               <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] text-white">
                 {title}
               </h2>
@@ -257,6 +278,45 @@ export function PublicAuthShell({
         </div>
       </div>
     </main>
+  );
+}
+
+const signupSteps = ["Account", "Workspace", "First screen"];
+
+/** Shows a new customer how short the road to a playing screen is. */
+function SignupSteps({ current }: { current: number }) {
+  return (
+    <ol className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-medium">
+      {signupSteps.map((label, index) => (
+        <li
+          key={label}
+          aria-current={index === current ? "step" : undefined}
+          className={
+            index === current
+              ? "flex items-center gap-2 text-white"
+              : "flex items-center gap-2 text-[#c2c6d6]/70"
+          }
+        >
+          <span
+            aria-hidden
+            className={
+              index < current
+                ? "flex size-5 items-center justify-center rounded-full bg-[#adc6ff]/20 text-[#adc6ff]"
+                : index === current
+                  ? "flex size-5 items-center justify-center rounded-full bg-[#adc6ff] text-[11px] font-bold text-[#002e6a]"
+                  : "flex size-5 items-center justify-center rounded-full border border-[#424754]/60 text-[11px]"
+            }
+          >
+            {index < current ? <Check className="size-3" /> : index + 1}
+          </span>
+          {index < current ? <span className="sr-only">Done: </span> : null}
+          {label}
+          {index < signupSteps.length - 1 ? (
+            <span aria-hidden className="ml-1 h-px w-4 bg-[#424754]/60" />
+          ) : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 

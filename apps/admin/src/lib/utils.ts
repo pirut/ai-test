@@ -19,3 +19,8 @@ export function formatRelativeTimestamp(input: string) {
   const diffDays = Math.round(diffHours / 24);
   return `${diffDays}d ago`;
 }
+
+/** The time a server page is being rendered at, for "offline for 12 minutes" style text. */
+export function renderTime() {
+  return Date.now();
+}

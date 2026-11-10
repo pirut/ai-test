@@ -450,6 +450,17 @@ impl Player {
                 // any more, so the load timeout must not fire for it.
                 self.load_started_at = None;
             }
+            Event::EndFile { error, .. } if error == mpv::ERROR_AO_INIT_FAILED => {
+                // No sound device (a monitor without speakers, HDMI audio
+                // not up yet): the video played, only silently. Counting it
+                // as failed put "Can't play this content" over a playlist
+                // that was playing.
+                self.load_started_at = None;
+                eprintln!(
+                    "showroom-player: no sound device for {:?}; it played without sound",
+                    self.loading_path
+                );
+            }
             Event::EndFile { error, .. } => {
                 self.load_started_at = None;
                 self.consecutive_errors += 1;

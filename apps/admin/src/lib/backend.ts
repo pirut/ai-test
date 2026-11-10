@@ -11,6 +11,8 @@ import {
   mediaAssetSchema,
   playlistSchema,
   releaseSummarySchema,
+  scheduleRecurrenceSchema,
+  type ScheduleRecurrence,
   temporaryRegistrationResponseSchema,
   claimStatusResponseSchema,
   deviceCommandSchema,
@@ -21,6 +23,7 @@ import { z } from "zod";
 
 import { api } from "@convex-api";
 import { env, hasConvexBackend } from "@/lib/env";
+import { alertSettingsSchema, fleetHealthSchema } from "@/lib/fleet-health";
 import * as mock from "@/lib/mock-store";
 
 const screenshotSchema = z.object({
@@ -61,12 +64,17 @@ const scheduleSummarySchema = z.object({
   label: z.string(),
   startsAt: z.string(),
   endsAt: z.string(),
+  // Set on schedules that repeat by time of day; startsAt and endsAt are
+  // then unused. A backend that predates repeating schedules sends nothing.
+  recurrence: scheduleRecurrenceSchema.nullable().optional().catch(null),
   priority: z.number(),
   playlistId: z.string().nullable(),
   playlistName: z.string().nullable(),
   targetDeviceId: z.string().nullable(),
   targetLabel: z.string(),
 });
+
+export type ScheduleSummary = z.infer<typeof scheduleSummarySchema>;
 
 function publicConvexClient() {
   if (!env.convexUrl) {
@@ -225,6 +233,39 @@ export async function getWorkspaceAccess() {
     .parse(await convexQuery(api.admin.getWorkspaceAccess, {}));
 }
 
+// Uptime, outages, unexpected restarts and alert settings for the workspace.
+// Pages treat a failure here as "no data" so the rest of the dashboard still
+// renders (for example while the backend is a deploy behind the site).
+export async function getFleetHealth(orgId: string) {
+  if (!hasConvexBackend()) {
+    return fleetHealthSchema.parse(mock.getFleetHealth(orgId));
+  }
+
+  return fleetHealthSchema.parse(await convexQuery(api.fleetHealth.getOverview, {}));
+}
+
+export async function saveAlertSettings(input: {
+  enabled: boolean;
+  recipients: string[];
+  notifyAfterSeconds: number;
+}) {
+  if (!hasConvexBackend()) {
+    return alertSettingsSchema.parse(mock.saveAlertSettings(input));
+  }
+
+  return alertSettingsSchema.parse(await convexMutation(api.fleetHealth.saveSettings, input));
+}
+
+export async function sendTestAlertEmail() {
+  if (!hasConvexBackend()) {
+    return mock.sendTestAlertEmail();
+  }
+
+  return z
+    .object({ sentTo: z.array(z.string()) })
+    .parse(await convexMutation(api.fleetHealth.sendTestEmail, {}));
+}
+
 export async function listReleases() {
   if (!hasConvexBackend()) {
     return mock.listReleases();
@@ -245,19 +286,7 @@ export async function listPlaylists() {
 
 export async function listSchedules() {
   if (!hasConvexBackend()) {
-    return [
-      {
-        id: "schedule-opening",
-        label: "Morning opening",
-        startsAt: "2026-03-11T09:00:00.000Z",
-        endsAt: "2026-03-11T16:00:00.000Z",
-        priority: 10,
-        playlistId: "playlist-main-showroom",
-        playlistName: "Main showroom loop",
-        targetDeviceId: null,
-        targetLabel: "All screens",
-      },
-    ];
+    return z.array(scheduleSummarySchema).parse(mock.listSchedules());
   }
 
   return z.array(scheduleSummarySchema).parse(
@@ -580,24 +609,15 @@ export async function setDefaultPlaylist(playlistId: string) {
 export async function saveSchedule(input: {
   scheduleId?: string;
   name: string;
-  startsAt: string;
-  endsAt: string;
+  startsAt?: string;
+  endsAt?: string;
+  recurrence?: ScheduleRecurrence;
   priority: number;
   playlistId: string;
   deviceId?: string;
 }) {
   if (!hasConvexBackend()) {
-    return {
-      id: "schedule-opening",
-      label: input.name,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-      priority: input.priority,
-      playlistId: input.playlistId,
-      playlistName: "Mock playlist",
-      targetDeviceId: input.deviceId ?? null,
-      targetLabel: input.deviceId ?? "All screens",
-    };
+    return scheduleSummarySchema.parse(mock.saveSchedule(input));
   }
 
   return scheduleSummarySchema.parse(

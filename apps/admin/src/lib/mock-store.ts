@@ -10,14 +10,22 @@ import {
   type MediaAsset,
   type Playlist,
   type ReleaseSummary,
+  type ScheduleRecurrence,
   claimStatusResponseSchema,
   commandTypeSchema,
+  defaultNotifyAfterSeconds,
+  healthWindowDays,
+  maxAlertRecipients,
+  parseAlertRecipients,
+  summarizeDeviceHealth,
+  summarizeFleetHealth,
   deviceCommandResultSchema,
   deviceCommandSchema,
   deviceManifestSchema,
   heartbeatPayloadSchema,
   isFleetManagedDevice,
   planReleaseRollout,
+  recurringWindowInstant,
   releaseCommandPayloadForDevice,
   releaseVersionPattern,
   requiresFleetManagedDevice,
@@ -57,6 +65,24 @@ type DeviceRecord = DeviceSummary & {
   timezone: string;
   orientation: 0 | 90 | 180 | 270;
   volume: number;
+  // A screen paired with the demo code. Nothing real checks in for it, so
+  // the store plays its part: it stays online and "downloads" new content.
+  demo?: { contentChangedAt: number };
+};
+
+/** Pairs a pretend screen in local demo mode, so the setup guide can be tried without a Pi. */
+export const demoClaimCode = "DEMO01";
+const demoDownloadMs = 8_000;
+
+type MockSchedule = {
+  id: string;
+  label: string;
+  startsAt: string;
+  endsAt: string;
+  recurrence: ScheduleRecurrence | null;
+  priority: number;
+  playlistId: string;
+  targetDeviceId: string | null;
 };
 
 type MockState = {
@@ -64,6 +90,7 @@ type MockState = {
   folders: LibraryFolder[];
   mediaAssets: MediaAsset[];
   playlists: Playlist[];
+  schedules?: MockSchedule[];
   releases: ReleaseSummary[];
   manifests: Record<string, DeviceManifest>;
   screenshots: ScreenshotRecord[];
@@ -74,6 +101,7 @@ type MockState = {
   // Wrong claim codes per workspace, as timestamps (the real backend's
   // claimFailures table).
   claimFailures?: Record<string, number[]>;
+  alertSettings?: { enabled: boolean; recipients: string[]; notifyAfterSeconds: number };
 };
 
 // Same limits as convex/admin.ts claimDeviceByCode.
@@ -189,7 +217,25 @@ function sanitizeFolderMove(folderId: string, parentId?: string | null) {
   return parentId;
 }
 
+function buildEmptyState(): MockState {
+  return {
+    devices: [],
+    folders: [],
+    mediaAssets: [],
+    playlists: [],
+    releases: [],
+    manifests: {},
+    screenshots: [],
+    commands: [],
+    registrations: [],
+  };
+}
+
 function buildState(): MockState {
+  // SHOWROOM_MOCK_EMPTY=1 starts the demo as a workspace that just signed up.
+  if (["1", "true", "yes", "on"].includes((process.env.SHOWROOM_MOCK_EMPTY ?? "").toLowerCase())) {
+    return buildEmptyState();
+  }
   const folders = [...mockMediaFolders, ...mockPlaylistFolders].map(cloneFolder);
   const mediaAssets = mockMediaAssets.map(cloneAsset);
   const basePlaylist = clonePlaylist(mockPlaylist);
@@ -229,6 +275,18 @@ function buildState(): MockState {
     folders,
     mediaAssets,
     playlists: [basePlaylist, seasonalPlaylist],
+    schedules: [
+      {
+        id: "schedule-opening",
+        label: "Opening hours",
+        startsAt: recurringWindowInstant,
+        endsAt: recurringWindowInstant,
+        recurrence: { daysOfWeek: [1, 2, 3, 4, 5], startMinute: 9 * 60, endMinute: 17 * 60 },
+        priority: 10,
+        playlistId: seasonalPlaylist.id,
+        targetDeviceId: null,
+      },
+    ],
     releases: [],
     manifests: {
       [mockManifest.deviceId]: deviceManifestSchema.parse(mockManifest),
@@ -290,7 +348,131 @@ export function getDashboardStats(orgId: string): DashboardStats {
   };
 }
 
+function playableDefaultPlaylist() {
+  return state().playlists.find((playlist) => playlist.isDefault && playlist.items.length > 0) ?? null;
+}
+
+// Publishes the default playlist to demo screens, the way a playlist change
+// recompiles every screen on the real backend.
+function publishToDemoScreens() {
+  const playlist = playableDefaultPlaylist();
+  for (const device of state().devices) {
+    if (!device.demo) continue;
+    device.currentPlaylistName = playlist?.name ?? null;
+    device.desiredManifestVersion = `manifest-${Date.now()}`;
+    device.contentState = "updating";
+    device.demo.contentChangedAt = Date.now();
+  }
+}
+
+function advanceDemoScreens() {
+  const now = Date.now();
+  for (const device of state().devices) {
+    if (!device.demo) continue;
+    device.status = "online";
+    device.lastHeartbeatAt = new Date(now).toISOString();
+    if (device.contentState === "updating" && now - device.demo.contentChangedAt >= demoDownloadMs) {
+      device.manifestVersion = device.desiredManifestVersion ?? null;
+      device.contentState = "current";
+      device.lastSyncAt = new Date(now).toISOString();
+      device.screenshotUrl = playableDefaultPlaylist()?.items[0]?.asset.previewUrl ?? null;
+    }
+  }
+}
+
+function alertSettings() {
+  const mockState = state();
+  mockState.alertSettings ??= {
+    enabled: true,
+    recipients: [],
+    notifyAfterSeconds: defaultNotifyAfterSeconds,
+  };
+  return mockState.alertSettings;
+}
+
+// A plausible week for the demo fleet: the offline screen has an open outage,
+// the others have a short one and a couple of restarts behind them.
+export function getFleetHealth(orgId: string) {
+  const now = Date.now();
+  const windowDays = healthWindowDays;
+  const windowStart = now - windowDays * 24 * 60 * 60_000;
+  const minutes = 60_000;
+  const recent: Array<{
+    id: string;
+    deviceId: string;
+    deviceName: string;
+    type: "offline" | "crash" | "crash_loop";
+    component: string | null;
+    openedAt: number;
+    resolvedAt: number | null;
+    restarts: number;
+  }> = [];
+  const summaries = listDevices(orgId)
+    .filter((device) => device.status !== "unclaimed")
+    .map((device, index) => {
+      const events: Array<{ alertType: string; openedAt: number; resolvedAt: number | null; count?: number }> = [];
+      const lastSeen = Date.parse(device.lastHeartbeatAt) || now;
+      if (device.status === "offline") {
+        events.push({ alertType: "offline", openedAt: lastSeen, resolvedAt: null });
+      } else if (index === 0) {
+        events.push({ alertType: "offline", openedAt: now - 3 * 24 * 60 * minutes, resolvedAt: now - 3 * 24 * 60 * minutes + 14 * minutes });
+      } else {
+        events.push({ alertType: "crash", openedAt: now - 26 * 60 * minutes, resolvedAt: now - 26 * 60 * minutes, count: 1 });
+        events.push({ alertType: "offline", openedAt: now - 5 * 24 * 60 * minutes, resolvedAt: now - 5 * 24 * 60 * minutes + 95 * minutes });
+      }
+      events.forEach((event, eventIndex) =>
+        recent.push({
+          id: `${device.id}-health-${eventIndex}`,
+          deviceId: device.id,
+          deviceName: device.name,
+          type: event.alertType as "offline" | "crash",
+          component: event.alertType === "crash" ? "player" : null,
+          openedAt: event.openedAt,
+          resolvedAt: event.resolvedAt,
+          restarts: event.count ?? 1,
+        }),
+      );
+      return { deviceId: device.id, ...summarizeDeviceHealth({ now, windowStart, trackedSince: windowStart, events }) };
+    });
+
+  return {
+    windowDays,
+    monitoringSince: summaries.length ? windowStart : null,
+    fleet: summarizeFleetHealth(summaries),
+    devices: summaries.map((summary) => ({
+      deviceId: summary.deviceId,
+      uptimePercent: summary.uptimePercent,
+      downMs: summary.downMs,
+      outages: summary.outages,
+      restarts: summary.restarts,
+      offlineSince: summary.offlineSince,
+      crashLooping: summary.crashLooping,
+    })),
+    recent: recent.sort((a, b) => (b.resolvedAt ?? now) - (a.resolvedAt ?? now)).slice(0, 12),
+    settings: { ...alertSettings(), emailConfigured: true },
+  };
+}
+
+export function saveAlertSettings(input: { enabled: boolean; recipients: string[]; notifyAfterSeconds: number }) {
+  const { valid, invalid } = parseAlertRecipients(input.recipients);
+  if (invalid.length) throw new Error(`${invalid[0]} is not a valid email address`);
+  if (valid.length > maxAlertRecipients) throw new Error(`Alerts can go to at most ${maxAlertRecipients} addresses`);
+  state().alertSettings = {
+    enabled: input.enabled,
+    recipients: valid,
+    notifyAfterSeconds: input.notifyAfterSeconds,
+  };
+  return { ...alertSettings(), emailConfigured: true };
+}
+
+export function sendTestAlertEmail() {
+  const { recipients } = alertSettings();
+  if (!recipients.length) throw new Error("Add at least one address and save before sending a test");
+  return { sentTo: recipients };
+}
+
 export function listDevices(orgId: string) {
+  advanceDemoScreens();
   return state().devices.filter((device) => device.orgId === orgId);
 }
 
@@ -442,6 +624,7 @@ export function setDefaultPlaylist(id: string) {
     return next;
   });
 
+  publishToDemoScreens();
   return target;
 }
 
@@ -641,6 +824,7 @@ export function savePlaylist(input: {
   }
 
   syncPlaylistAssets();
+  publishToDemoScreens();
   return state().playlists.find((entry) => entry.id === playlist.id) ?? playlist;
 }
 
@@ -853,19 +1037,27 @@ export function claimDevice(input: {
   const registration = mockState.registrations.find(
     (entry) => entry.claimCode === input.claimCode,
   );
+  const isDemoScreen = !registration && input.claimCode === demoClaimCode;
 
   // Like the real backend, a code that was already used counts as wrong.
-  if (!registration || registration.claimedDeviceId) {
+  if (!isDemoScreen && (!registration || registration.claimedDeviceId)) {
     recentFailures.push(now);
     return { error: "invalid_code" as const };
   }
 
   const deviceId = crypto.randomUUID();
   const credential = `device_${crypto.randomBytes(12).toString("hex")}`;
-  registration.claimedDeviceId = deviceId;
-  registration.credential = credential;
+  if (registration) {
+    registration.claimedDeviceId = deviceId;
+    registration.credential = credential;
+  }
 
-  const fallbackPlaylist = state().playlists.find((playlist) => playlist.isDefault) ?? mockPlaylist;
+  // A workspace with nothing to play pairs a screen with no playlist, as on
+  // the real backend. The seeded demo keeps its sample playlist.
+  const fallbackPlaylist =
+    state().playlists.find((playlist) => playlist.isDefault) ??
+    (state().playlists.length > 0 ? mockPlaylist : null);
+  const manifestVersion = `manifest-${Date.now()}`;
   const device: DeviceRecord = {
     id: deviceId,
     name: input.name,
@@ -873,12 +1065,12 @@ export function claimDevice(input: {
     status: "online",
     lastHeartbeatAt: new Date().toISOString(),
     screenshotUrl: null,
-    currentPlaylistName: fallbackPlaylist.name,
-    manifestVersion: mockManifest.manifestVersion,
+    currentPlaylistName: fallbackPlaylist?.name ?? null,
+    manifestVersion: isDemoScreen ? manifestVersion : mockManifest.manifestVersion,
     orgId: input.orgId,
     claimCode: input.claimCode,
     credential,
-    defaultPlaylistId: fallbackPlaylist.id,
+    defaultPlaylistId: fallbackPlaylist?.id ?? null,
     timezone: "America/New_York",
     orientation: 0,
     volume: 0,
@@ -887,6 +1079,14 @@ export function claimDevice(input: {
     agentProtocolVersion: null,
     capabilities: [],
     applianceActivatedAt: null,
+    ...(isDemoScreen
+      ? {
+          demo: { contentChangedAt: Date.now() },
+          desiredManifestVersion: manifestVersion,
+          // With a playlist waiting, the new screen starts by downloading it.
+          contentState: fallbackPlaylist ? ("updating" as const) : ("current" as const),
+        }
+      : {}),
   };
 
   const existingIndex = state().devices.findIndex((entry) => entry.id === deviceId);
@@ -1059,6 +1259,9 @@ export function recordHeartbeat(deviceId: string, payload: Record<string, unknow
   if (parsedPayload.sync) {
     device.lastSyncAt = parsedPayload.sync.lastSyncAt ?? device.lastSyncAt ?? null;
     device.lastError = parsedPayload.sync.lastError || null;
+    device.savedItems = parsedPayload.sync.savedItems ?? null;
+    device.totalItems = parsedPayload.sync.totalItems ?? null;
+    device.supportsRepeatingSchedules = parsedPayload.sync.repeatingSchedules === true;
   }
   if (parsedPayload.appliance && isFleetManagedDevice({
     applianceGeneration: parsedPayload.appliance.generation,
@@ -1121,9 +1324,58 @@ export function deletePlaylist(id: string) {
   }));
 }
 
+function serializeSchedule(schedule: MockSchedule) {
+  const playlist = state().playlists.find((entry) => entry.id === schedule.playlistId);
+  const device = schedule.targetDeviceId
+    ? state().devices.find((entry) => entry.id === schedule.targetDeviceId)
+    : null;
+  return {
+    ...schedule,
+    playlistId: playlist?.id ?? null,
+    playlistName: playlist?.name ?? null,
+    targetLabel: device?.name ?? "All screens",
+  };
+}
+
+export function listSchedules() {
+  return (state().schedules ?? []).map(serializeSchedule);
+}
+
+export function saveSchedule(input: {
+  scheduleId?: string;
+  name: string;
+  startsAt?: string;
+  endsAt?: string;
+  recurrence?: ScheduleRecurrence;
+  priority: number;
+  playlistId: string;
+  deviceId?: string;
+}) {
+  if (!state().playlists.some((playlist) => playlist.id === input.playlistId)) {
+    throw new Error("Playlist not found");
+  }
+  if (!input.recurrence && !(Date.parse(input.endsAt ?? "") > Date.parse(input.startsAt ?? ""))) {
+    throw new Error("The schedule's end must be later than its start");
+  }
+  const schedules = (state().schedules ??= []);
+  const schedule: MockSchedule = {
+    id: input.scheduleId ?? `schedule-${crypto.randomUUID()}`,
+    label: input.name,
+    startsAt: input.recurrence ? recurringWindowInstant : input.startsAt!,
+    endsAt: input.recurrence ? recurringWindowInstant : input.endsAt!,
+    recurrence: input.recurrence ?? null,
+    priority: input.priority,
+    playlistId: input.playlistId,
+    targetDeviceId: input.deviceId ?? null,
+  };
+  const index = schedules.findIndex((entry) => entry.id === schedule.id);
+  if (index >= 0) schedules[index] = schedule;
+  else schedules.unshift(schedule);
+  return serializeSchedule(schedule);
+}
+
 export function deleteSchedule(id: string) {
-  void id;
-  // No schedules in mock state.
+  state().schedules = (state().schedules ?? []).filter((schedule) => schedule.id !== id);
 }
 
 export function deleteMediaAsset(id: string) {

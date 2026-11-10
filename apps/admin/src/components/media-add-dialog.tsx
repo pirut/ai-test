@@ -100,7 +100,8 @@ function uploadFile(uploadUrl: string, file: File, onProgress: (percent: number)
   });
 }
 
-async function uploadOne(
+/** Uploads one file and adds it to the media library. */
+export async function uploadOne(
   file: File,
   options: { title?: string; tags: string[]; folderId: string | null },
   onProgress: (percent: number) => void,

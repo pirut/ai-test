@@ -1,0 +1,16 @@
+[Unit]
+Description=Check that this screen booted and is showing what it should (development images)
+Documentation=file:///usr/libexec/showroom/showroom-selftest
+# Only development images: the result goes to the journal, which those copy
+# to the card's AUTOBOOT partition (showroom-debug-log), so a test screen
+# without network still says what is wrong with it.
+ConditionPathExists=/etc/showroom/os-channel.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/showroom/showroom-selftest --wait 120
+# A failed check is a line in the log, not a failed unit: the self-test
+# itself counts failed units.
+SuccessExitStatus=1
+TimeoutStartSec=5min
+Nice=10

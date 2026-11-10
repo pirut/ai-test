@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { AddScreenDialog } from "@/components/add-screen-dialog";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +7,7 @@ import { type ScreenFilter, ScreensTable } from "@/components/screens-table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import { listDevices, listPlaylists } from "@/lib/backend";
+import { parseClaimCode } from "@/lib/onboarding";
 
 const filters = new Set<ScreenFilter>(["all", "attention", "online", "stale", "offline", "unclaimed"]);
 
@@ -13,21 +16,24 @@ export default async function ScreensPage({
 }: {
   searchParams: Promise<{ status?: string; view?: string; layout?: string; claim?: string | string[] }>;
 }) {
-  const orgId = await requireOrgId();
-  const [devices, session, params, playlists] = await Promise.all([
+  const params = await searchParams;
+  // The QR code on a TV links here with ?claim=CODE.
+  const claimCode = parseClaimCode(params.claim);
+  // A new account that scanned it names its workspace first and keeps the code.
+  const orgId = await requireOrgId(claimCode ? `/welcome?claim=${claimCode}` : undefined);
+  const [devices, session, playlists] = await Promise.all([
     listDevices(orgId),
     getAuthSession(),
-    searchParams,
     // Only used to tell a new screen's owner what happens next.
     listPlaylists().catch(() => null),
   ]);
   const hasDefaultPlaylist = playlists ? playlists.some((playlist) => playlist.isDefault) : undefined;
   const canAdmin = session.has({ role: "org:admin" });
-  // Pairing codes are short and alphanumeric; anything else is ignored.
-  const claimCode =
-    typeof params.claim === "string" && /^[A-Za-z0-9]{4,12}$/.test(params.claim)
-      ? params.claim.toUpperCase()
-      : undefined;
+  // A workspace's first screen is paired inside the setup guide, which then
+  // carries on to the first video.
+  if (claimCode && canAdmin && devices.length === 0) {
+    redirect(`/get-started?claim=${claimCode}`);
+  }
   const requested = (params.view === "attention" ? "attention" : params.status ?? "all") as ScreenFilter;
 
   return (
