@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { removeScreen, updateScreen } from "@/lib/backend";
+import { removeTailscaleNode } from "@/lib/tailscale";
 import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
@@ -52,7 +53,13 @@ export const DELETE = withApiErrors(async function DELETE(
 
   const { deviceId } = await params;
   try {
-    return NextResponse.json(await removeScreen(deviceId, session.orgId));
+    const result = await removeScreen(deviceId, session.orgId);
+    // A removed screen must not stay reachable over SSH. Best effort: the
+    // screen also logs itself out of the tailnet once it notices the removal.
+    await removeTailscaleNode(deviceId).catch((error) => {
+      console.error("Could not remove the screen from the tailnet", error);
+    });
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not remove screen";
     const status = /not found/i.test(message) ? 404 : 500;

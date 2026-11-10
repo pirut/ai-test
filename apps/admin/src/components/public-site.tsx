@@ -7,6 +7,7 @@ const navItems = [
   { href: "/#workflow", label: "How it works" },
   { href: "/#library", label: "Library" },
   { href: "/#hardware", label: "Hardware" },
+  { href: "/#pricing", label: "Pricing" },
 ];
 
 export function PublicNav() {

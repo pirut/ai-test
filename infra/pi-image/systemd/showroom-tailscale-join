@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Joins this screen to the fleet tailnet so it can be reached with Tailscale
-# SSH. Runs from a timer and does nothing once the node is logged in. The auth
+# SSH. Runs from a timer and does nothing while the node is logged in as this
+# screen; a screen removed from its workspace leaves the tailnet. The auth
 # key comes from the dashboard (GET /api/device/tailscale) using the agent's
 # device credential, so no key is ever baked into the image or OTA archive.
 # A key file at ${LOCAL_KEY_FILE} overrides the dashboard, for one-off use.
@@ -26,7 +27,27 @@ node_hostname() {
   printf '%s\n' "${name:0:63}"
 }
 
+# should_leave <joined hostname> <expected hostname> <credential> <has local key: 0|1>
+# Only nodes this script joined for a paired screen (showroom-<id>) ever leave:
+# when the screen is no longer paired, or is now a different screen. A node
+# joined by hand, or with the local key file, is left alone.
+should_leave() {
+  local joined="$1" expected="$2" credential="$3" local_key="$4"
+  if [[ "${local_key}" == "1" || "${joined}" != showroom-* ]]; then
+    echo no
+  elif [[ -z "${credential}" || "${joined}" != "${expected}" ]]; then
+    echo yes
+  else
+    echo no
+  fi
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
+  [[ "$(should_leave showroom-abc showroom-abc cred 0)" == "no" ]]
+  [[ "$(should_leave showroom-abc raspberrypi "" 0)" == "yes" ]]
+  [[ "$(should_leave showroom-abc showroom-xyz cred 0)" == "yes" ]]
+  [[ "$(should_leave showroom-abc raspberrypi "" 1)" == "no" ]]
+  [[ "$(should_leave bench-pi raspberrypi "" 0)" == "no" ]]
   [[ "$(node_hostname 'K57Ab_c9')" == "showroom-k57ab-c9" ]]
   [[ "$(node_hostname "$(printf 'x%.0s' {1..80})" | wc -c)" -eq 64 ]]
   echo ok
@@ -35,11 +56,6 @@ fi
 
 if ! command -v tailscale >/dev/null 2>&1; then
   log "tailscale is not installed; nothing to do"
-  exit 0
-fi
-
-backend_state="$(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty' || true)"
-if [[ "${backend_state}" == "Running" ]]; then
   exit 0
 fi
 
@@ -53,6 +69,20 @@ fi
 hostname_arg="$(hostname)"
 if [[ -n "${device_id}" ]]; then
   hostname_arg="$(node_hostname "${device_id}")"
+fi
+
+status_json="$(tailscale status --json 2>/dev/null || true)"
+backend_state="$(jq -r '.BackendState // empty' <<<"${status_json}" 2>/dev/null || true)"
+if [[ "${backend_state}" == "Running" ]]; then
+  joined_as="$(jq -r '.Self.HostName // empty' <<<"${status_json}" 2>/dev/null || true)"
+  if [[ "$(should_leave "${joined_as}" "${hostname_arg}" "${credential}" "$([[ -s "${LOCAL_KEY_FILE}" ]] && echo 1 || echo 0)")" != "yes" ]]; then
+    exit 0
+  fi
+  # The screen was removed from its workspace (or paired again as a new
+  # screen). Its old name must stop working for SSH; a re-paired screen then
+  # joins again below under its new name.
+  log "leaving tailnet: joined as ${joined_as}, which this screen no longer is"
+  tailscale logout || { log "logout failed; will retry"; exit 0; }
 fi
 
 key_file="$(mktemp /run/showroom-tailscale-key.XXXXXX)"

@@ -300,6 +300,37 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      <section id="pricing" className="bg-[#131313] px-6 py-28">
+        <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.4em] text-[#adc6ff]">
+              Pricing
+            </div>
+            <h2 className="mt-5 max-w-3xl text-4xl font-black leading-tight tracking-[-0.05em] text-white sm:text-6xl">
+              One price per screen.
+            </h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-[#c2c6d6]">
+              Pay only for the screens you run. Everything is included: media, playlists, schedules, remote management, and software updates.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] bg-[#1c1b1b] p-8 shadow-[0_24px_48px_rgba(0,0,0,0.4)]">
+            <p className="flex items-baseline gap-2 text-white">
+              <span className="text-6xl font-black tracking-[-0.05em]">$5</span>
+              <span className="text-base text-[#c2c6d6]">per screen, per month</span>
+            </p>
+            <p className="mt-4 text-sm leading-7 text-[#e5e2e1]">
+              Free for the first 14 days. You supply the Raspberry Pi and the TV.
+            </p>
+            <div className="mt-8 rounded-[22px] bg-[#131313] p-5">
+              <InlineArrowLink href="/sign-up">
+                Start your free trial
+              </InlineArrowLink>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-[#0e0e0e] px-6 py-28">
         <div className="mx-auto max-w-5xl">
           <p className="text-3xl font-light leading-tight text-white sm:text-4xl">

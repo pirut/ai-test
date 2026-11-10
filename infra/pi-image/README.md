@@ -180,7 +180,7 @@ One-time tailnet setup:
    ```
 
 2. Under Settings, Trust credentials, create an OAuth client with the
-   `auth_keys` write scope and the `tag:showroom` tag.
+   `auth_keys` write scope (and `devices` write, so removed screens are deleted) and the `tag:showroom` tag.
 3. Set `TAILSCALE_OAUTH_CLIENT_ID` and `TAILSCALE_OAUTH_CLIENT_SECRET` on the
    dashboard deployment and redeploy. Each screen then gets its own
    single-use key that expires in 10 minutes. A reusable, pre-approved
@@ -188,7 +188,10 @@ One-time tailnet setup:
    expires those after at most 90 days.
 
 Then `ssh pi@showroom-<device id>` from any machine signed in to the tailnet.
-Tagged nodes do not expire, so no re-login is needed. To bring one screen in
+Tagged nodes do not expire, so no re-login is needed. A screen removed from
+its workspace leaves the tailnet: it logs itself out within 15 minutes of
+noticing the removal, and the dashboard also deletes its node at once when the
+OAuth client has the `devices` write scope (`devices:core`) as well. To bring one screen in
 by hand, write a key to `/var/lib/showroom/tailscale/authkey`; it takes
 precedence over the dashboard.
 

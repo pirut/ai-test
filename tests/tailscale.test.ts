@@ -5,6 +5,8 @@ import {
   getTailscaleJoin,
   isTailscaleConfigured,
   readTailscaleConfig,
+  removeTailscaleNode,
+  tailscaleNodeHostname,
 } from "../apps/admin/src/lib/tailscale";
 
 test("remote access is off when no Tailscale secret is set", async () => {
@@ -63,4 +65,44 @@ test("a failed key request surfaces as an error", async () => {
     TAILSCALE_OAUTH_CLIENT_SECRET: "secret",
   });
   await assert.rejects(getTailscaleJoin(config, fakeFetch), /OAuth token request failed \(403\)/);
+});
+
+test("a removed screen's node is deleted from the tailnet, and only that node", async () => {
+  const deleted: string[] = [];
+  const fakeFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/oauth/token")) {
+      return new Response(JSON.stringify({ access_token: "token" }));
+    }
+    if (url.endsWith("/tailnet/-/devices")) {
+      return new Response(
+        JSON.stringify({
+          devices: [
+            { nodeId: "n1", hostname: "showroom-k57ab-c9", tags: ["tag:showroom"] },
+            { nodeId: "n2", hostname: "showroom-other", tags: ["tag:showroom"] },
+            { nodeId: "n3", hostname: "showroom-k57ab-c9", tags: ["tag:laptop"] },
+          ],
+        }),
+      );
+    }
+    if (init?.method === "DELETE") {
+      deleted.push(url.split("/").pop()!);
+      return new Response(null, { status: 200 });
+    }
+    return new Response(null, { status: 500 });
+  }) as typeof fetch;
+  const config = readTailscaleConfig({
+    TAILSCALE_OAUTH_CLIENT_ID: "id",
+    TAILSCALE_OAUTH_CLIENT_SECRET: "secret",
+  });
+
+  assert.equal(tailscaleNodeHostname("K57Ab_c9"), "showroom-k57ab-c9");
+  assert.equal(await removeTailscaleNode("K57Ab_c9", config, fakeFetch), "removed");
+  assert.deepEqual(deleted, ["n1"]);
+  assert.equal(await removeTailscaleNode("unknown", config, fakeFetch), "not_found");
+});
+
+test("with only a static auth key the tailnet is left to the screen's own logout", async () => {
+  const config = readTailscaleConfig({ TAILSCALE_AUTH_KEY: "static-key" });
+  assert.equal(await removeTailscaleNode("abc", config), "skipped");
 });
