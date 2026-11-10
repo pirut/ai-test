@@ -87,3 +87,35 @@ export const contentStateLabels = {
   updating: "Updating",
   unknown: "Unknown",
 } as const;
+
+/**
+ * How much of a screen's content is saved on its card, which is what it plays
+ * when the internet drops. The last report stays true while a screen is
+ * offline (that is when it matters), so this does not need a live check-in.
+ */
+export function savedContent(device: Pick<DeviceSummary, "savedItems" | "totalItems">): {
+  value: string;
+  detail: string;
+  tone: "good" | "warn" | "unknown";
+} {
+  const saved = device.savedItems;
+  const total = device.totalItems;
+  if (saved == null || total == null) {
+    return { value: "Unknown", detail: "Needs a software update", tone: "unknown" };
+  }
+  if (total === 0) {
+    return { value: "Nothing to save", detail: "No content assigned", tone: "unknown" };
+  }
+  if (saved >= total) {
+    return {
+      value: total === 1 ? "1 item saved" : `All ${total} items saved`,
+      detail: "Plays without internet",
+      tone: "good",
+    };
+  }
+  return {
+    value: `${saved} of ${total} items saved`,
+    detail: "Still downloading",
+    tone: "warn",
+  };
+}

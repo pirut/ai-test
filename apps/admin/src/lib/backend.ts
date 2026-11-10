@@ -11,6 +11,8 @@ import {
   mediaAssetSchema,
   playlistSchema,
   releaseSummarySchema,
+  scheduleRecurrenceSchema,
+  type ScheduleRecurrence,
   temporaryRegistrationResponseSchema,
   claimStatusResponseSchema,
   deviceCommandSchema,
@@ -61,12 +63,17 @@ const scheduleSummarySchema = z.object({
   label: z.string(),
   startsAt: z.string(),
   endsAt: z.string(),
+  // Set on schedules that repeat by time of day; startsAt and endsAt are
+  // then unused. A backend that predates repeating schedules sends nothing.
+  recurrence: scheduleRecurrenceSchema.nullable().optional().catch(null),
   priority: z.number(),
   playlistId: z.string().nullable(),
   playlistName: z.string().nullable(),
   targetDeviceId: z.string().nullable(),
   targetLabel: z.string(),
 });
+
+export type ScheduleSummary = z.infer<typeof scheduleSummarySchema>;
 
 function publicConvexClient() {
   if (!env.convexUrl) {
@@ -245,19 +252,7 @@ export async function listPlaylists() {
 
 export async function listSchedules() {
   if (!hasConvexBackend()) {
-    return [
-      {
-        id: "schedule-opening",
-        label: "Morning opening",
-        startsAt: "2026-03-11T09:00:00.000Z",
-        endsAt: "2026-03-11T16:00:00.000Z",
-        priority: 10,
-        playlistId: "playlist-main-showroom",
-        playlistName: "Main showroom loop",
-        targetDeviceId: null,
-        targetLabel: "All screens",
-      },
-    ];
+    return z.array(scheduleSummarySchema).parse(mock.listSchedules());
   }
 
   return z.array(scheduleSummarySchema).parse(
@@ -580,24 +575,15 @@ export async function setDefaultPlaylist(playlistId: string) {
 export async function saveSchedule(input: {
   scheduleId?: string;
   name: string;
-  startsAt: string;
-  endsAt: string;
+  startsAt?: string;
+  endsAt?: string;
+  recurrence?: ScheduleRecurrence;
   priority: number;
   playlistId: string;
   deviceId?: string;
 }) {
   if (!hasConvexBackend()) {
-    return {
-      id: "schedule-opening",
-      label: input.name,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-      priority: input.priority,
-      playlistId: input.playlistId,
-      playlistName: "Mock playlist",
-      targetDeviceId: input.deviceId ?? null,
-      targetLabel: input.deviceId ?? "All screens",
-    };
+    return scheduleSummarySchema.parse(mock.saveSchedule(input));
   }
 
   return scheduleSummarySchema.parse(

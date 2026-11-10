@@ -11,6 +11,16 @@ Showroom is designed to keep the last known-good playlist running when the netwo
 - The Raspberry Pi supervisor sends the complete cached playlist to `mpv`, rather than only the first item. Mixed image/video playlists use the browser player; all-video playlists may use `mpv` for hardware-accelerated playback.
 - YouTube acquisition defaults to a 15-minute timeout with retries. Override it with `SHOWROOM_YOUTUBE_DOWNLOAD_TIMEOUT` when required.
 
+## Schedules and offline playback
+
+- A schedule is either one time (a start and an end date) or weekly (days of the week and a start and end time). Weekly times are on each screen's own clock, using the time zone set on the screen's page, so 9:00 is 9:00 in every showroom and follows daylight saving.
+- The screen decides what plays, not the server. The saved manifest holds every schedule and the agent picks the active one each time the player asks (`apps/agent/internal/local/schedule.go`; the web player uses the same rules from `packages/contracts`). A screen with no network keeps switching playlists on time.
+- Higher priority wins. At equal priority a one-time schedule beats a weekly one, then the earlier one in the list. An end time at or before the start runs past midnight and belongs to the day it started on; equal start and end is all day.
+- Media for every schedule is downloaded ahead of time, not when its window opens. After the first two items, the agent fetches the rest back to back instead of one per poll interval, so the whole set is on the card quickly.
+- Heartbeats report `sync.savedItems` and `sync.totalItems`. The screen page shows them as "Saved on screen", which is what the screen can play without internet. The last report stays on the page while a screen is offline.
+- A weekly schedule is sent with `recurrence` and with `startsAt`/`endsAt` set to 1970. Screens whose software predates weekly schedules read only those two fields, so they never play it at the wrong time: they stay on their default playlist and the Schedules page lists them as needing an update (`sync.repeatingSchedules`).
+- Clock: a Pi keeps time from the network. If the clock is more than a day behind the manifest (a screen with no clock battery that booted offline), schedules wait and the default playlist plays until the time is set. A screen that was powered off while offline and has no clock battery resumes from its last saved time, so weekly schedules can run late by however long it was off until it is back online.
+
 ## Cloud link
 
 - The agent runs three independent loops: sync (pairing, credential refresh, manifest and media), commands, and heartbeats. A long media download never delays a dashboard command, and commands never wait on a sync.

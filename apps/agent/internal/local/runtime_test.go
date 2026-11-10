@@ -124,7 +124,7 @@ func TestChooseActivePlaylistUsesHighestPriorityWindow(t *testing.T) {
 			{ID: "high", PlaylistID: "playlist-high", StartsAt: now.Add(-time.Hour).Format(time.RFC3339), EndsAt: now.Add(time.Hour).Format(time.RFC3339), Priority: 10, Playlist: []remote.ManifestPlaylistItem{{ID: "high"}}},
 		},
 	}
-	got, playlistID := chooseActivePlaylist(manifest)
+	got, playlistID := chooseActivePlaylist(manifest, time.Now())
 	if len(got) != 1 || got[0].ID != "high" || playlistID != "playlist-high" {
 		t.Fatalf("unexpected playlist: %#v %q", got, playlistID)
 	}
