@@ -107,6 +107,11 @@ export default defineSchema({
     desiredManifestVersion: v.optional(v.string()),
     lastSyncAt: v.optional(v.number()),
     lastAgentError: v.optional(v.string()),
+    // Reported by newer agents: items saved on the screen out of those
+    // assigned, and whether it follows repeating schedules.
+    savedItems: v.optional(v.number()),
+    totalItems: v.optional(v.number()),
+    repeatingSchedules: v.optional(v.boolean()),
     lastHeartbeatAt: v.optional(v.number()),
     lastSeenIp: v.optional(v.string()),
     appVersion: v.optional(v.string()),
@@ -321,6 +326,14 @@ export default defineSchema({
     startsAt: v.number(),
     endsAt: v.number(),
     priority: v.number(),
+    // Set on schedules that repeat by time of day on each screen's own clock;
+    // startsAt and endsAt are then 0 and unused. Days are 0 (Sunday) to 6,
+    // minutes count from midnight.
+    recurrence: v.optional(v.object({
+      daysOfWeek: v.array(v.number()),
+      startMinute: v.number(),
+      endMinute: v.number(),
+    })),
     fallbackPlaylistId: v.optional(v.id("playlists")),
     createdAt: v.number(),
     updatedAt: v.number(),

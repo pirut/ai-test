@@ -544,7 +544,13 @@ export const recordHeartbeat = mutation({
       lastHeartbeatAt: now,
       ...(Number.isFinite(lastSyncAt) ? { lastSyncAt } : {}),
       ...(sync && typeof sync === "object"
-        ? { lastAgentError: typeof sync.lastError === "string" && sync.lastError ? sync.lastError.slice(0, 500) : undefined }
+        ? {
+            lastAgentError: typeof sync.lastError === "string" && sync.lastError ? sync.lastError.slice(0, 500) : undefined,
+            // An agent rolled back to one that does not report these clears them.
+            savedItems: Number.isInteger(sync.savedItems) && sync.savedItems >= 0 ? sync.savedItems : undefined,
+            totalItems: Number.isInteger(sync.totalItems) && sync.totalItems >= 0 ? sync.totalItems : undefined,
+            repeatingSchedules: sync.repeatingSchedules === true ? true : undefined,
+          }
         : {}),
       updatedAt: now,
     });

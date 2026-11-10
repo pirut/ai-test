@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type DeviceManifest,
   type ManifestPlaylistItem,
+  chooseActiveScheduleWindow,
   deviceManifestSchema,
 } from "@showroom/contracts";
 import { CANNOT_REACH, friendlyError, networkName, showOfflineBadge, videoProgressed } from "./screen-text";
@@ -68,13 +69,7 @@ async function loadWiFiStatus() {
 }
 
 function chooseActiveWindow(manifest: DeviceManifest, now = Date.now()) {
-  return manifest.scheduleWindows
-    .filter((window) => {
-      const startsAt = Date.parse(window.startsAt);
-      const endsAt = Date.parse(window.endsAt);
-      return Number.isFinite(startsAt) && Number.isFinite(endsAt) && startsAt <= now && now <= endsAt;
-    })
-    .sort((a, b) => b.priority - a.priority)[0];
+  return chooseActiveScheduleWindow(manifest, now);
 }
 
 export function chooseSchedule(manifest: DeviceManifest, now = Date.now()) {

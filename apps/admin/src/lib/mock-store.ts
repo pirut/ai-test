@@ -10,6 +10,7 @@ import {
   type MediaAsset,
   type Playlist,
   type ReleaseSummary,
+  type ScheduleRecurrence,
   claimStatusResponseSchema,
   commandTypeSchema,
   deviceCommandResultSchema,
@@ -18,6 +19,7 @@ import {
   heartbeatPayloadSchema,
   isFleetManagedDevice,
   planReleaseRollout,
+  recurringWindowInstant,
   releaseCommandPayloadForDevice,
   releaseVersionPattern,
   requiresFleetManagedDevice,
@@ -66,11 +68,23 @@ type DeviceRecord = DeviceSummary & {
 export const demoClaimCode = "DEMO01";
 const demoDownloadMs = 8_000;
 
+type MockSchedule = {
+  id: string;
+  label: string;
+  startsAt: string;
+  endsAt: string;
+  recurrence: ScheduleRecurrence | null;
+  priority: number;
+  playlistId: string;
+  targetDeviceId: string | null;
+};
+
 type MockState = {
   devices: DeviceRecord[];
   folders: LibraryFolder[];
   mediaAssets: MediaAsset[];
   playlists: Playlist[];
+  schedules?: MockSchedule[];
   releases: ReleaseSummary[];
   manifests: Record<string, DeviceManifest>;
   screenshots: ScreenshotRecord[];
@@ -254,6 +268,18 @@ function buildState(): MockState {
     folders,
     mediaAssets,
     playlists: [basePlaylist, seasonalPlaylist],
+    schedules: [
+      {
+        id: "schedule-opening",
+        label: "Opening hours",
+        startsAt: recurringWindowInstant,
+        endsAt: recurringWindowInstant,
+        recurrence: { daysOfWeek: [1, 2, 3, 4, 5], startMinute: 9 * 60, endMinute: 17 * 60 },
+        priority: 10,
+        playlistId: seasonalPlaylist.id,
+        targetDeviceId: null,
+      },
+    ],
     releases: [],
     manifests: {
       [mockManifest.deviceId]: deviceManifestSchema.parse(mockManifest),
@@ -1135,6 +1161,9 @@ export function recordHeartbeat(deviceId: string, payload: Record<string, unknow
   if (parsedPayload.sync) {
     device.lastSyncAt = parsedPayload.sync.lastSyncAt ?? device.lastSyncAt ?? null;
     device.lastError = parsedPayload.sync.lastError || null;
+    device.savedItems = parsedPayload.sync.savedItems ?? null;
+    device.totalItems = parsedPayload.sync.totalItems ?? null;
+    device.supportsRepeatingSchedules = parsedPayload.sync.repeatingSchedules === true;
   }
   if (parsedPayload.appliance && isFleetManagedDevice({
     applianceGeneration: parsedPayload.appliance.generation,
@@ -1197,9 +1226,58 @@ export function deletePlaylist(id: string) {
   }));
 }
 
+function serializeSchedule(schedule: MockSchedule) {
+  const playlist = state().playlists.find((entry) => entry.id === schedule.playlistId);
+  const device = schedule.targetDeviceId
+    ? state().devices.find((entry) => entry.id === schedule.targetDeviceId)
+    : null;
+  return {
+    ...schedule,
+    playlistId: playlist?.id ?? null,
+    playlistName: playlist?.name ?? null,
+    targetLabel: device?.name ?? "All screens",
+  };
+}
+
+export function listSchedules() {
+  return (state().schedules ?? []).map(serializeSchedule);
+}
+
+export function saveSchedule(input: {
+  scheduleId?: string;
+  name: string;
+  startsAt?: string;
+  endsAt?: string;
+  recurrence?: ScheduleRecurrence;
+  priority: number;
+  playlistId: string;
+  deviceId?: string;
+}) {
+  if (!state().playlists.some((playlist) => playlist.id === input.playlistId)) {
+    throw new Error("Playlist not found");
+  }
+  if (!input.recurrence && !(Date.parse(input.endsAt ?? "") > Date.parse(input.startsAt ?? ""))) {
+    throw new Error("The schedule's end must be later than its start");
+  }
+  const schedules = (state().schedules ??= []);
+  const schedule: MockSchedule = {
+    id: input.scheduleId ?? `schedule-${crypto.randomUUID()}`,
+    label: input.name,
+    startsAt: input.recurrence ? recurringWindowInstant : input.startsAt!,
+    endsAt: input.recurrence ? recurringWindowInstant : input.endsAt!,
+    recurrence: input.recurrence ?? null,
+    priority: input.priority,
+    playlistId: input.playlistId,
+    targetDeviceId: input.deviceId ?? null,
+  };
+  const index = schedules.findIndex((entry) => entry.id === schedule.id);
+  if (index >= 0) schedules[index] = schedule;
+  else schedules.unshift(schedule);
+  return serializeSchedule(schedule);
+}
+
 export function deleteSchedule(id: string) {
-  void id;
-  // No schedules in mock state.
+  state().schedules = (state().schedules ?? []).filter((schedule) => schedule.id !== id);
 }
 
 export function deleteMediaAsset(id: string) {

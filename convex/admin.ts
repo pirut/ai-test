@@ -4,6 +4,7 @@ import {
   commandQueuePolicy,
   releaseVersionPattern,
   requiresFleetManagedDevice,
+  scheduleRecurrenceSchema,
   supportsSystemBundles,
 } from "@showroom/contracts";
 
@@ -801,6 +802,7 @@ export const listSchedules = query({
         label: schedule.name,
         startsAt: new Date(schedule.startsAt).toISOString(),
         endsAt: new Date(schedule.endsAt).toISOString(),
+        recurrence: schedule.recurrence ?? null,
         priority: schedule.priority,
         playlistId: playlist?._id ?? null,
         playlistName: playlist?.name ?? null,
@@ -1525,8 +1527,15 @@ export const saveSchedule = mutation({
   args: {
     scheduleId: v.optional(v.id("schedules")),
     name: v.string(),
-    startsAt: v.string(),
-    endsAt: v.string(),
+    // A dated schedule sends startsAt and endsAt; a repeating one sends
+    // recurrence instead.
+    startsAt: v.optional(v.string()),
+    endsAt: v.optional(v.string()),
+    recurrence: v.optional(v.object({
+      daysOfWeek: v.array(v.number()),
+      startMinute: v.number(),
+      endMinute: v.number(),
+    })),
     priority: v.number(),
     playlistId: v.id("playlists"),
     deviceId: v.optional(v.id("devices")),
@@ -1535,6 +1544,27 @@ export const saveSchedule = mutation({
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
     const playlist = await ctx.db.get(args.playlistId);
+
+    const recurrence = args.recurrence
+      ? scheduleRecurrenceSchema.safeParse({
+          ...args.recurrence,
+          daysOfWeek: [...new Set(args.recurrence.daysOfWeek)].sort((a, b) => a - b),
+        })
+      : null;
+    if (recurrence && !recurrence.success) {
+      throw new ConvexError("Choose at least one day and a valid start and end time");
+    }
+    const startsAt = recurrence ? 0 : Date.parse(args.startsAt ?? "");
+    const endsAt = recurrence ? 0 : Date.parse(args.endsAt ?? "");
+    if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || (!recurrence && endsAt <= startsAt)) {
+      throw new ConvexError("The schedule's end must be later than its start");
+    }
+    const window = {
+      startsAt,
+      endsAt,
+      // Saving a schedule as dated again must remove its repeat.
+      recurrence: recurrence?.data,
+    };
 
     if (!playlist || playlist.organizationId !== orgId) {
       throw new ConvexError("Playlist not found");
@@ -1557,8 +1587,7 @@ export const saveSchedule = mutation({
       await ctx.db.patch(scheduleId, {
         name: args.name,
         timezone: "UTC",
-        startsAt: Date.parse(args.startsAt),
-        endsAt: Date.parse(args.endsAt),
+        ...window,
         priority: args.priority,
         updatedAt: Date.now(),
       });
@@ -1567,8 +1596,7 @@ export const saveSchedule = mutation({
         organizationId: orgId,
         name: args.name,
         timezone: "UTC",
-        startsAt: Date.parse(args.startsAt),
-        endsAt: Date.parse(args.endsAt),
+        ...window,
         priority: args.priority,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1613,8 +1641,9 @@ export const saveSchedule = mutation({
     return {
       id: scheduleId,
       label: args.name,
-      startsAt: args.startsAt,
-      endsAt: args.endsAt,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      recurrence: recurrence?.data ?? null,
       priority: args.priority,
       playlistId: args.playlistId,
       playlistName: playlist.name,

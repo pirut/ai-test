@@ -1,12 +1,14 @@
 "use client";
 
+import type { ScheduleRecurrence } from "@showroom/contracts";
 import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { ScheduleWeekView } from "@/components/schedule-week-view";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -22,6 +24,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { readApiPayload } from "@/lib/api-response";
+import {
+  DAY_LONG,
+  DAY_SHORT,
+  WEEK_DAYS,
+  describeDays,
+  describeTimes,
+  formatMinute,
+  minuteToTime,
+  recurrencesOverlap,
+  timeToMinute,
+} from "@/lib/schedule-format";
 import { cn } from "@/lib/utils";
 
 type ScheduleSummary = {
@@ -29,6 +42,8 @@ type ScheduleSummary = {
   label: string;
   startsAt: string;
   endsAt: string;
+  /** Set when the schedule repeats by time of day; startsAt and endsAt are then unused. */
+  recurrence?: ScheduleRecurrence | null;
   priority: number;
   playlistId: string | null;
   playlistName: string | null;
@@ -44,7 +59,16 @@ type PlaylistOption = {
 type DeviceOption = {
   id: string;
   name: string;
+  /** False for a paired screen whose software predates repeating schedules. */
+  supportsRepeatingSchedules?: boolean;
 };
+
+const WEEKDAYS = [1, 2, 3, 4, 5];
+const DAY_PRESETS = [
+  { label: "Every day", days: [0, 1, 2, 3, 4, 5, 6] },
+  { label: "Weekdays", days: WEEKDAYS },
+  { label: "Weekends", days: [0, 6] },
+];
 
 const ALL_SCREENS_VALUE = "__all__";
 const DEFAULT_START_TIME = "09:00";
@@ -56,6 +80,10 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
 });
 const TIME_OPTION_ITEMS = TIME_OPTIONS.map((option) => ({
   label: option,
+  value: option,
+}));
+const CLOCK_OPTION_ITEMS = TIME_OPTIONS.map((option) => ({
+  label: formatMinute(timeToMinute(option)),
   value: option,
 }));
 const PRIORITY_OPTIONS = [0, 5, 10, 20, 30, 40, 50].map((value) => ({
@@ -172,15 +200,18 @@ function DateTimeField({
   );
 }
 
-type WindowState = "active" | "upcoming" | "ended";
+type WindowState = "active" | "repeating" | "upcoming" | "ended";
 
 function windowState(window: ScheduleSummary, now: number): WindowState {
+  // Whether a repeating schedule is on right now depends on each screen's
+  // own clock, so it is not labelled as playing or upcoming here.
+  if (window.recurrence) return "repeating";
   if (Date.parse(window.endsAt) <= now) return "ended";
   if (Date.parse(window.startsAt) <= now) return "active";
   return "upcoming";
 }
 
-const stateOrder: Record<WindowState, number> = { active: 0, upcoming: 1, ended: 2 };
+const stateOrder: Record<WindowState, number> = { active: 0, repeating: 1, upcoming: 2, ended: 3 };
 
 /** Other windows that overlap this one on at least one shared screen, highest priority first. */
 function overlapsFor(window: ScheduleSummary, all: ScheduleSummary[]) {
@@ -188,7 +219,13 @@ function overlapsFor(window: ScheduleSummary, all: ScheduleSummary[]) {
   const end = Date.parse(window.endsAt);
   return all
     .filter((other) => other.id !== window.id)
-    .filter((other) => Date.parse(other.startsAt) < end && start < Date.parse(other.endsAt))
+    .filter((other) => {
+      if (window.recurrence && other.recurrence) return recurrencesOverlap(window.recurrence, other.recurrence);
+      // A dated window against a repeating one is not compared: whether they
+      // meet depends on the dates and on each screen's time zone.
+      if (window.recurrence || other.recurrence) return false;
+      return Date.parse(other.startsAt) < end && start < Date.parse(other.endsAt);
+    })
     .filter((other) => !window.targetDeviceId || !other.targetDeviceId || other.targetDeviceId === window.targetDeviceId)
     .sort((a, b) => b.priority - a.priority);
 }
@@ -208,6 +245,10 @@ export function ScheduleManager({
   const router = useRouter();
   const [schedules, setSchedules] = useState(initialSchedules);
   const [name, setName] = useState("");
+  const [repeats, setRepeats] = useState(true);
+  const [days, setDays] = useState<number[]>(WEEKDAYS);
+  const [dailyStart, setDailyStart] = useState(DEFAULT_START_TIME);
+  const [dailyEnd, setDailyEnd] = useState(DEFAULT_END_TIME);
   const [startDate, setStartDate] = useState<Date | undefined>();
   const [startTime, setStartTime] = useState(DEFAULT_START_TIME);
   const [endDate, setEndDate] = useState<Date | undefined>();
@@ -236,6 +277,15 @@ export function ScheduleManager({
     [playlists],
   );
   const hasPlaylists = playlistOptions.length > 0;
+  // Screens a weekly schedule is aimed at that cannot follow one yet.
+  const needUpdate = useMemo(() => {
+    const weekly = schedules.filter((schedule) => schedule.recurrence);
+    return devices.filter(
+      (device) =>
+        device.supportsRepeatingSchedules === false &&
+        weekly.some((schedule) => !schedule.targetDeviceId || schedule.targetDeviceId === device.id),
+    );
+  }, [devices, schedules]);
   const deviceOptions = useMemo(
     () => [
       { label: "All screens", value: ALL_SCREENS_VALUE },
@@ -254,10 +304,21 @@ export function ScheduleManager({
     setPlaylistId(schedule.playlistId ?? playlists[0]?.id ?? "");
     setDeviceId(schedule.targetDeviceId ?? "");
 
-    setStartDate(toLocalDate(schedule.startsAt));
-    setStartTime(toLocalTime(schedule.startsAt, DEFAULT_START_TIME));
-    setEndDate(toLocalDate(schedule.endsAt));
-    setEndTime(toLocalTime(schedule.endsAt, DEFAULT_END_TIME));
+    setRepeats(Boolean(schedule.recurrence));
+    if (schedule.recurrence) {
+      setDays(schedule.recurrence.daysOfWeek);
+      setDailyStart(minuteToTime(schedule.recurrence.startMinute));
+      setDailyEnd(minuteToTime(schedule.recurrence.endMinute));
+      setStartDate(undefined);
+      setEndDate(undefined);
+      setStartTime(DEFAULT_START_TIME);
+      setEndTime(DEFAULT_END_TIME);
+    } else {
+      setStartDate(toLocalDate(schedule.startsAt));
+      setStartTime(toLocalTime(schedule.startsAt, DEFAULT_START_TIME));
+      setEndDate(toLocalDate(schedule.endsAt));
+      setEndTime(toLocalTime(schedule.endsAt, DEFAULT_END_TIME));
+    }
     setStatus(null);
     setConfirmDeleteId(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -273,6 +334,10 @@ export function ScheduleManager({
   function cancelEditing() {
     setEditingId(null);
     setName("");
+    setRepeats(true);
+    setDays(WEEKDAYS);
+    setDailyStart(DEFAULT_START_TIME);
+    setDailyEnd(DEFAULT_END_TIME);
     setStartDate(undefined);
     setEndDate(undefined);
     setStartTime(DEFAULT_START_TIME);
@@ -283,22 +348,42 @@ export function ScheduleManager({
   }
 
   async function handleSave() {
-    if (!name.trim() || !startDate || !endDate || !playlistId) {
-      setStatus({ ok: false, text: "Complete the schedule name, window, and playlist." });
+    if (!name.trim() || !playlistId) {
+      setStatus({ ok: false, text: "Give the schedule a name and a playlist." });
       return;
     }
 
-    const startsAt = combineDateAndTime(startDate, startTime);
-    const endsAt = combineDateAndTime(endDate, endTime);
+    let timing: { startsAt: string; endsAt: string } | { recurrence: ScheduleRecurrence };
+    if (repeats) {
+      if (!days.length) {
+        setStatus({ ok: false, text: "Choose at least one day." });
+        return;
+      }
+      timing = {
+        recurrence: {
+          daysOfWeek: [...days].sort((a, b) => a - b),
+          startMinute: timeToMinute(dailyStart),
+          endMinute: timeToMinute(dailyEnd),
+        },
+      };
+    } else {
+      if (!startDate || !endDate) {
+        setStatus({ ok: false, text: "Choose a start and an end date." });
+        return;
+      }
+      const startsAt = combineDateAndTime(startDate, startTime);
+      const endsAt = combineDateAndTime(endDate, endTime);
 
-    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
-      setStatus({ ok: false, text: "Choose a valid start and end window." });
-      return;
-    }
+      if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+        setStatus({ ok: false, text: "Choose a valid start and end window." });
+        return;
+      }
 
-    if (endsAt <= startsAt) {
-      setStatus({ ok: false, text: "Schedule end must be later than the start." });
-      return;
+      if (endsAt <= startsAt) {
+        setStatus({ ok: false, text: "Schedule end must be later than the start." });
+        return;
+      }
+      timing = { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() };
     }
 
     setSaving(true);
@@ -309,8 +394,7 @@ export function ScheduleManager({
         body: JSON.stringify({
           scheduleId: editingId ?? undefined,
           name: name.trim(),
-          startsAt: startsAt.toISOString(),
-          endsAt: endsAt.toISOString(),
+          ...timing,
           priority: Number(priority) || 0,
           playlistId,
           deviceId: deviceId || undefined,
@@ -378,8 +462,8 @@ export function ScheduleManager({
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {editingId
-              ? "Update the window, playlist, and target, then save."
-              : "Set a time window, assign a playlist, and choose a target."}
+              ? "Update the times, playlist, and screens, then save."
+              : "Pick when it plays, which playlist, and on which screens."}
           </p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-5">
@@ -395,29 +479,136 @@ export function ScheduleManager({
             />
           </div>
 
-          <DateTimeField
-            date={startDate}
-            defaultTime={DEFAULT_START_TIME}
-            id="schedule-start"
-            label="Starts"
-            onDateChange={setStartDate}
-            onTimeChange={setStartTime}
-            time={startTime}
-          />
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium" id="schedule-kind-label">
+              When
+            </span>
+            <div aria-labelledby="schedule-kind-label" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="group">
+              {[
+                { label: "Every week", value: true },
+                { label: "One time", value: false },
+              ].map((option) => (
+                <Button
+                  key={option.label}
+                  aria-pressed={repeats === option.value}
+                  className={cn("h-8", repeats === option.value && "bg-background shadow-xs hover:bg-background")}
+                  onClick={() => setRepeats(option.value)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
 
-          <DateTimeField
-            date={endDate}
-            defaultTime={DEFAULT_END_TIME}
-            id="schedule-end"
-            label="Ends"
-            onDateChange={setEndDate}
-            onTimeChange={setEndTime}
-            time={endTime}
-          />
+          {repeats ? (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium" id="schedule-days-label">
+                  Days
+                </span>
+                <div aria-labelledby="schedule-days-label" className="grid grid-cols-7 gap-1" role="group">
+                  {WEEK_DAYS.map((day) => {
+                    const on = days.includes(day);
+                    return (
+                      <Button
+                        key={day}
+                        aria-label={DAY_LONG[day]}
+                        aria-pressed={on}
+                        className="h-9 px-0"
+                        onClick={() =>
+                          setDays((current) => (on ? current.filter((value) => value !== day) : [...current, day]))
+                        }
+                        type="button"
+                        variant={on ? "default" : "outline"}
+                      >
+                        {DAY_SHORT[day].slice(0, 2)}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                  {DAY_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="text-primary underline-offset-4 hover:underline"
+                      onClick={() => setDays(preset.days)}
+                      type="button"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "schedule-daily-start", label: "From", value: dailyStart, set: setDailyStart, fallback: DEFAULT_START_TIME },
+                  { id: "schedule-daily-end", label: "Until", value: dailyEnd, set: setDailyEnd, fallback: DEFAULT_END_TIME },
+                ].map((field) => (
+                  <div key={field.id} className="flex flex-col gap-1.5">
+                    <Label className="text-sm" htmlFor={field.id}>
+                      {field.label}
+                    </Label>
+                    <Select
+                      items={CLOCK_OPTION_ITEMS}
+                      onValueChange={(value) => field.set(value ?? field.fallback)}
+                      value={field.value}
+                    >
+                      <SelectTrigger id={field.id}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CLOCK_OPTION_ITEMS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {dailyStart === dailyEnd
+                  ? "Plays all day on the chosen days. "
+                  : timeToMinute(dailyEnd) < timeToMinute(dailyStart)
+                    ? "Runs past midnight into the next day. "
+                    : null}
+                Times follow each screen&apos;s own time zone, and keep working when a screen is offline.
+              </p>
+            </>
+          ) : (
+            <>
+              <DateTimeField
+                date={startDate}
+                defaultTime={DEFAULT_START_TIME}
+                id="schedule-start"
+                label="Starts"
+                onDateChange={setStartDate}
+                onTimeChange={setStartTime}
+                time={startTime}
+              />
+
+              <DateTimeField
+                date={endDate}
+                defaultTime={DEFAULT_END_TIME}
+                id="schedule-end"
+                label="Ends"
+                onDateChange={setEndDate}
+                onTimeChange={setEndTime}
+                time={endTime}
+              />
+            </>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label className="text-sm" htmlFor="schedule-priority">Priority</Label>
-            <p className="text-xs text-muted-foreground">When windows overlap, the higher number plays.</p>
+            <p className="text-xs text-muted-foreground">
+              When schedules overlap, the higher number plays. On a tie, a one-time schedule beats a weekly one.
+            </p>
             <Select items={PRIORITY_OPTIONS} onValueChange={(value) => setPriority(value ?? "10")} value={priority}>
               <SelectTrigger id="schedule-priority">
                 <SelectValue />
@@ -507,6 +698,22 @@ export function ScheduleManager({
       ) : null}
 
       <section className="flex min-w-0 flex-col gap-6">
+        {needUpdate.length ? (
+          <Alert>
+            <AlertTitle>
+              {needUpdate.length === 1
+                ? `${needUpdate[0]!.name} needs a software update for weekly schedules`
+                : `${needUpdate.length} screens need a software update for weekly schedules`}
+            </AlertTitle>
+            <AlertDescription>
+              {needUpdate.length === 1 ? "It keeps" : `${needUpdate.map((device) => device.name).join(", ")} keep`} playing
+              the default playlist during weekly schedules until updated. One-time schedules work as before.{" "}
+              <Link className="underline underline-offset-4" href="/releases">
+                Go to Releases
+              </Link>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <ScheduleWeekView
           windows={schedules}
           selectedId={editingId}
@@ -540,9 +747,16 @@ export function ScheduleManager({
                       <div className="flex min-w-0 flex-col gap-1">
                         <CardTitle className="truncate">{window.label}</CardTitle>
                         <div className="flex flex-wrap gap-1">
-                          <Badge variant={state === "active" ? "success" : state === "upcoming" ? "info" : "secondary"}>
-                            {state === "active" ? "Playing now" : state === "upcoming" ? "Upcoming" : "Ended"}
-                          </Badge>
+                          {state === "repeating" ? (
+                            <Badge variant="info">
+                              <Repeat aria-hidden />
+                              Every week
+                            </Badge>
+                          ) : (
+                            <Badge variant={state === "active" ? "success" : state === "upcoming" ? "info" : "secondary"}>
+                              {state === "active" ? "Playing now" : state === "upcoming" ? "Upcoming" : "Ended"}
+                            </Badge>
+                          )}
                           <Badge variant="outline">Priority {window.priority}</Badge>
                         </div>
                       </div>
@@ -576,8 +790,15 @@ export function ScheduleManager({
                       {[
                         { label: "Playlist", value: window.playlistName ?? "Unassigned" },
                         { label: "Screens", value: window.targetLabel },
-                        { label: "Starts", value: formatScheduleDateTime(window.startsAt) },
-                        { label: "Ends", value: formatScheduleDateTime(window.endsAt) },
+                        ...(window.recurrence
+                          ? [
+                              { label: "Days", value: describeDays(window.recurrence.daysOfWeek) },
+                              { label: "Time", value: describeTimes(window.recurrence) },
+                            ]
+                          : [
+                              { label: "Starts", value: formatScheduleDateTime(window.startsAt) },
+                              { label: "Ends", value: formatScheduleDateTime(window.endsAt) },
+                            ]),
                       ].map(({ label, value }) => (
                         <div key={label} className="flex items-center justify-between gap-4 py-1.5 text-sm">
                           <dt className="text-muted-foreground">{label}</dt>
@@ -586,10 +807,19 @@ export function ScheduleManager({
                       ))}
                     </dl>
                     {overlaps.length ? (
-                      <p className={cn("mt-2 text-xs", outranked ? "text-warning" : "text-muted-foreground")}>
+                      <p
+                        className={cn(
+                          "mt-2 text-xs",
+                          outranked || overlaps.some((other) => other.priority === window.priority)
+                            ? "text-warning"
+                            : "text-muted-foreground",
+                        )}
+                      >
                         {outranked
                           ? `Overlaps "${outranked.label}" (priority ${outranked.priority}), which plays instead while both are on.`
-                          : `Overlaps ${overlaps.length} other window${overlaps.length === 1 ? "" : "s"}; this one wins on priority.`}
+                          : overlaps.some((other) => other.priority === window.priority)
+                            ? `Overlaps "${overlaps.find((other) => other.priority === window.priority)!.label}" at the same priority. Give one a higher priority to choose which plays.`
+                            : `Overlaps ${overlaps.length} other schedule${overlaps.length === 1 ? "" : "s"}; this one wins on priority.`}
                       </p>
                     ) : null}
                   </CardContent>
@@ -601,7 +831,7 @@ export function ScheduleManager({
           <div className="rounded-lg border border-dashed p-6 text-center">
             <p className="text-sm text-muted-foreground">
               {canEdit
-                ? "No schedules yet. Every screen plays its default playlist all the time. Add a schedule to play something different at certain times."
+                ? "No schedules yet. Every screen plays its default playlist all the time. Add a schedule to play something different at certain times of day."
                 : "No schedules yet. Every screen plays its default playlist all the time."}
             </p>
           </div>

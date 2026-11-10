@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -55,7 +54,7 @@ func (s *Server) kioskRuntime() kioskRuntime {
 		return runtime
 	}
 
-	playlist, playlistID := chooseActivePlaylist(manifest)
+	playlist, playlistID := chooseActivePlaylist(manifest, time.Now())
 	if len(playlist) == 0 {
 		runtime.Reason = "empty-playlist"
 		return runtime
@@ -126,31 +125,4 @@ func (s *Server) loadManifest() (*remote.DeviceManifest, error) {
 		return nil, err
 	}
 	return &wrapped.Manifest, nil
-}
-
-func chooseActivePlaylist(manifest *remote.DeviceManifest) ([]remote.ManifestPlaylistItem, string) {
-	now := time.Now()
-	active := make([]remote.ScheduleWindow, 0, len(manifest.ScheduleWindows))
-	for _, window := range manifest.ScheduleWindows {
-		startsAt, err := time.Parse(time.RFC3339, window.StartsAt)
-		if err != nil {
-			continue
-		}
-		endsAt, err := time.Parse(time.RFC3339, window.EndsAt)
-		if err != nil {
-			continue
-		}
-		if !startsAt.After(now) && !endsAt.Before(now) {
-			active = append(active, window)
-		}
-	}
-
-	sort.Slice(active, func(i, j int) bool {
-		return active[i].Priority > active[j].Priority
-	})
-
-	if len(active) > 0 && len(active[0].Playlist) > 0 {
-		return active[0].Playlist, active[0].PlaylistID
-	}
-	return manifest.DefaultPlaylist, manifest.DefaultPlaylistID
 }
