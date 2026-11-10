@@ -11,6 +11,7 @@ import {
   isCredentialRecordActive,
   planCredentialRotation,
 } from "./credentialPolicy";
+import { trackHeartbeatHealth } from "./fleetHealth";
 import { buildManifestForDevice } from "./showroom";
 
 const claimRegistrationTtlMs = 15 * 60_000;
@@ -519,8 +520,11 @@ export const recordHeartbeat = mutation({
       }
     }
 
+    const healthTracking = await trackHeartbeatHealth(ctx, device, args.payload, health, now);
+
     await ctx.db.patch(device._id, {
       status: "online",
+      ...healthTracking,
       appVersion: args.payload.appVersion,
       agentVersion: args.payload.agentVersion,
       manifestVersion: args.payload.manifestVersion,

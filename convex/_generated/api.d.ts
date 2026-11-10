@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as device from "../device.js";
 import type * as fleet from "../fleet.js";
+import type * as fleetHealth from "../fleetHealth.js";
 import type * as lib from "../lib.js";
 import type * as maintenance from "../maintenance.js";
 import type * as screenSerialization from "../screenSerialization.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   dashboard: typeof dashboard;
   device: typeof device;
   fleet: typeof fleet;
+  fleetHealth: typeof fleetHealth;
   lib: typeof lib;
   maintenance: typeof maintenance;
   screenSerialization: typeof screenSerialization;

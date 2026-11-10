@@ -13,6 +13,12 @@ import {
   type ScheduleRecurrence,
   claimStatusResponseSchema,
   commandTypeSchema,
+  defaultNotifyAfterSeconds,
+  healthWindowDays,
+  maxAlertRecipients,
+  parseAlertRecipients,
+  summarizeDeviceHealth,
+  summarizeFleetHealth,
   deviceCommandResultSchema,
   deviceCommandSchema,
   deviceManifestSchema,
@@ -95,6 +101,7 @@ type MockState = {
   // Wrong claim codes per workspace, as timestamps (the real backend's
   // claimFailures table).
   claimFailures?: Record<string, number[]>;
+  alertSettings?: { enabled: boolean; recipients: string[]; notifyAfterSeconds: number };
 };
 
 // Same limits as convex/admin.ts claimDeviceByCode.
@@ -371,6 +378,97 @@ function advanceDemoScreens() {
       device.screenshotUrl = playableDefaultPlaylist()?.items[0]?.asset.previewUrl ?? null;
     }
   }
+}
+
+function alertSettings() {
+  const mockState = state();
+  mockState.alertSettings ??= {
+    enabled: true,
+    recipients: [],
+    notifyAfterSeconds: defaultNotifyAfterSeconds,
+  };
+  return mockState.alertSettings;
+}
+
+// A plausible week for the demo fleet: the offline screen has an open outage,
+// the others have a short one and a couple of restarts behind them.
+export function getFleetHealth(orgId: string) {
+  const now = Date.now();
+  const windowDays = healthWindowDays;
+  const windowStart = now - windowDays * 24 * 60 * 60_000;
+  const minutes = 60_000;
+  const recent: Array<{
+    id: string;
+    deviceId: string;
+    deviceName: string;
+    type: "offline" | "crash" | "crash_loop";
+    component: string | null;
+    openedAt: number;
+    resolvedAt: number | null;
+    restarts: number;
+  }> = [];
+  const summaries = listDevices(orgId)
+    .filter((device) => device.status !== "unclaimed")
+    .map((device, index) => {
+      const events: Array<{ alertType: string; openedAt: number; resolvedAt: number | null; count?: number }> = [];
+      const lastSeen = Date.parse(device.lastHeartbeatAt) || now;
+      if (device.status === "offline") {
+        events.push({ alertType: "offline", openedAt: lastSeen, resolvedAt: null });
+      } else if (index === 0) {
+        events.push({ alertType: "offline", openedAt: now - 3 * 24 * 60 * minutes, resolvedAt: now - 3 * 24 * 60 * minutes + 14 * minutes });
+      } else {
+        events.push({ alertType: "crash", openedAt: now - 26 * 60 * minutes, resolvedAt: now - 26 * 60 * minutes, count: 1 });
+        events.push({ alertType: "offline", openedAt: now - 5 * 24 * 60 * minutes, resolvedAt: now - 5 * 24 * 60 * minutes + 95 * minutes });
+      }
+      events.forEach((event, eventIndex) =>
+        recent.push({
+          id: `${device.id}-health-${eventIndex}`,
+          deviceId: device.id,
+          deviceName: device.name,
+          type: event.alertType as "offline" | "crash",
+          component: event.alertType === "crash" ? "player" : null,
+          openedAt: event.openedAt,
+          resolvedAt: event.resolvedAt,
+          restarts: event.count ?? 1,
+        }),
+      );
+      return { deviceId: device.id, ...summarizeDeviceHealth({ now, windowStart, trackedSince: windowStart, events }) };
+    });
+
+  return {
+    windowDays,
+    monitoringSince: summaries.length ? windowStart : null,
+    fleet: summarizeFleetHealth(summaries),
+    devices: summaries.map((summary) => ({
+      deviceId: summary.deviceId,
+      uptimePercent: summary.uptimePercent,
+      downMs: summary.downMs,
+      outages: summary.outages,
+      restarts: summary.restarts,
+      offlineSince: summary.offlineSince,
+      crashLooping: summary.crashLooping,
+    })),
+    recent: recent.sort((a, b) => (b.resolvedAt ?? now) - (a.resolvedAt ?? now)).slice(0, 12),
+    settings: { ...alertSettings(), emailConfigured: true },
+  };
+}
+
+export function saveAlertSettings(input: { enabled: boolean; recipients: string[]; notifyAfterSeconds: number }) {
+  const { valid, invalid } = parseAlertRecipients(input.recipients);
+  if (invalid.length) throw new Error(`${invalid[0]} is not a valid email address`);
+  if (valid.length > maxAlertRecipients) throw new Error(`Alerts can go to at most ${maxAlertRecipients} addresses`);
+  state().alertSettings = {
+    enabled: input.enabled,
+    recipients: valid,
+    notifyAfterSeconds: input.notifyAfterSeconds,
+  };
+  return { ...alertSettings(), emailConfigured: true };
+}
+
+export function sendTestAlertEmail() {
+  const { recipients } = alertSettings();
+  if (!recipients.length) throw new Error("Add at least one address and save before sending a test");
+  return { sentTo: recipients };
 }
 
 export function listDevices(orgId: string) {
