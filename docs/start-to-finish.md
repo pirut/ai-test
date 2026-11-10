@@ -128,10 +128,16 @@ Raspberry Pi Connect OTA. See [`fleet-operations.md`](fleet-operations.md).
 
 ## Not proven on hardware yet
 
-Checks in this repository run without a Pi. Before relying on a new image for
-customers, run these once on a spare Pi 5:
+Checks in this repository run without a Pi. Every Showroom OS build is booted
+in QEMU until it pairs and plays (`infra/buildroot/tests/boot-and-play.py`),
+which catches a build that restart-loops or never gets a picture up, but not
+anything specific to the Pi's display, video decoder, Wi-Fi or power. Before
+relying on a new image for customers, run these once on a spare Pi 5:
 
-1. Flash, first boot, phone Wi-Fi setup, pairing by QR code.
+1. Flash, first boot, phone Wi-Fi setup, pairing by QR code. With content on
+   the screen, run `./infra/buildroot/pi-check.sh root@<screen> --restarts 3`
+   from a laptop: it checks the screen, restarts it three times and checks
+   that it comes back playing each time.
 2. 1080p and 4K HEVC video with sound; a deliberately broken video as the only item.
 3. Remove all content from the screen, then remove the screen itself.
 4. An app release with a deliberately broken agent (expect an automatic return to the previous one).

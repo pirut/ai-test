@@ -1,7 +1,7 @@
 name: Showroom OS (Buildroot) image
 
-# Builds Showroom OS for Raspberry Pi 5 screens and smoke-tests its root
-# filesystem. When the publishing secrets are set (see
+# Builds Showroom OS for Raspberry Pi 5 screens, smoke-tests its root
+# filesystem and boots the image in QEMU until it plays. When the publishing secrets are set (see
 # infra/buildroot/setup-image-publishing.sh), development builds go to the
 # rolling "dev" release of the public images repository, which test screens
 # running a development image install by themselves. Screens in the field
@@ -190,6 +190,31 @@ jobs:
             infra/buildroot/out/images/IMAGE_SIZES.txt
       - name: Root filesystem smoke test
         run: python3 infra/buildroot/tests/rootfs-smoke.py "${SHOWROOM_BUILDROOT_OUTPUT}/images/rootfs.erofs"
+      # Boots the flash image in QEMU next to a stand-in dashboard: first
+      # boot, pairing, download, playback, a restart, playback again. A build
+      # that restart-loops or never gets a picture up stops here, before it
+      # is published to any channel.
+      - name: Boot test tools
+        run: sudo apt-get install -y --no-install-recommends qemu-system-arm mtools zstd fdisk
+      - name: Boot test kernel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/showroom-boot-test
+          key: showroom-boot-test-kernel-${{ hashFiles('infra/buildroot/tests/boot-and-play.py') }}
+          restore-keys: showroom-boot-test-kernel-
+      - name: Boot and play in QEMU
+        timeout-minutes: 75
+        run: |
+          python3 infra/buildroot/tests/boot-and-play.py \
+            "${SHOWROOM_BUILDROOT_OUTPUT}/images/showroom-os-rpi5-${SHOWROOM_IMAGE_VERSION}.img" \
+            --work "${RUNNER_TEMP}/boot-test" --artifacts boot-test-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-test-${{ env.SHOWROOM_IMAGE_VERSION }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: boot-test-results
       - name: Publish to the dev channel
         if: env.SHOWROOM_PUBLISH == 'dev'
         env:

@@ -1,0 +1,405 @@
+#!/bin/bash
+# Checks that this screen booted cleanly and is showing what it should: the
+# pairing or Wi-Fi setup screen before it is paired, its content afterwards.
+# It only reads; nothing on the screen changes.
+#
+#   sudo /usr/libexec/showroom/showroom-selftest [options]
+#
+#   --expect any|setup|playing   what the screen should be doing. "any" (the
+#                                default) accepts the setup screens on an
+#                                unpaired screen and playback on a paired one.
+#   --wait SECONDS               keep checking until everything passes or the
+#                                time is up (a screen needs a minute or two
+#                                after power on)
+#   --logs                       on failure, print the end of this boot's
+#                                journal as well
+#
+# The last line is "SHOWROOM-SELFTEST: PASS ..." or "SHOWROOM-SELFTEST: FAIL
+# ..." and the exit status says the same. The same script runs in the QEMU
+# boot test (tests/boot-and-play.py), from a laptop against a real screen
+# (pi-check.sh) and, on development images, a few minutes after every boot,
+# so its result lands in the debug log on the card.
+set -uo pipefail
+
+AGENT_URL="${SHOWROOM_SELFTEST_AGENT_URL:-http://127.0.0.1:4173}"
+STATE_FILE="${SHOWROOM_SELFTEST_STATE_FILE:-/var/lib/showroom/state/device-state.json}"
+ROOT="${SHOWROOM_SELFTEST_ROOT:-}"
+# Seconds between the two looks at the playback position.
+PROGRESS_WINDOW="${SHOWROOM_SELFTEST_PROGRESS_WINDOW:-8}"
+# A report from the player older than this means it has stopped.
+PLAYER_STALE_SECONDS=60
+
+expect=any
+wait_seconds=0
+show_logs=0
+while (( $# > 0 )); do
+  case "$1" in
+    --expect) expect="${2:-}"; shift 2 ;;
+    --wait) wait_seconds="${2:-0}"; shift 2 ;;
+    --logs) show_logs=1; shift ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "showroom-selftest: unknown option $1" >&2; exit 2 ;;
+  esac
+done
+case "${expect}" in any|setup|playing) ;; *) echo "showroom-selftest: --expect takes any, setup or playing" >&2; exit 2 ;; esac
+[[ "${wait_seconds}" =~ ^[0-9]+$ ]] || { echo "showroom-selftest: --wait takes a number of seconds" >&2; exit 2; }
+
+report=""
+passed=0
+skipped=0
+failed=()
+
+ok() {
+  passed=$((passed + 1))
+  report+="  ok    $1"$'\n'
+}
+
+skip() {
+  skipped=$((skipped + 1))
+  report+="  skip  $1"$'\n'
+}
+
+fail() {
+  failed+=("$1")
+  report+="  FAIL  $1: $2"$'\n'
+}
+
+note() {
+  report+="        $1"$'\n'
+}
+
+is_pi() {
+  grep -qs 'Raspberry Pi' "${ROOT}/proc/device-tree/model"
+}
+
+is_dev_image() {
+  [[ -e "${ROOT}/etc/showroom/os-channel.env" ]]
+}
+
+state_value() {
+  jq -r "$1 // empty" "${STATE_FILE}" 2>/dev/null
+}
+
+seconds_since() {
+  local at_seconds
+  at_seconds="$(date -u -d "$1" +%s 2>/dev/null)" || return 1
+  echo $(( $(date -u +%s) - at_seconds ))
+}
+
+check_boot() {
+  local state failed_units
+  state="$(systemctl is-system-running 2>/dev/null)"
+  # showroom-os-follow fails whenever a development screen cannot reach the
+  # channel; that says nothing about this boot.
+  failed_units="$(systemctl list-units --state=failed --plain --no-legend 2>/dev/null \
+    | awk '{print $1}' | grep -v '^showroom-os-follow\.service$' | tr '\n' ' ')"
+  case "${state}" in
+    running|degraded) ;;
+    *) fail "boot finished" "systemd is still \"${state:-unknown}\""; return ;;
+  esac
+  ok "boot finished (systemd ${state})"
+  if [[ -n "${failed_units// /}" ]]; then
+    fail "no failed units" "${failed_units% }"
+  else
+    ok "no failed units"
+  fi
+}
+
+check_storage() {
+  local options
+  options="$(findmnt -n -o OPTIONS /data 2>/dev/null)"
+  if [[ -z "${options}" ]]; then
+    fail "data partition mounted" "/data is not mounted, so nothing the screen saves survives"
+  elif [[ ",${options}," != *,rw,* ]]; then
+    fail "data partition mounted" "/data is read-only (${options})"
+  else
+    ok "data partition mounted read-write"
+  fi
+  local missing=""
+  for path in /var/lib/showroom /var/log/journal /etc/NetworkManager/system-connections; do
+    mountpoint -q "${path}" || missing+="${path} "
+  done
+  if [[ -n "${missing}" ]]; then
+    fail "persistent folders in place" "not mounted from the data partition: ${missing% }"
+  else
+    ok "persistent folders in place"
+  fi
+  # The card's data partition is grown on the first boot. Less than 64 MiB
+  # left after it means that happened (or the card is just that small).
+  local part sys disk end disk_sectors
+  part="$(readlink -f /dev/disk/by-label/showroom-data 2>/dev/null)"
+  sys="/sys/class/block/$(basename "${part:-none}")"
+  if [[ -r "${sys}/start" ]]; then
+    disk="$(basename "$(readlink -f "${sys}/..")")"
+    end=$(( $(cat "${sys}/start") + $(cat "${sys}/size") ))
+    disk_sectors="$(cat "/sys/class/block/${disk}/size")"
+    if (( disk_sectors - end >= 131072 )); then
+      fail "data partition fills the card" "$(( (disk_sectors - end) / 2048 )) MiB of the card is unused"
+    else
+      ok "data partition fills the card"
+    fi
+  fi
+}
+
+check_services() {
+  local unit restarts
+  for unit in showroom-agent.service showroom-kiosk.service NetworkManager.service; do
+    if ! systemctl is-active --quiet "${unit}"; then
+      fail "${unit} running" "$(systemctl is-active "${unit}" 2>/dev/null)"
+      continue
+    fi
+    restarts="$(systemctl show -P NRestarts "${unit}" 2>/dev/null)"
+    if [[ "${restarts}" =~ ^[0-9]+$ ]] && (( restarts > 0 )); then
+      fail "${unit} running" "it has been restarted ${restarts} time(s) since boot after stopping by itself"
+    else
+      ok "${unit} running"
+    fi
+  done
+  if [[ -s /tmp/showroom-native-crashes ]]; then
+    fail "player has not crashed" "$(wc -l </tmp/showroom-native-crashes) crash(es) since boot"
+  else
+    ok "player has not crashed"
+  fi
+}
+
+check_display() {
+  local status connected=0 seen=0 name
+  for status in /sys/class/drm/card*-*/status; do
+    [[ -r "${status}" ]] || continue
+    name="$(basename "$(dirname "${status}")")"
+    [[ "${name}" == *Writeback* ]] && continue
+    seen=1
+    [[ "$(cat "${status}")" == connected ]] && connected=1
+  done
+  if (( seen == 0 )); then
+    fail "display found" "the kernel has no display output at all (graphics driver did not load)"
+  elif (( connected == 0 )); then
+    fail "display found" "no TV detected on either HDMI port (is it on, and plugged into the port next to the power socket?)"
+  else
+    ok "display found"
+  fi
+  if [[ -e /run/showroom-kiosk/native-player ]]; then
+    ok "player owns the display"
+  else
+    fail "player owns the display" "the player has not started"
+  fi
+}
+
+# Sets claimed, items and pending for check_screen.
+read_agent() {
+  local status player
+  claimed=""
+  items=0
+  pending=0
+  last_error=""
+  if ! curl -fsS --max-time 3 "${AGENT_URL}/healthz" >/dev/null 2>&1; then
+    fail "agent answers" "nothing answers on ${AGENT_URL}"
+    return 1
+  fi
+  ok "agent answers"
+  status="$(curl -fsS --max-time 5 "${AGENT_URL}/local/status" 2>/dev/null)"
+  player="$(curl -fsS --max-time 10 "${AGENT_URL}/local/player/state" 2>/dev/null)"
+  claimed="$(jq -r '.claimed // false' <<<"${status}" 2>/dev/null)"
+  last_error="$(jq -r '.lastError // empty' <<<"${status}" 2>/dev/null)"
+  items="$(jq -r '(.items // []) | length' <<<"${player}" 2>/dev/null)"
+  pending="$(jq -r '.pendingItems // 0' <<<"${player}" 2>/dev/null)"
+  [[ "${items}" =~ ^[0-9]+$ ]] || items=0
+  [[ "${pending}" =~ ^[0-9]+$ ]] || pending=0
+  return 0
+}
+
+player_reporting() {
+  local at age
+  at="$(state_value .lastPlayerHeartbeatAt)"
+  if [[ -z "${at}" ]]; then
+    fail "player is reporting" "the player has never reported to the agent"
+    return 1
+  fi
+  age="$(seconds_since "${at}")" || age=""
+  if [[ -z "${age}" ]] || (( age > PLAYER_STALE_SECONDS )); then
+    fail "player is reporting" "its last report was ${age:-an unknown number of} seconds ago"
+    return 1
+  fi
+  ok "player is reporting"
+}
+
+check_setup_screen() {
+  player_reporting || return
+  local code
+  code="$(state_value .claimCode)"
+  if [[ -n "${code}" ]]; then
+    ok "pairing code on screen (${code})"
+  else
+    # No code yet: the screen shows Wi-Fi setup or "Getting a pairing code".
+    ok "setup screen up (no pairing code yet: ${last_error:-waiting for the network})"
+  fi
+}
+
+check_playing() {
+  player_reporting || return
+  if (( items == 0 )); then
+    if (( pending > 0 )); then
+      fail "content is playing" "${pending} item(s) still downloading and nothing to play yet"
+    else
+      fail "content is playing" "this screen has no content assigned"
+    fi
+    return
+  fi
+  local asset_before position_before progress_before asset_after position_after progress_after
+  asset_before="$(state_value .currentAssetId)"
+  position_before="$(state_value .playerPositionSeconds)"
+  progress_before="$(state_value .lastPlayerProgressAt)"
+  sleep "${PROGRESS_WINDOW}"
+  asset_after="$(state_value .currentAssetId)"
+  position_after="$(state_value .playerPositionSeconds)"
+  progress_after="$(state_value .lastPlayerProgressAt)"
+  if [[ -z "${asset_after}" ]]; then
+    fail "content is playing" "the player reports no current item (state \"$(state_value .playerState)\")"
+  elif [[ "${asset_before}" == "${asset_after}" && "${position_before}" == "${position_after}" \
+    && "${progress_before}" == "${progress_after}" ]]; then
+    fail "content is playing" "playback did not move in ${PROGRESS_WINDOW} seconds (item ${asset_after} at ${position_after:-0} s, state \"$(state_value .playerState)\")"
+  else
+    ok "content is playing (item ${asset_after})"
+  fi
+  if curl -fsS --max-time 3 "${AGENT_URL}/healthz?deep=1" >/dev/null 2>&1; then
+    ok "agent sees the player as healthy"
+  else
+    fail "agent sees the player as healthy" "$(curl -sS --max-time 3 "${AGENT_URL}/healthz?deep=1" 2>&1 | head -n 1)"
+  fi
+  if (( pending > 0 )); then
+    note "${pending} item(s) still downloading"
+  fi
+}
+
+check_screen() {
+  read_agent || return
+  case "${expect}:${claimed}" in
+    setup:true) fail "setup screen up" "this screen is already paired" ;;
+    playing:false|playing:) fail "content is playing" "this screen is not paired" ;;
+    any:true|playing:true) check_playing ;;
+    *) check_setup_screen ;;
+  esac
+}
+
+check_os_slot() {
+  local slot reason rollbacks
+  slot="$(/usr/libexec/showroom/rauc-tryboot-backend get-current 2>/dev/null)"
+  if [[ -z "${slot}" ]]; then
+    skip "OS slot committed (no A/B boot information here)"
+  elif [[ -e /data/rauc/tryboot-pending ]]; then
+    fail "OS slot committed" "slot ${slot} is still on trial after an update"
+  else
+    ok "OS slot committed (${slot})"
+  fi
+  reason="$(cat /var/lib/showroom/state/last-boot-reason 2>/dev/null)"
+  rollbacks="$(cat /var/lib/showroom/state/rollback-count 2>/dev/null)"
+  if [[ -n "${reason}" ]]; then
+    fail "no update rolled back" "${reason} (${rollbacks:-1} so far)"
+  else
+    ok "no update rolled back"
+  fi
+}
+
+check_hardware() {
+  if ! is_pi; then
+    skip "power supply, temperature and watchdog (not a Raspberry Pi)"
+    return
+  fi
+  local throttled temperature watchdog
+  throttled="$(vcgencmd get_throttled 2>/dev/null | sed 's/^throttled=//')"
+  case "${throttled}" in
+    0x0) ok "power supply steady" ;;
+    "") skip "power supply (vcgencmd gave no answer)" ;;
+    *) fail "power supply steady" "the Pi reports ${throttled}: under-voltage or throttling since boot, usually a supply too weak for a Pi 5" ;;
+  esac
+  temperature="$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)"
+  if [[ "${temperature}" =~ ^[0-9]+$ ]]; then
+    if (( temperature >= 80000 )); then
+      fail "temperature" "$(( temperature / 1000 )) C: the Pi slows itself down above 80 C"
+    else
+      ok "temperature ($(( temperature / 1000 )) C)"
+    fi
+  fi
+  watchdog="$(systemctl show -P RuntimeWatchdogUSec 2>/dev/null)"
+  if [[ -n "${watchdog}" && "${watchdog}" != 0 && "${watchdog}" != infinity ]]; then
+    ok "hardware watchdog armed (${watchdog})"
+  elif is_dev_image; then
+    skip "hardware watchdog (off on development images)"
+  else
+    fail "hardware watchdog armed" "a frozen screen would stay frozen"
+  fi
+}
+
+# Lines in this boot's journal that have meant a broken screen before.
+check_journal() {
+  if ! journalctl -b 0 -n 1 --no-pager >/dev/null 2>&1; then
+    skip "nothing alarming in the journal (run with sudo to read it)"
+    return
+  fi
+  local hits
+  hits="$(journalctl -b 0 --no-pager -o short-monotonic 2>/dev/null | grep -E \
+    -e 'segfault at|SIGSEGV|code=dumped|core dumped' \
+    -e 'Out of memory|oom-kill' \
+    -e 'EXT4-fs error|EXT4-fs \(.*\): .*corrupt|erofs: .*(error|corrupt)' \
+    -e 'Cannot find any crtc' \
+    -e '[Uu]nder-?voltage detected' \
+    -e 'Watchdog timeout|watchdog timeout' \
+    -e 'Dependency failed for' \
+    -e 'mpv did not open the DRM display|cannot start libmpv|Native player is unavailable' \
+    -e 'Kiosk display did not become ready' \
+    | grep -v 'showroom-selftest' | head -n 8)"
+  if [[ -n "${hits}" ]]; then
+    fail "nothing alarming in the journal" "$(wc -l <<<"${hits}") line(s), first ones below"
+    while IFS= read -r line; do note "${line:0:220}"; done <<<"${hits}"
+  else
+    ok "nothing alarming in the journal"
+  fi
+}
+
+run_checks() {
+  report=""
+  passed=0
+  skipped=0
+  failed=()
+  check_boot
+  check_storage
+  check_services
+  check_display
+  check_screen
+  check_os_slot
+  check_hardware
+  check_journal
+}
+
+deadline=$(( SECONDS + wait_seconds ))
+waiting_for=""
+while true; do
+  run_checks
+  (( ${#failed[@]} == 0 )) && break
+  (( SECONDS >= deadline )) && break
+  # Say what is still missing, once per change, so a long wait is not silent.
+  joined="$(printf '%s; ' "${failed[@]}")"
+  if [[ "${joined}" != "${waiting_for}" ]]; then
+    waiting_for="${joined}"
+    echo "showroom-selftest: not yet: $(grep '^  FAIL' <<<"${report}" | sed 's/^  FAIL  //' | tr '\n' ';' | sed 's/;$//; s/;/; /g')" >&2
+  fi
+  sleep 5
+done
+
+version="$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"')"
+echo "Showroom self-test: ${version:-unknown system}, up $(cut -d. -f1 /proc/uptime) s, boot $(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+printf '%s' "${report}"
+if (( ${#failed[@]} == 0 )); then
+  echo "SHOWROOM-SELFTEST: PASS (${passed} passed, ${skipped} skipped)"
+  exit 0
+fi
+if (( show_logs )); then
+  echo "--- end of this boot's journal ---"
+  journalctl -b 0 --no-pager -o short-monotonic -n 150 2>/dev/null
+  echo "--- units ---"
+  systemctl list-units --state=failed --no-pager 2>/dev/null
+  systemctl status showroom-agent.service showroom-kiosk.service --no-pager -n 0 2>/dev/null
+fi
+joined="$(printf '%s; ' "${failed[@]}")"
+echo "SHOWROOM-SELFTEST: FAIL (${#failed[@]} failed: ${joined%; })"
+exit 1

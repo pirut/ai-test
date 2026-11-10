@@ -1,0 +1,9 @@
+[Unit]
+Description=Self-test a few minutes after boot (development images)
+ConditionPathExists=/etc/showroom/os-channel.env
+
+[Timer]
+OnBootSec=3min
+
+[Install]
+WantedBy=timers.target
