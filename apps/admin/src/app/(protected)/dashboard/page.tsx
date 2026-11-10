@@ -5,7 +5,9 @@ import Link from "next/link";
 import { AddScreenDialog } from "@/components/add-screen-dialog";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CommandStatusBadge } from "@/components/command-status-badge";
+import { FleetAlertBanner } from "@/components/fleet-alert-banner";
 import { PageHeader } from "@/components/page-header";
+import { ReliabilityCard } from "@/components/reliability-card";
 import { ScreenThumbnail } from "@/components/screen-thumbnail";
 import { StatusPill } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +29,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { getAuthSession, requireOrgId } from "@/lib/auth";
-import { listCommands, listDevices, listPlaylists } from "@/lib/backend";
+import { getFleetHealth, listCommands, listDevices, listPlaylists } from "@/lib/backend";
 import { commandLabel } from "@/lib/commands";
 import {
   type DeviceStatus,
@@ -38,7 +40,7 @@ import {
   statusDescriptions,
   statusLabels,
 } from "@/lib/device-health";
-import { cn, formatRelativeTimestamp } from "@/lib/utils";
+import { cn, formatRelativeTimestamp, renderTime } from "@/lib/utils";
 
 const statusDot: Record<DeviceStatus, string> = {
   online: "bg-signal",
@@ -49,13 +51,17 @@ const statusDot: Record<DeviceStatus, string> = {
 
 export default async function DashboardPage() {
   const orgId = await requireOrgId();
-  const [devices, commands, session, playlists] = await Promise.all([
+  const [devices, commands, session, playlists, health] = await Promise.all([
     listDevices(orgId),
     listCommands(),
     getAuthSession(),
     // Only used to point a new workspace at its next step.
     listPlaylists().catch(() => null),
+    // The offline banner works without this; the reliability card is left out.
+    getFleetHealth(orgId).catch(() => null),
   ]);
+  const now = renderTime();
+  const sessionEmail = (session as { sessionClaims?: { email?: unknown } | null }).sessionClaims?.email;
   const canAdmin = session.has({ role: "org:admin" });
   const hasDefaultPlaylist = playlists ? playlists.some((playlist) => playlist.isDefault) : undefined;
   const addScreen = canAdmin ? <AddScreenDialog hasDefaultPlaylist={hasDefaultPlaylist} /> : undefined;
@@ -111,6 +117,8 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <>
+          <FleetAlertBanner devices={devices} health={health} now={now} />
+
           <section
             aria-label="Fleet status"
             className="grid grid-cols-2 overflow-hidden rounded-lg border bg-card lg:grid-cols-4"
@@ -168,6 +176,15 @@ export default async function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {health ? (
+            <ReliabilityCard
+              health={health}
+              canAdmin={canAdmin}
+              suggestedRecipient={typeof sessionEmail === "string" ? sessionEmail : null}
+              now={now}
+            />
+          ) : null}
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
             <Card>

@@ -23,6 +23,7 @@ import { z } from "zod";
 
 import { api } from "@convex-api";
 import { env, hasConvexBackend } from "@/lib/env";
+import { alertSettingsSchema, fleetHealthSchema } from "@/lib/fleet-health";
 import * as mock from "@/lib/mock-store";
 
 const screenshotSchema = z.object({
@@ -230,6 +231,39 @@ export async function getWorkspaceAccess() {
       canDeployToAllWorkspaces: z.boolean().default(false),
     })
     .parse(await convexQuery(api.admin.getWorkspaceAccess, {}));
+}
+
+// Uptime, outages, unexpected restarts and alert settings for the workspace.
+// Pages treat a failure here as "no data" so the rest of the dashboard still
+// renders (for example while the backend is a deploy behind the site).
+export async function getFleetHealth(orgId: string) {
+  if (!hasConvexBackend()) {
+    return fleetHealthSchema.parse(mock.getFleetHealth(orgId));
+  }
+
+  return fleetHealthSchema.parse(await convexQuery(api.fleetHealth.getOverview, {}));
+}
+
+export async function saveAlertSettings(input: {
+  enabled: boolean;
+  recipients: string[];
+  notifyAfterSeconds: number;
+}) {
+  if (!hasConvexBackend()) {
+    return alertSettingsSchema.parse(mock.saveAlertSettings(input));
+  }
+
+  return alertSettingsSchema.parse(await convexMutation(api.fleetHealth.saveSettings, input));
+}
+
+export async function sendTestAlertEmail() {
+  if (!hasConvexBackend()) {
+    return mock.sendTestAlertEmail();
+  }
+
+  return z
+    .object({ sentTo: z.array(z.string()) })
+    .parse(await convexMutation(api.fleetHealth.sendTestEmail, {}));
 }
 
 export async function listReleases() {

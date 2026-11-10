@@ -1,4 +1,5 @@
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   Cable,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { osVersionMatches } from "@showroom/contracts";
+import { formatUptimePercent, osVersionMatches } from "@showroom/contracts";
 
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CommandStatusBadge } from "@/components/command-status-badge";
@@ -33,6 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getAuthSession, requireOrgId } from "@/lib/auth";
 import {
   getDevice,
+  getFleetHealth,
   getWorkspaceAccess,
   latestScreenshot,
   listCommands,
@@ -102,10 +104,11 @@ export default async function ScreenDetailPage({
 
   if (!device) notFound();
 
-  const [screenshot, commands, playlists, access] = await Promise.all([
+  const [screenshot, commands, playlists, fleetHealth, access] = await Promise.all([
     latestScreenshot(device.id),
     listCommands(device.id),
     listPlaylists(),
+    getFleetHealth(orgId).catch(() => null),
     // Remote SSH belongs to whoever runs the site, so customers' workspaces don't see it.
     canAdmin ? getWorkspaceAccess().catch(() => ({ isPlatformOperator: false })) : { isPlatformOperator: false },
   ]);
@@ -135,7 +138,32 @@ export default async function ScreenDetailPage({
   );
   const hasPendingCommand = commands.some((command) => isCommandPending(command.status));
 
+  const reliability = fleetHealth?.devices.find((entry) => entry.deviceId === device.id) ?? null;
+  const reliabilityNotes = reliability
+    ? [
+        reliability.outages ? `${reliability.outages} outage${reliability.outages === 1 ? "" : "s"}` : null,
+        reliability.restarts ? `${reliability.restarts} unexpected restart${reliability.restarts === 1 ? "" : "s"}` : null,
+      ].filter(Boolean)
+    : [];
+
   const tiles = [
+    ...(reliability && fleetHealth
+      ? [
+          {
+            icon: Activity,
+            label: `Uptime, ${fleetHealth.windowDays} days`,
+            value: reliability.crashLooping ? "Keeps restarting" : formatUptimePercent(reliability.uptimePercent),
+            detail: reliabilityNotes.length ? reliabilityNotes.join(" · ") : "No outages or restarts",
+            tone: (reliability.crashLooping
+              ? "bad"
+              : reliability.uptimePercent == null
+                ? "unknown"
+                : reliability.uptimePercent >= 99 && !reliability.restarts
+                  ? "good"
+                  : reliability.uptimePercent >= 95 ? "warn" : "bad") as Tone,
+          },
+        ]
+      : []),
     {
       icon: MonitorPlay,
       label: "Player",
