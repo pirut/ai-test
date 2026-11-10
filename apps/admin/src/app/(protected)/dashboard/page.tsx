@@ -1,5 +1,5 @@
 import type { DeviceSummary } from "@showroom/contracts";
-import { ArrowRight, CircleCheck, Monitor, TerminalSquare } from "lucide-react";
+import { ArrowRight, CircleCheck, Monitor, Rocket, TerminalSquare } from "lucide-react";
 import Link from "next/link";
 
 import { AddScreenDialog } from "@/components/add-screen-dialog";
@@ -38,6 +38,7 @@ import {
   statusDescriptions,
   statusLabels,
 } from "@/lib/device-health";
+import { setupProgress } from "@/lib/onboarding";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
 
 const statusDot: Record<DeviceStatus, string> = {
@@ -58,6 +59,8 @@ export default async function DashboardPage() {
   ]);
   const canAdmin = session.has({ role: "org:admin" });
   const hasDefaultPlaylist = playlists ? playlists.some((playlist) => playlist.isDefault) : undefined;
+  // A paired screen with nothing to play is the usual place a new workspace stalls.
+  const setup = playlists ? setupProgress({ devices, mediaCount: 0, playlists }) : null;
   const addScreen = canAdmin ? <AddScreenDialog hasDefaultPlaylist={hasDefaultPlaylist} /> : undefined;
 
   const counts = countByStatus(devices);
@@ -99,7 +102,7 @@ export default async function DashboardPage() {
                 {canAdmin ? (
                   <Button
                     nativeButton={false}
-                    render={<Link href="/get-started#claim" />}
+                    render={<Link href="/get-started?step=pair" />}
                     variant="outline"
                   >
                     I already have a code
@@ -111,6 +114,29 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <>
+          {setup && !setup.hasContent ? (
+            <Card className="border-primary/40">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Rocket className="size-4 text-primary" aria-hidden />
+                  One step left: add your first video
+                </CardTitle>
+                <CardDescription>
+                  {canAdmin
+                    ? `${setup.screen?.name ?? "Your screen"} is paired and shows a waiting message until the workspace has a playlist. The guide takes one upload and puts it on the TV.`
+                    : "The screens show a waiting message until a workspace admin adds a playlist."}
+                </CardDescription>
+                {canAdmin ? (
+                  <CardAction>
+                    <Button nativeButton={false} render={<Link href="/get-started?step=content" />}>
+                      Add a video
+                      <ArrowRight data-icon="inline-end" />
+                    </Button>
+                  </CardAction>
+                ) : null}
+              </CardHeader>
+            </Card>
+          ) : null}
           <section
             aria-label="Fleet status"
             className="grid grid-cols-2 overflow-hidden rounded-lg border bg-card lg:grid-cols-4"

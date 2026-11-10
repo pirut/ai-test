@@ -71,7 +71,7 @@ export default async function LandingPage() {
     const session = await auth();
 
     if (session.userId) {
-      redirect(session.orgId ? "/dashboard" : "/team");
+      redirect(session.orgId ? "/dashboard" : "/welcome");
     }
   }
 

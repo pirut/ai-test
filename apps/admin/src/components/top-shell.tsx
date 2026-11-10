@@ -62,7 +62,13 @@ const navGroups = [
 ];
 const navItems = navGroups.flatMap((group) => group.items);
 
-export type FleetPulse = { total: number; online: number; attention: number };
+export type FleetPulse = {
+  total: number;
+  online: number;
+  attention: number;
+  /** The workspace has no screen yet, or nothing for a screen to play. */
+  needsSetup?: boolean;
+};
 
 const clerkAppearance = {
   variables: {
@@ -137,6 +143,7 @@ export function TopShell({
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     const Icon = item.icon;
                     const attention = item.href === "/screens" ? fleetPulse?.attention ?? 0 : 0;
+                    const setupOpen = item.href === "/get-started" && Boolean(fleetPulse?.needsSetup);
 
                     return (
                       <SidebarMenuItem key={item.href}>
@@ -154,6 +161,12 @@ export function TopShell({
                             className="bg-amber-400/15 text-amber-300 peer-hover/menu-button:text-amber-300 peer-data-active/menu-button:text-amber-300"
                           >
                             {attention}
+                          </SidebarMenuBadge>
+                        ) : null}
+                        {setupOpen ? (
+                          <SidebarMenuBadge className="bg-sidebar-primary/20 text-sidebar-foreground peer-hover/menu-button:text-sidebar-foreground peer-data-active/menu-button:text-sidebar-foreground">
+                            <span className="sr-only">Setup is </span>
+                            To finish
                           </SidebarMenuBadge>
                         ) : null}
                       </SidebarMenuItem>

@@ -23,6 +23,7 @@ type Step =
 export function ClaimDeviceForm({
   embedded = false,
   onClaimed,
+  onConnected,
   onDone,
   initialClaimCode,
   hasDefaultPlaylist,
@@ -30,6 +31,8 @@ export function ClaimDeviceForm({
 }: {
   embedded?: boolean;
   onClaimed?: () => void;
+  /** Called once the new screen checks in for the first time. */
+  onConnected?: (deviceId: string) => void;
   onDone?: () => void;
   /** Filled in when the screen's scan-to-add QR code opened this page. */
   initialClaimCode?: string;
@@ -92,7 +95,13 @@ export function ClaimDeviceForm({
       {step.kind === "details" ? (
         <form
           className="flex flex-col gap-3"
-          action={(fd) => startTransition(() => void handleSubmit(fd))}
+          // Not a form action: React would clear the fields after a wrong
+          // code, and the name and site would have to be typed again.
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            startTransition(() => void handleSubmit(formData));
+          }}
         >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={fieldId("code")}>Pairing code</Label>
@@ -134,7 +143,10 @@ export function ClaimDeviceForm({
       ) : step.kind === "waiting" ? (
         <WaitingForScreen
           step={step}
-          onConnected={() => setStep({ kind: "connected", deviceId: step.deviceId, name: step.name })}
+          onConnected={() => {
+            setStep({ kind: "connected", deviceId: step.deviceId, name: step.name });
+            onConnected?.(step.deviceId);
+          }}
         />
       ) : (
         <div className="flex flex-col items-center gap-3 py-4 text-center" aria-live="polite">

@@ -32,11 +32,14 @@ export async function requireOrgContext() {
   return session;
 }
 
-export async function requireOrgId() {
+/** Where an account with no workspace yet is sent to name one. */
+export const noWorkspaceUrl = "/welcome";
+
+export async function requireOrgId(noWorkspaceRedirect = noWorkspaceUrl) {
   const session = await requireOrgContext();
 
   if (!session.orgId) {
-    redirect("/team");
+    redirect(noWorkspaceRedirect);
   }
 
   return session.orgId;
@@ -46,7 +49,7 @@ export async function requireOrgAdmin() {
   const session = await requireOrgContext();
 
   if (!session.orgId) {
-    redirect("/team");
+    redirect(noWorkspaceUrl);
   }
 
   if (!session.has({ role: "org:admin" })) {

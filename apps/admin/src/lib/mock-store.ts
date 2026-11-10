@@ -57,7 +57,14 @@ type DeviceRecord = DeviceSummary & {
   timezone: string;
   orientation: 0 | 90 | 180 | 270;
   volume: number;
+  // A screen paired with the demo code. Nothing real checks in for it, so
+  // the store plays its part: it stays online and "downloads" new content.
+  demo?: { contentChangedAt: number };
 };
+
+/** Pairs a pretend screen in local demo mode, so the setup guide can be tried without a Pi. */
+export const demoClaimCode = "DEMO01";
+const demoDownloadMs = 8_000;
 
 type MockState = {
   devices: DeviceRecord[];
@@ -189,7 +196,25 @@ function sanitizeFolderMove(folderId: string, parentId?: string | null) {
   return parentId;
 }
 
+function buildEmptyState(): MockState {
+  return {
+    devices: [],
+    folders: [],
+    mediaAssets: [],
+    playlists: [],
+    releases: [],
+    manifests: {},
+    screenshots: [],
+    commands: [],
+    registrations: [],
+  };
+}
+
 function buildState(): MockState {
+  // SHOWROOM_MOCK_EMPTY=1 starts the demo as a workspace that just signed up.
+  if (["1", "true", "yes", "on"].includes((process.env.SHOWROOM_MOCK_EMPTY ?? "").toLowerCase())) {
+    return buildEmptyState();
+  }
   const folders = [...mockMediaFolders, ...mockPlaylistFolders].map(cloneFolder);
   const mediaAssets = mockMediaAssets.map(cloneAsset);
   const basePlaylist = clonePlaylist(mockPlaylist);
@@ -290,7 +315,40 @@ export function getDashboardStats(orgId: string): DashboardStats {
   };
 }
 
+function playableDefaultPlaylist() {
+  return state().playlists.find((playlist) => playlist.isDefault && playlist.items.length > 0) ?? null;
+}
+
+// Publishes the default playlist to demo screens, the way a playlist change
+// recompiles every screen on the real backend.
+function publishToDemoScreens() {
+  const playlist = playableDefaultPlaylist();
+  for (const device of state().devices) {
+    if (!device.demo) continue;
+    device.currentPlaylistName = playlist?.name ?? null;
+    device.desiredManifestVersion = `manifest-${Date.now()}`;
+    device.contentState = "updating";
+    device.demo.contentChangedAt = Date.now();
+  }
+}
+
+function advanceDemoScreens() {
+  const now = Date.now();
+  for (const device of state().devices) {
+    if (!device.demo) continue;
+    device.status = "online";
+    device.lastHeartbeatAt = new Date(now).toISOString();
+    if (device.contentState === "updating" && now - device.demo.contentChangedAt >= demoDownloadMs) {
+      device.manifestVersion = device.desiredManifestVersion ?? null;
+      device.contentState = "current";
+      device.lastSyncAt = new Date(now).toISOString();
+      device.screenshotUrl = playableDefaultPlaylist()?.items[0]?.asset.previewUrl ?? null;
+    }
+  }
+}
+
 export function listDevices(orgId: string) {
+  advanceDemoScreens();
   return state().devices.filter((device) => device.orgId === orgId);
 }
 
@@ -442,6 +500,7 @@ export function setDefaultPlaylist(id: string) {
     return next;
   });
 
+  publishToDemoScreens();
   return target;
 }
 
@@ -641,6 +700,7 @@ export function savePlaylist(input: {
   }
 
   syncPlaylistAssets();
+  publishToDemoScreens();
   return state().playlists.find((entry) => entry.id === playlist.id) ?? playlist;
 }
 
@@ -853,19 +913,27 @@ export function claimDevice(input: {
   const registration = mockState.registrations.find(
     (entry) => entry.claimCode === input.claimCode,
   );
+  const isDemoScreen = !registration && input.claimCode === demoClaimCode;
 
   // Like the real backend, a code that was already used counts as wrong.
-  if (!registration || registration.claimedDeviceId) {
+  if (!isDemoScreen && (!registration || registration.claimedDeviceId)) {
     recentFailures.push(now);
     return { error: "invalid_code" as const };
   }
 
   const deviceId = crypto.randomUUID();
   const credential = `device_${crypto.randomBytes(12).toString("hex")}`;
-  registration.claimedDeviceId = deviceId;
-  registration.credential = credential;
+  if (registration) {
+    registration.claimedDeviceId = deviceId;
+    registration.credential = credential;
+  }
 
-  const fallbackPlaylist = state().playlists.find((playlist) => playlist.isDefault) ?? mockPlaylist;
+  // A workspace with nothing to play pairs a screen with no playlist, as on
+  // the real backend. The seeded demo keeps its sample playlist.
+  const fallbackPlaylist =
+    state().playlists.find((playlist) => playlist.isDefault) ??
+    (state().playlists.length > 0 ? mockPlaylist : null);
+  const manifestVersion = `manifest-${Date.now()}`;
   const device: DeviceRecord = {
     id: deviceId,
     name: input.name,
@@ -873,12 +941,12 @@ export function claimDevice(input: {
     status: "online",
     lastHeartbeatAt: new Date().toISOString(),
     screenshotUrl: null,
-    currentPlaylistName: fallbackPlaylist.name,
-    manifestVersion: mockManifest.manifestVersion,
+    currentPlaylistName: fallbackPlaylist?.name ?? null,
+    manifestVersion: isDemoScreen ? manifestVersion : mockManifest.manifestVersion,
     orgId: input.orgId,
     claimCode: input.claimCode,
     credential,
-    defaultPlaylistId: fallbackPlaylist.id,
+    defaultPlaylistId: fallbackPlaylist?.id ?? null,
     timezone: "America/New_York",
     orientation: 0,
     volume: 0,
@@ -887,6 +955,14 @@ export function claimDevice(input: {
     agentProtocolVersion: null,
     capabilities: [],
     applianceActivatedAt: null,
+    ...(isDemoScreen
+      ? {
+          demo: { contentChangedAt: Date.now() },
+          desiredManifestVersion: manifestVersion,
+          // With a playlist waiting, the new screen starts by downloading it.
+          contentState: fallbackPlaylist ? ("updating" as const) : ("current" as const),
+        }
+      : {}),
   };
 
   const existingIndex = state().devices.findIndex((entry) => entry.id === deviceId);
