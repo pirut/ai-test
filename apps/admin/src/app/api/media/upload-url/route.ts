@@ -4,6 +4,7 @@ import { acceptedMimeTypes, maxMediaBytes } from "@showroom/contracts";
 import { z } from "zod";
 
 import { createUploadDraft } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   fileName: z.string().min(1),
@@ -11,7 +12,7 @@ const schema = z.object({
   bytes: z.number().int().positive(),
 });
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async function POST(request: Request) {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,4 +35,4 @@ export async function POST(request: Request) {
   return NextResponse.json({
     upload: await createUploadDraft(payload),
   });
-}
+});

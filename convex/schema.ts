@@ -116,6 +116,8 @@ export default defineSchema({
     currentAssetId: v.optional(v.string()),
     desiredAgentVersion: v.optional(v.string()),
     desiredPlayerVersion: v.optional(v.string()),
+    // Showroom OS only: the OS version last rolled out to this screen.
+    desiredSystemVersion: v.optional(v.string()),
     releaseChannel: v.optional(v.string()),
     hardwareProfile: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
@@ -158,6 +160,11 @@ export default defineSchema({
     .index("by_session", ["deviceSessionId"])
     .index("by_claim_code", ["claimCode"])
     .index("by_claimed_device", ["claimedDeviceId"]),
+
+  claimFailures: defineTable({
+    organizationId: v.string(),
+    failedAt: v.number(),
+  }).index("by_org_and_failed_at", ["organizationId", "failedAt"]),
 
   deviceHeartbeats: defineTable({
     organizationId: v.optional(v.string()),
@@ -268,6 +275,15 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     message: v.optional(v.string()),
     applianceGeneration: v.optional(v.string()),
+    // Set when the screen belongs to a different workspace than the release
+    // (a platform rollout to customer screens).
+    deviceOrganizationId: v.optional(v.string()),
+    // True when this screen is sent the release's system bundle.
+    includesSystem: v.optional(v.boolean()),
+    // Set once the screen has installed a system bundle and is restarting;
+    // the rollout stays in progress until a heartbeat confirms the version.
+    systemVersion: v.optional(v.string()),
+    systemInstalledAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

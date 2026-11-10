@@ -243,6 +243,16 @@ impl WifiForm {
             Err(error) => self.set_message(&error, true),
         }
     }
+
+    /// The agent did not answer in time; the attempt may still be running.
+    /// The agent's own status (connecting, last attempt) takes over the
+    /// status line once this note is cleared.
+    pub fn finish_unanswered(&mut self) {
+        self.saving = false;
+        self.password.clear();
+        self.mode = Mode::List;
+        self.set_message("Still connecting. This can take a minute.", false);
+    }
 }
 
 fn push_limited(field: &mut String, ch: char) {
@@ -374,6 +384,20 @@ mod tests {
         form.handle(Key::Enter, &list);
         form.handle(Key::Tab, &list);
         assert!(form.show_password);
+    }
+
+    #[test]
+    fn an_unanswered_attempt_frees_the_form_without_an_error() {
+        let mut form = WifiForm {
+            saving: true,
+            mode: Mode::Password,
+            password: "hunter22".into(),
+            ..Default::default()
+        };
+        form.finish_unanswered();
+        assert!(!form.saving && !form.message_is_error);
+        assert!(form.password.is_empty());
+        assert_eq!(form.mode, Mode::List);
     }
 
     #[test]

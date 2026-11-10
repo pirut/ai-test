@@ -1,10 +1,23 @@
 import { MediaLibraryManager } from "@/components/media-library-manager";
-import { requireOrgId } from "@/lib/auth";
-import { listMediaAssets, listMediaFolders } from "@/lib/backend";
+import { getAuthSession, requireOrgId } from "@/lib/auth";
+import { listMediaAssets, listMediaFolders, listPlaylists } from "@/lib/backend";
 
 export default async function MediaPage() {
   await requireOrgId();
-  const [media, folders] = await Promise.all([listMediaAssets(), listMediaFolders()]);
+  const [media, folders, session, playlists] = await Promise.all([
+    listMediaAssets(),
+    listMediaFolders(),
+    getAuthSession(),
+    // Only used to point at the next step; the library works without it.
+    listPlaylists().catch(() => null),
+  ]);
 
-  return <MediaLibraryManager initialAssets={media} initialFolders={folders} />;
+  return (
+    <MediaLibraryManager
+      canEdit={session.has({ role: "org:admin" })}
+      hasPlaylists={playlists ? playlists.length > 0 : true}
+      initialAssets={media}
+      initialFolders={folders}
+    />
+  );
 }

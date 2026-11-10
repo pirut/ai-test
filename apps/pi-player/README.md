@@ -21,6 +21,20 @@ posts progress to `/local/playback` every 10 seconds and on each new item.
 - Skips files that fail to open or do not open within 30 seconds. When every
   item fails it stops and retries with a growing backoff (5 s to 5 min), or at
   once if the agent sends a different playlist.
+- Shows "Can't play this content" instead of a black screen while every item
+  fails, and keeps its heartbeat going so the agent does not restart it (or
+  fail an update's health check) over a bad file.
+- An unpaired screen always shows setup or pairing, even if a manifest is
+  still on disk. Agent errors are reworded for the person at the screen
+  (`screens::friendly_error`; the web player has the same table).
+- An unpaired screen without a pairing code shows "Getting a pairing code" or
+  "Can't reach Digital Curator" (never bare dots); Enter on a USB keyboard
+  opens Wi-Fi setup from there, Esc on the empty form goes back.
+- An empty manifest (nothing assigned) shows "Waiting for content" with no
+  error line.
+- Shows "Offline · playing saved content" over media once the agent has
+  reported `online: false` for 30 seconds (agents that send no `online` field
+  never show it).
 - Waits for a TV that is off at boot instead of failing, and restarts itself
   (exit 75, re-run by the launcher) when HDMI reconnects so DRM and HDMI audio
   are probed again.
@@ -63,4 +77,5 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
 and rolls back through the existing app release lane.
 
 To preview a setup screen off-device, render its ASS events:
-`cargo run -- --dump-screen claim` (also `wifi`, `waiting`, `downloading`).
+`cargo run -- --dump-screen claim` (also `wifi`, `waiting`, `downloading`,
+`no-code`, `unreachable`, `failed`, `starting-slowly`).

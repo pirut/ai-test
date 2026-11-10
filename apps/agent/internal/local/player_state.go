@@ -13,10 +13,12 @@ import (
 // absolute paths for playback. Unlike kioskRuntime it never falls back to a
 // browser, so images, mixed playlists and partly cached playlists are included.
 type nativePlayerState struct {
-	Claimed         bool               `json:"claimed"`
-	DeviceID        string             `json:"deviceId,omitempty"`
-	ClaimCode       string             `json:"claimCode,omitempty"`
-	LastError       string             `json:"lastError,omitempty"`
+	Claimed   bool   `json:"claimed"`
+	DeviceID  string `json:"deviceId,omitempty"`
+	ClaimCode string `json:"claimCode,omitempty"`
+	LastError string `json:"lastError,omitempty"`
+	// Online is the same value as /local/status: the service answered recently.
+	Online          bool               `json:"online"`
 	HasManifest     bool               `json:"hasManifest"`
 	ManifestVersion string             `json:"manifestVersion,omitempty"`
 	PlaylistID      string             `json:"playlistId,omitempty"`
@@ -48,26 +50,28 @@ func (s *Server) handlePlayerState(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
-	status := s.store.PlayerStatus()
+	status := s.playerStatus()
 	result := nativePlayerState{
 		Claimed:   status.Claimed,
 		DeviceID:  status.DeviceID,
 		ClaimCode: status.ClaimCode,
 		LastError: status.LastError,
-		Items:     []nativePlayerItem{},
+		Online:    status.Online,
+		// Items assigned but not downloaded yet.
+		PendingItems: status.PendingItems,
+		Items:        []nativePlayerItem{},
 	}
 	if !status.Claimed {
 		result.ClaimURL, result.ClaimQR = s.claimLink(status.ClaimCode)
+		// Wi-Fi status shells out to nmcli, so only unpaired screens pay for
+		// it: they may need the Wi-Fi setup screen or the network line under
+		// the pairing code.
+		wifi := readWiFi()
+		result.WiFi = &wifi
 	}
 
 	manifest, err := s.loadManifest()
 	if err != nil || manifest == nil {
-		// Wi-Fi status shells out to nmcli, so only pay for it when the player
-		// may need the Wi-Fi setup screen.
-		if !status.Claimed && status.ClaimCode == "" {
-			wifi := readWiFi()
-			result.WiFi = &wifi
-		}
 		return result
 	}
 
@@ -79,6 +83,7 @@ func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
 	playlist, playlistID := chooseActivePlaylist(manifest)
 	result.PlaylistID = playlistID
 	current := s.store.Snapshot()
+	result.PendingItems = 0
 	for _, item := range playlist {
 		if item.AssetType != "video" && item.AssetType != "image" {
 			result.PendingItems++
@@ -106,5 +111,8 @@ func (s *Server) playerState(readWiFi func() wifiStatus) nativePlayerState {
 			DurationSeconds: item.DurationSeconds,
 		})
 	}
+	// The agent's own count covers items it has not fetched at all yet (they
+	// are not in the local manifest), across every playlist on this screen.
+	result.PendingItems = max(result.PendingItems, status.PendingItems)
 	return result
 }

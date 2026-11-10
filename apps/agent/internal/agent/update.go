@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -62,7 +63,10 @@ func (s *Service) applyReleaseUpdate(
 	if payload.SystemURL != "" && normalizeSHA256(payload.SystemSHA256) == "" {
 		return fmt.Errorf("systemSha256 is required when systemUrl is provided")
 	}
-	if payload.SystemURL != "" {
+	// Only images that install signed A/B OS bundles (Showroom OS) set
+	// SystemUpdateCommand; everywhere else OS updates stay on their own lane.
+	systemUpdateCommand := strings.TrimSpace(s.config.SystemUpdateCommand)
+	if payload.SystemURL != "" && systemUpdateCommand == "" {
 		return fmt.Errorf("system bundles are not installed live; publish an A/B OS update instead")
 	}
 	if err := verifyReleaseSignature(payload.AgentSHA256, payload.AgentSignature, s.config.ReleasePublicKey); payload.AgentURL != "" && err != nil {
@@ -70,6 +74,9 @@ func (s *Service) applyReleaseUpdate(
 	}
 	if err := verifyReleaseSignature(payload.PlayerSHA256, payload.PlayerSignature, s.config.ReleasePublicKey); payload.PlayerURL != "" && err != nil {
 		return fmt.Errorf("verify player release signature: %w", err)
+	}
+	if err := verifyReleaseSignature(payload.SystemSHA256, payload.SystemSignature, s.config.ReleasePublicKey); payload.SystemURL != "" && err != nil {
+		return fmt.Errorf("verify system release signature: %w", err)
 	}
 
 	workDir := filepath.Join(s.config.StateRoot, "updates", commandID)
@@ -109,7 +116,31 @@ func (s *Service) applyReleaseUpdate(
 		nextSystemVersion = strings.TrimSpace(payload.Version)
 	}
 
-	if payload.PlayerURL != "" {
+	// A part that is already the running version is left alone. Installing it
+	// again would overwrite the files in use, so a bad download could not be
+	// rolled back, and the screen would restart (or reboot) for nothing when a
+	// release is deployed twice.
+	installPlayer := payload.PlayerURL != ""
+	if installPlayer && slotIsCurrent(filepath.Join(releaseRoot, "player"), nextPlayerVersion) {
+		log.Printf("player %s is already running; skipping that part of the release", nextPlayerVersion)
+		installPlayer = false
+	}
+	installAgent := payload.AgentURL != ""
+	if installAgent && slotIsCurrent(filepath.Join(releaseRoot, "agent"), nextAgentVersion) {
+		running := filepath.Join(releaseRoot, "agent", nextAgentVersion, "showroom-agent")
+		if err := verifySHA256(running, payload.AgentSHA256); err != nil {
+			return fmt.Errorf("agent %s is already running with different contents; publish the change as a new version", nextAgentVersion)
+		}
+		log.Printf("agent %s is already running; skipping that part of the release", nextAgentVersion)
+		installAgent = false
+	}
+	installSystem := payload.SystemURL != ""
+	if installSystem && nextSystemVersion != "" && runningOSVersion() == nextSystemVersion {
+		log.Printf("OS %s is already running; skipping that part of the release", nextSystemVersion)
+		installSystem = false
+	}
+
+	if installPlayer {
 		archivePath := filepath.Join(workDir, archiveFileName(payload.PlayerURL, "player-release.tar.gz"))
 		if err := s.client.DownloadFile(ctx, payload.PlayerURL, archivePath); err != nil {
 			return fmt.Errorf("download player bundle: %w", err)
@@ -127,7 +158,7 @@ func (s *Service) applyReleaseUpdate(
 		}
 	}
 
-	if payload.AgentURL != "" {
+	if installAgent {
 		downloadPath := filepath.Join(workDir, "showroom-agent")
 		if err := s.client.DownloadFile(ctx, payload.AgentURL, downloadPath); err != nil {
 			return fmt.Errorf("download agent binary: %w", err)
@@ -143,6 +174,24 @@ func (s *Service) applyReleaseUpdate(
 		if strings.TrimSpace(s.config.RestartAgentCommand) != "" {
 			restartCommands = append(restartCommands, s.config.RestartAgentCommand)
 		}
+	}
+
+	// The OS bundle goes last: if it fails, the deferred rollback undoes the
+	// agent and player slots installed above, so the release applies whole or
+	// not at all.
+	systemInstalled := false
+	if installSystem {
+		bundlePath := filepath.Join(workDir, archiveFileName(payload.SystemURL, "system.raucb"))
+		if err := s.downloadResuming(ctx, payload.SystemURL, bundlePath); err != nil {
+			return fmt.Errorf("download system bundle: %w", err)
+		}
+		if err := verifySHA256(bundlePath, payload.SystemSHA256); err != nil {
+			return fmt.Errorf("verify system bundle: %w", err)
+		}
+		if err := installSystemBundle(ctx, systemUpdateCommand, bundlePath); err != nil {
+			return fmt.Errorf("install system bundle: %w", err)
+		}
+		systemInstalled = true
 	}
 
 	if nextAgentVersion != "" || nextPlayerVersion != "" || nextSystemVersion != "" {
@@ -161,6 +210,21 @@ func (s *Service) applyReleaseUpdate(
 		}
 	}
 
+	if systemInstalled {
+		// The new OS slot only runs after a reboot, which also restarts the
+		// agent and player; the update guard checks them at boot.
+		if len(restartCommands) > 0 {
+			if err := writeJSONFile(filepath.Join(s.config.StateRoot, "pending-update.json"), pending); err != nil {
+				return fmt.Errorf("record pending update: %w", err)
+			}
+		}
+		if err := scheduleShell(s.config.RebootCommand, 5*time.Second); err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	}
+
 	if len(restartCommands) == 0 {
 		return nil
 	}
@@ -173,6 +237,90 @@ func (s *Service) applyReleaseUpdate(
 	}
 	committed = true
 	return nil
+}
+
+const systemInstallTimeout = 30 * time.Minute
+
+// downloadResuming fetches a large file (an OS bundle is ~100 MB) through
+// the client's 45-second request timeout by resuming the partial download
+// until a few attempts in a row make no progress.
+func (s *Service) downloadResuming(ctx context.Context, sourceURL string, destPath string) error {
+	const maxStalls = 3
+	stalls := 0
+	lastSize := int64(-1)
+	for {
+		err := s.client.DownloadFile(ctx, sourceURL, destPath)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		size := int64(0)
+		if info, statErr := os.Stat(destPath + ".part"); statErr == nil {
+			size = info.Size()
+		}
+		if size > lastSize {
+			stalls = 0
+		} else {
+			stalls++
+		}
+		if stalls >= maxStalls {
+			return err
+		}
+		lastSize = size
+	}
+}
+
+// installSystemBundle runs the image's OS installer (on Showroom OS,
+// showroom-os-install, which hands the bundle to RAUC) with the verified
+// bundle path as its only argument.
+func installSystemBundle(ctx context.Context, command string, bundlePath string) error {
+	installCtx, cancel := context.WithTimeout(ctx, systemInstallTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(installCtx, command, bundlePath).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if len(message) > 600 {
+			message = "..." + message[len(message)-600:]
+		}
+		return fmt.Errorf("%s: %w: %s", filepath.Base(command), err, message)
+	}
+	return nil
+}
+
+// slotIsCurrent reports whether releases/<kind>/current already points at
+// this version's directory under root.
+func slotIsCurrent(root string, version string) bool {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return false
+	}
+	target, err := os.Readlink(filepath.Join(root, "current"))
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	return filepath.Clean(target) == filepath.Join(root, version)
+}
+
+var osReleasePath = "/etc/os-release"
+
+// runningOSVersion is the OS image version (os-release VERSION_ID), which
+// Showroom OS sets to the release version it was built as.
+func runningOSVersion() string {
+	payload, err := os.ReadFile(osReleasePath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(payload), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "VERSION_ID="); ok {
+			return strings.Trim(strings.TrimSpace(value), `"'`)
+		}
+	}
+	return ""
 }
 
 type pendingSlot struct {
@@ -609,7 +757,42 @@ func scheduleShell(command string, delay time.Duration) error {
 	}
 
 	script := fmt.Sprintf("sleep %d; %s", int(delay.Seconds()), command)
+	if detached := detachedUnitCommand(script, time.Now()); detached != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, detached[0], detached[1:]...).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		log.Printf("systemd-run could not schedule the restart (%v: %s); running it from the agent instead", err, strings.TrimSpace(string(output)))
+	}
 	cmd := exec.Command("sh", "-lc", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return cmd.Start()
+}
+
+var (
+	systemdRuntimeDir = "/run/systemd/system"
+	lookPath          = exec.LookPath
+)
+
+// detachedUnitCommand runs script in its own systemd unit, or returns nil when
+// systemd is not managing this machine. A plain child process lives in the
+// agent's service: "systemctl restart showroom-agent" kills it along with the
+// agent, so the commands after it never ran. That left an agent update without
+// its health check and rollback (showroom-update-guard is restarted last).
+func detachedUnitCommand(script string, now time.Time) []string {
+	if info, err := os.Stat(systemdRuntimeDir); err != nil || !info.IsDir() {
+		return nil
+	}
+	binary, err := lookPath("systemd-run")
+	if err != nil {
+		return nil
+	}
+	return []string{
+		binary, "--quiet", "--collect",
+		fmt.Sprintf("--unit=showroom-update-apply-%d", now.UnixNano()),
+		"--description=Showroom update restart",
+		"/bin/sh", "-c", script,
+	}
 }

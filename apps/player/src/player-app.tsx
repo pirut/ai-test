@@ -4,6 +4,7 @@ import {
   type ManifestPlaylistItem,
   deviceManifestSchema,
 } from "@showroom/contracts";
+import { CANNOT_REACH, friendlyError, networkName, showOfflineBadge, videoProgressed } from "./screen-text";
 import { QrCode, WiFiSetup, type WiFiStatus } from "./wifi-setup";
 
 type PlayerStatus = {
@@ -17,6 +18,8 @@ type PlayerStatus = {
   claimQr?: string[];
   online?: boolean;
   lastCloudContactAt?: string;
+  /** Assigned items not saved on the screen yet. Older agents send nothing. */
+  pendingItems?: number;
 };
 
 type PlaybackState = {
@@ -28,16 +31,30 @@ type PlaybackState = {
   wifiStatus: WiFiStatus | null;
   playbackError: string | null;
   mediaNonce: number;
+  /** When the agent first reported this paired screen as out of touch. */
+  offlineSince: number | null;
+  offlineBadge: boolean;
+  /** Wi-Fi setup asked for from the "no pairing code" screen. */
+  wifiRequested: boolean;
 };
 
+/** A local request that never answers must not block every later refresh. */
+function fetchLocal(path: string) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 10_000);
+  return fetch(path, { cache: "no-store", signal: controller.signal }).finally(() =>
+    window.clearTimeout(timer),
+  );
+}
+
 async function loadPlayerStatus() {
-  const response = await fetch("/local/status", { cache: "no-store" });
+  const response = await fetchLocal("/local/status");
   if (!response.ok) throw new Error("Unable to load local status");
   return (await response.json()) as PlayerStatus;
 }
 
 async function loadManifest() {
-  const response = await fetch("/local/manifest", { cache: "no-store" });
+  const response = await fetchLocal("/local/manifest");
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Unable to load the local manifest");
   const payload = await response.json();
@@ -45,7 +62,7 @@ async function loadManifest() {
 }
 
 async function loadWiFiStatus() {
-  const response = await fetch("/local/wifi/status", { cache: "no-store" });
+  const response = await fetchLocal("/local/wifi/status");
   if (!response.ok) throw new Error("Unable to load Wi-Fi status");
   return (await response.json()) as WiFiStatus;
 }
@@ -116,6 +133,7 @@ export function PlayerApp() {
   const recoveryPendingRef = useRef(false);
   const failureCountsRef = useRef(new Map<string, number>());
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [slowStart, setSlowStart] = useState(false);
   const [state, setState] = useState<PlaybackState>({
     manifest: null,
     playlist: [],
@@ -125,7 +143,17 @@ export function PlayerApp() {
     wifiStatus: null,
     playbackError: null,
     mediaNonce: 0,
+    offlineSince: null,
+    offlineBadge: false,
+    wifiRequested: false,
   });
+  const setWifiRequested = (wifiRequested: boolean) =>
+    setState((current) => ({ ...current, wifiRequested }));
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlowStart(true), 90_000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const settingUp = state.status === "wifi-setup" || state.status === "unclaimed";
   const activeItem = state.playlist.length
@@ -137,16 +165,22 @@ export function PlayerApp() {
   );
 
   useEffect(() => {
-    if (!activeItem) return;
     const report = () => {
       void fetch("/local/playback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assetId: activeItem.assetId,
-          playlistId: state.manifest ? choosePlaylistId(state.manifest) ?? "default" : "default",
-          state: state.playbackError ? "recovering" : "playing",
-        }),
+        // With nothing to play (setup, pairing, waiting for content) the page
+        // still reports in, so the agent does not restart the browser every
+        // two minutes while a paired screen waits for its first download.
+        body: JSON.stringify(
+          activeItem
+            ? {
+                assetId: activeItem.assetId,
+                playlistId: state.manifest ? choosePlaylistId(state.manifest) ?? "default" : "default",
+                state: state.playbackError ? "recovering" : "playing",
+              }
+            : { assetId: "", playlistId: "", state: "idle" },
+        ),
       }).catch(() => undefined);
     };
     report();
@@ -175,7 +209,20 @@ export function PlayerApp() {
         const refreshError =
           resultError(manifestResult) ?? resultError(statusResult) ?? resultError(wifiResult);
 
-        setState((current) => {
+        setState((previous) => {
+          // Without a fresh status (the agent is restarting), keep what was known.
+          const offline = nextStatus
+            ? nextStatus.claimed && nextStatus.online === false
+            : previous.offlineSince !== null;
+          const offlineSince = offline ? (previous.offlineSince ?? Date.now()) : null;
+          const current: PlaybackState = {
+            ...previous,
+            offlineSince,
+            offlineBadge: showOfflineBadge(offlineSince, Date.now()),
+            // The request ends once there is a code to show or the screen is paired.
+            wifiRequested:
+              previous.wifiRequested && !(nextStatus && (nextStatus.claimed || nextStatus.claimCode)),
+          };
           const playerStatus = nextStatus ?? current.playerStatus;
           const wifiStatus = nextWiFi ?? current.wifiStatus;
           const manifest = fetchedManifest ?? current.manifest;
@@ -303,7 +350,7 @@ export function PlayerApp() {
     start();
 
     const interval = window.setInterval(() => {
-      if (video.currentTime > lastTime + 0.05) {
+      if (videoProgressed(lastTime, video.currentTime)) {
         lastTime = video.currentTime;
         lastProgressAt = Date.now();
         markHealthy();
@@ -327,16 +374,53 @@ export function PlayerApp() {
         {claimCode ? formatClaimCode(claimCode) : "••• •••"}
       </h1>
     );
+    // Wi-Fi status knows nothing about a cable: a screen on Ethernet that the
+    // agent says is in touch with the service is online.
+    const offline = state.wifiStatus?.connected === false && state.playerStatus?.online !== true;
+    const network = networkName(state.wifiStatus);
     const statusLine = (
       <p className="statusLine">
-        <span className={state.wifiStatus?.connected === false ? "statusDot warn" : "statusDot"} aria-hidden="true" />
+        <span className={offline ? "statusDot warn" : "statusDot"} aria-hidden="true" />
         {state.wifiStatus?.connected
-          ? `Online${state.wifiStatus.ssid ? ` via ${state.wifiStatus.ssid}` : ""}`
-          : state.wifiStatus?.connected === false
+          ? `Online${network ? ` via ${network}` : ""}`
+          : offline
             ? "Waiting for network"
             : "Online"}
       </p>
     );
+    if (!claimCode) {
+      // No code: the first moments after boot, or the service has not answered
+      // for a while (the agent then holds the code back, since nobody could
+      // use it). Say so, and keep Wi-Fi setup one key press away.
+      if (state.wifiRequested) {
+        return (
+          <WiFiSetup
+            lastError={state.playerStatus?.lastError}
+            onCancel={() => setWifiRequested(false)}
+            onSubmitted={() => setRefreshNonce((value) => value + 1)}
+            wifiStatus={state.wifiStatus}
+          />
+        );
+      }
+      const problem = friendlyError(state.playerStatus?.lastError);
+      return (
+        <main className="playerRoot">
+          <section className="fallbackScreen" aria-live="polite">
+            <p className="label">Pair this screen</p>
+            <h1>{problem ? "Can't reach Digital Curator" : "Getting a pairing code"}</h1>
+            <p>
+              {problem
+                ? `This screen is ${network ? `on ${network}` : "connected"} but the service is not answering. Check that this network has internet access. The screen keeps retrying.`
+                : `${network ? `Online via ${network}. ` : ""}This only takes a moment.`}
+            </p>
+            {problem && problem !== CANNOT_REACH ? <p className="technicalError">{problem}</p> : null}
+            <button autoFocus className="changeWifi" onClick={() => setWifiRequested(true)} type="button">
+              Wrong network? Press Enter on a USB keyboard to choose a different Wi-Fi
+            </button>
+          </section>
+        </main>
+      );
+    }
     return (
       <main className="playerRoot">
         {claimCode && claimQr?.length ? (
@@ -384,18 +468,37 @@ export function PlayerApp() {
   }
 
   if (!state.manifest || !activeItem) {
+    // An empty manifest (all content removed, nothing assigned) is a normal
+    // state: no error line, only "choose a playlist".
+    // A first download is not "nothing assigned" either.
+    const downloading =
+      state.status !== "loading" &&
+      Boolean(state.playerStatus?.claimed) &&
+      (state.playerStatus?.pendingItems ?? 0) > 0;
+    const problem =
+      state.manifest && !downloading ? null : friendlyError(state.playerStatus?.lastError);
     return (
       <main className="playerRoot">
         <section className="fallbackScreen" aria-live="polite">
           <div className="waitingMark" aria-hidden="true" />
           <p className="label">Screen ready</p>
-          <h1>{state.status === "loading" ? "Starting player" : "Waiting for content"}</h1>
-          <p>
+          <h1>
             {state.status === "loading"
-              ? "This only takes a moment."
-              : "This screen is paired. Choose a playlist for it in Digital Curator and it will start playing automatically."}
+              ? "Starting player"
+              : downloading
+                ? "Downloading your content"
+                : "Waiting for content"}
+          </h1>
+          <p>
+            {downloading
+              ? "Your playlist will start as soon as the first item is saved on this screen."
+              : state.status !== "loading"
+              ? "This screen is paired. Choose a playlist for it in Digital Curator and it will start playing automatically."
+              : slowStart
+                ? "This is taking longer than usual. If nothing changes in a few minutes, unplug this screen's power and plug it back in."
+                : "This only takes a moment."}
           </p>
-          {state.playerStatus?.lastError ? <p className="technicalError">{state.playerStatus.lastError}</p> : null}
+          {state.status !== "loading" && problem ? <p className="technicalError">{problem}</p> : null}
         </section>
       </main>
     );
@@ -430,13 +533,17 @@ export function PlayerApp() {
             className="playerMedia"
             key={`${activeItem.assetId}-${state.manifest.manifestVersion}-${state.mediaNonce}`}
             onError={() => recoverMedia(`Unable to display ${activeItem.title}`)}
+            onLoad={() => {
+              // It displayed: forget earlier failures and drop the badge.
+              failureCountsRef.current.delete(activeItem.id);
+              setState((current) => (current.playbackError ? { ...current, playbackError: null } : current));
+            }}
             src={activeItem.url}
           />
         )}
       </div>
 
-      {state.status === "offline" ||
-      (state.playerStatus?.claimed && state.playerStatus.online === false) ? (
+      {state.offlineBadge ? (
         <div className="playerStatus" role="status">Offline · playing saved content</div>
       ) : null}
       {state.playbackError ? (

@@ -3,10 +3,14 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,21 +40,28 @@ const unavailableAssetRetryDelay = 24 * time.Hour
 type hydrationFailure struct {
 	attempts    int
 	nextAttempt time.Time
+	// message is the last failure in words the dashboard can show.
+	message string
 }
 
-func applianceDescriptor() map[string]interface{} {
+func applianceDescriptor(systemBundles bool) map[string]interface{} {
+	capabilities := []string{
+		"appliance_telemetry",
+		"app_slot_rollback",
+		"leased_commands",
+		"network_rotation",
+		"signed_releases",
+		"staged_rollouts",
+		"transactional_content",
+	}
+	if systemBundles {
+		// Installs signed A/B OS bundles sent as a release's systemUrl.
+		capabilities = append(capabilities, "system_bundles")
+	}
 	return map[string]interface{}{
 		"generation":      "showroom-appliance-v2",
 		"protocolVersion": 2,
-		"capabilities": []string{
-			"appliance_telemetry",
-			"app_slot_rollback",
-			"leased_commands",
-			"network_rotation",
-			"signed_releases",
-			"staged_rollouts",
-			"transactional_content",
-		},
+		"capabilities":    capabilities,
 	}
 }
 
@@ -61,7 +72,10 @@ type Service struct {
 	start             time.Time
 	hydrationMu       sync.Mutex
 	hydrationFailures map[string]hydrationFailure
-	now               func() time.Time
+	// hydrationIssue describes the items the last cacheManifest pass could
+	// not put on the screen; empty when everything it tried is cached.
+	hydrationIssue string
+	now            func() time.Time
 
 	// syncMu serializes pairing, credential refresh and manifest sync.
 	syncMu      sync.Mutex
@@ -147,7 +161,32 @@ func (s *Service) recordHydrationFailure(key string, err error) {
 		delay = unavailableAssetRetryDelay
 	}
 	failure.nextAttempt = s.currentTime().Add(delay)
+	failure.message = userFacingError(err)
 	s.hydrationFailures[key] = failure
+}
+
+// hydrationBackoff reports whether an asset is waiting out a retry delay, and
+// why it failed last time.
+func (s *Service) hydrationBackoff(key string) (string, bool) {
+	s.hydrationMu.Lock()
+	defer s.hydrationMu.Unlock()
+	failure, exists := s.hydrationFailures[key]
+	if !exists || !s.currentTime().Before(failure.nextAttempt) {
+		return "", false
+	}
+	return failure.message, true
+}
+
+func (s *Service) setHydrationIssue(issue string) {
+	s.hydrationMu.Lock()
+	s.hydrationIssue = issue
+	s.hydrationMu.Unlock()
+}
+
+func (s *Service) currentHydrationIssue() string {
+	s.hydrationMu.Lock()
+	defer s.hydrationMu.Unlock()
+	return s.hydrationIssue
 }
 
 func (s *Service) clearHydrationFailure(key string) {
@@ -597,7 +636,8 @@ func (s *Service) runScreenshotLoop(ctx context.Context) {
 		case <-ticker.C:
 			snapshot := s.store.Snapshot()
 			if err := s.maybeUploadScreenshot(ctx, snapshot, false); err != nil {
-				s.recordError(err)
+				// Log only: a failed screenshot is not something to draw on
+				// the TV, and the dashboard already shows the screenshot's age.
 				log.Printf("screenshot upload failed: %v", err)
 			}
 		}
@@ -643,7 +683,14 @@ func (s *Service) syncManifest(ctx context.Context, credential string) error {
 		// Tell the dashboard the new content landed once state is saved.
 		defer s.requestHeartbeat()
 	}
+	syncIssue := s.currentHydrationIssue()
+	if syncIssue != previousState.SyncError {
+		// Tell the dashboard about a new problem, or that one cleared.
+		defer s.requestHeartbeat()
+	}
 	if err := s.store.Update(func(next *state.DeviceState) {
+		next.SyncError = syncIssue
+		next.PendingItems = max(0, manifestAssetCount(manifest)-len(cachedAssets))
 		next.DeviceID = manifest.DeviceID
 		next.ManifestVersion = manifest.ManifestVersion
 		next.PreviousManifestVersion = previousState.ManifestVersion
@@ -685,9 +732,25 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 	manifestPath := filepath.Join(s.config.StateRoot, "manifest.json")
 	visiblePlayableAssets := localManifestPlaylistSize(manifestPath)
 	progressPublished := visiblePlayableAssets >= initialPlayableAssetTarget
+	// Say how much is still to fetch before the first download starts, so a
+	// newly paired screen shows "downloading" rather than "nothing assigned".
+	pending := 0
+	for assetID := range manifestAssetIDs(manifest) {
+		record, ok := availableAssets[assetID]
+		if !ok || record.Checksum != manifest.AssetChecksums[assetID] || !fileExists(filepath.Join(s.config.StorageRoot, record.FileName)) {
+			pending++
+		}
+	}
+	if pending != stateSnapshot.PendingItems {
+		_ = s.store.Update(func(next *state.DeviceState) { next.PendingItems = pending })
+	}
 	publishProgress := func() error {
 		if progressPublished || manifestPlaylistSize(&localManifest) < initialPlayableAssetTarget {
 			return nil
+		}
+		if s.store.Snapshot().Credential != stateSnapshot.Credential {
+			// Never write content for an account the screen left mid-sync.
+			return fmt.Errorf("device credential changed during sync")
 		}
 		if err := writeJSONFile(manifestPath, &localManifest); err != nil {
 			return err
@@ -697,6 +760,7 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 			next.ManifestVersion = manifest.ManifestVersion
 			next.LastSyncAt = time.Now().UTC().Format(time.RFC3339)
 			next.CachedAssets = cloneAssetRecords(cachedAssets)
+			next.PendingItems = max(0, manifestAssetCount(manifest)-len(cachedAssets))
 			next.LastError = ""
 		}); err != nil {
 			return err
@@ -705,6 +769,21 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		log.Printf("activated %d verified assets while the remaining playlist hydrates", manifestPlaylistSize(&localManifest))
 		return nil
 	}
+
+	// failed maps each asset that is not on the screen to the reason, for the
+	// dashboard. Assets merely waiting for their turn to download are not in it.
+	failed := map[string]string{}
+	firstFailure := ""
+	noteFailed := func(assetID string, reason string) {
+		if _, seen := failed[assetID]; !seen {
+			failed[assetID] = reason
+		}
+		if firstFailure == "" {
+			firstFailure = reason
+		}
+	}
+	s.setHydrationIssue("")
+	cacheFreed := false
 
 	newDownloads := 0
 	downloadLimit := manifestHydrationDownloadLimit(len(availableAssets))
@@ -716,14 +795,24 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		existing, ok := availableAssets[item.AssetID]
 		cached := ok && existing.Checksum == expectedChecksum && fileExists(filepath.Join(s.config.StorageRoot, existing.FileName))
 		if !cached {
-			if !s.canAttemptHydration(hydrationKey) {
+			if reason, waiting := s.hydrationBackoff(hydrationKey); waiting {
+				noteFailed(item.AssetID, reason)
 				return item, false, nil
 			}
 			if newDownloads >= downloadLimit {
 				return item, false, nil
 			}
 			if err := s.ensureCacheBudget(); err != nil {
-				return item, false, err
+				if !cacheFreed {
+					// Drop files neither the playing nor the incoming content
+					// uses before giving up on this item.
+					cacheFreed = true
+					s.freeCacheSpace(manifest, cachedAssets)
+					err = s.ensureCacheBudget()
+				}
+				if err != nil {
+					return item, false, err
+				}
 			}
 			var err error
 			if item.SourceType == "youtube" || remote.IsYouTubeURL(item.URL) {
@@ -767,6 +856,7 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		nextItem, ready, err := rewrite(item)
 		if err != nil {
 			failures++
+			noteFailed(item.AssetID, userFacingError(err))
 			log.Printf("media asset %s was skipped during hydration: %v", item.AssetID, err)
 			continue
 		}
@@ -787,6 +877,7 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 			nextItem, ready, err := rewrite(item)
 			if err != nil {
 				failures++
+				noteFailed(item.AssetID, userFacingError(err))
 				log.Printf("scheduled media asset %s was skipped during hydration: %v", item.AssetID, err)
 				continue
 			}
@@ -803,7 +894,19 @@ func (s *Service) cacheManifest(ctx context.Context, manifest *remote.DeviceMani
 		}
 	}
 
+	if len(failed) > 0 {
+		s.setHydrationIssue(fmt.Sprintf("%d of %d items are not on the screen yet: %s", len(failed), manifestAssetCount(manifest), firstFailure))
+	}
 	if manifestPlaylistSize(&localManifest) == 0 {
+		if manifestPlaylistSize(manifest) == 0 {
+			// Nothing is assigned to this screen. That is a valid state, not a
+			// failure: clear what was playing instead of showing removed content
+			// forever.
+			return cachedAssets, &localManifest, nil
+		}
+		if issue := s.currentHydrationIssue(); issue != "" {
+			return nil, nil, errors.New(issue)
+		}
 		return nil, nil, fmt.Errorf("no playable media assets were available after %d hydration failures", failures)
 	}
 	if failures > 0 {
@@ -817,6 +920,28 @@ func manifestHydrationDownloadLimit(cachedAssetCount int) int {
 		return initialPlayableAssetTarget - cachedAssetCount
 	}
 	return hydrationBatchSize
+}
+
+// manifestAssetCount is the number of distinct assets a manifest plays.
+func manifestAssetCount(manifest *remote.DeviceManifest) int {
+	ids := manifestAssetIDs(manifest)
+	return len(ids)
+}
+
+func manifestAssetIDs(manifest *remote.DeviceManifest) map[string]struct{} {
+	ids := map[string]struct{}{}
+	if manifest == nil {
+		return ids
+	}
+	for _, item := range manifest.DefaultPlaylist {
+		ids[item.AssetID] = struct{}{}
+	}
+	for _, window := range manifest.ScheduleWindows {
+		for _, item := range window.Playlist {
+			ids[item.AssetID] = struct{}{}
+		}
+	}
+	return ids
 }
 
 func manifestPlaylistSize(manifest *remote.DeviceManifest) int {
@@ -845,7 +970,7 @@ func localManifestPlaylistSize(path string) int {
 func (s *Service) ensureCacheBudget() error {
 	freeBytes, _ := diskUsage(s.config.StorageRoot)
 	if s.config.CacheMinFreeBytes > 0 && freeBytes < s.config.CacheMinFreeBytes {
-		return fmt.Errorf("media cache has %d bytes free; %d required", freeBytes, s.config.CacheMinFreeBytes)
+		return fmt.Errorf("Screen storage is full (%s free). Remove items from this screen's playlists.", formatBytes(freeBytes))
 	}
 	if s.config.CacheMaxBytes <= 0 {
 		return nil
@@ -861,9 +986,61 @@ func (s *Service) ensureCacheBudget() error {
 		return nil
 	})
 	if used >= s.config.CacheMaxBytes {
-		return fmt.Errorf("media cache reached its %d byte budget", s.config.CacheMaxBytes)
+		return fmt.Errorf("This screen's media limit (%s) is reached. Remove items from its playlists.", formatBytes(s.config.CacheMaxBytes))
 	}
 	return nil
+}
+
+func formatBytes(value int64) string {
+	const gigabyte = 1 << 30
+	if value >= gigabyte {
+		return fmt.Sprintf("%.1f GB", float64(value)/gigabyte)
+	}
+	return fmt.Sprintf("%d MB", value>>20)
+}
+
+// freeCacheSpace deletes cached files that neither the content on screen nor
+// the incoming manifest uses: media from an older playlist kept for reuse, and
+// leftovers of downloads for items that were since removed. Without it a
+// nearly full card could never take new content, because old files are
+// otherwise only pruned after a sync succeeds.
+func (s *Service) freeCacheSpace(manifest *remote.DeviceManifest, admitted map[string]state.AssetRecord) {
+	keepIDs := manifestAssetIDs(manifest)
+	keepFiles := map[string]struct{}{}
+	for id, record := range s.store.Snapshot().CachedAssets {
+		keepIDs[id] = struct{}{}
+		keepFiles[record.FileName] = struct{}{}
+	}
+	for id, record := range admitted {
+		keepIDs[id] = struct{}{}
+		keepFiles[record.FileName] = struct{}{}
+	}
+	entries, err := os.ReadDir(s.config.StorageRoot)
+	if err != nil {
+		return
+	}
+	removed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.Type().IsRegular() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if _, keep := keepFiles[name]; keep {
+			continue
+		}
+		// Cached media is named <asset id>.<extension>, with ".part" or a
+		// yt-dlp format suffix while it downloads.
+		assetID, _, _ := strings.Cut(name, ".")
+		if _, keep := keepIDs[assetID]; keep {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.config.StorageRoot, name)); err == nil {
+			removed++
+		}
+	}
+	if removed > 0 {
+		log.Printf("freed media storage by removing %d files no playlist on this screen uses", removed)
+	}
 }
 
 func (s *Service) downloadYouTubeVideo(ctx context.Context, sourceURL string, destPath string) error {
@@ -1154,7 +1331,10 @@ func (s *Service) sendHeartbeat(ctx context.Context, current state.DeviceState, 
 		// Only skip a heartbeat that was just sent (for example right after
 		// claiming). Skipping anything under a full interval would halve the
 		// heartbeat rate, because ticks land slightly before the interval ends.
-		if err == nil && time.Since(lastHeartbeatAt) < minSpacing {
+		// A timestamp in the future means the clock was set back (a Pi has no
+		// battery clock). Send anyway, or the screen would look offline until
+		// the clock caught up.
+		if elapsed := time.Since(lastHeartbeatAt); err == nil && elapsed >= 0 && elapsed < minSpacing {
 			return nil
 		}
 	}
@@ -1168,6 +1348,10 @@ func (s *Service) sendHeartbeat(ctx context.Context, current state.DeviceState, 
 	if playerVersion == "" {
 		playerVersion = "player-v1"
 	}
+	syncError := current.LastError
+	if syncError == "" {
+		syncError = current.SyncError
+	}
 	payload := map[string]interface{}{
 		"deviceId":          current.DeviceID,
 		"manifestVersion":   current.ManifestVersion,
@@ -1179,13 +1363,13 @@ func (s *Service) sendHeartbeat(ctx context.Context, current state.DeviceState, 
 		"currentAssetId":    current.CurrentAssetID,
 		"currentPlaylistId": current.CurrentPlaylistID,
 		"lastSeenAt":        time.Now().UTC().Format(time.RFC3339),
-		"appliance":         applianceDescriptor(),
+		"appliance":         applianceDescriptor(strings.TrimSpace(s.config.SystemUpdateCommand) != ""),
 		"health":            current.Health,
 		// Older control planes drop this field; newer ones show it on the
 		// dashboard so a stuck download or a bad file is visible remotely.
 		"sync": map[string]interface{}{
 			"lastSyncAt": current.LastSyncAt,
-			"lastError":  redactURLQueries(current.LastError),
+			"lastError":  redactURLQueries(syncError),
 		},
 	}
 
@@ -1206,7 +1390,7 @@ func (s *Service) maybeUploadScreenshot(ctx context.Context, current state.Devic
 
 	if !force && current.LastScreenshotAt != "" {
 		lastScreenshotAt, err := time.Parse(time.RFC3339, current.LastScreenshotAt)
-		if err == nil && time.Since(lastScreenshotAt) < s.config.ScreenshotInterval {
+		if elapsed := time.Since(lastScreenshotAt); err == nil && elapsed >= 0 && elapsed < s.config.ScreenshotInterval {
 			return nil
 		}
 	}
@@ -1253,8 +1437,14 @@ func (s *Service) recordError(err error) {
 	})
 }
 
+// userFacingError turns a failure into text for the screen and the dashboard.
+// Both show it to people who cannot read a Go error.
 func userFacingError(err error) string {
-	message := strings.TrimSpace(err.Error())
+	if message := connectivityMessage(err); message != "" {
+		return message
+	}
+	// Signed media URLs must not end up on the screen or in the dashboard.
+	message := redactURLQueries(strings.TrimSpace(err.Error()))
 	lower := strings.ToLower(message)
 	if strings.Contains(lower, "yt-dlp") || strings.Contains(lower, "youtube") {
 		return "YouTube content could not be prepared. The player will retry automatically."
@@ -1264,6 +1454,28 @@ func userFacingError(err error) string {
 		return strings.TrimSpace(message[:maxLength-1]) + "…"
 	}
 	return message
+}
+
+// connectivityMessage explains a network-level failure in plain words, or
+// returns "" when err is something else.
+func connectivityMessage(err error) string {
+	var httpErr *remote.HTTPError
+	if errors.As(err, &httpErr) {
+		if httpErr.StatusCode >= 500 || httpErr.StatusCode == http.StatusTooManyRequests {
+			return "Digital Curator is not answering right now. The screen will keep trying."
+		}
+		return ""
+	}
+	var certErr x509.CertificateInvalidError
+	if errors.As(err, &certErr) && certErr.Reason == x509.Expired {
+		return "Secure connection failed. The screen's clock may be wrong; it sets itself once it is online. The screen will keep trying."
+	}
+	var urlErr *url.Error
+	var netErr net.Error
+	if errors.As(err, &urlErr) || errors.As(err, &netErr) {
+		return "No internet connection. Check the network; the screen will keep trying."
+	}
+	return ""
 }
 
 var urlQueryPattern = regexp.MustCompile(`(https?://[^\s?#"']+)[?#](?:[^\s"']*[^\s"':,.;)])?`)

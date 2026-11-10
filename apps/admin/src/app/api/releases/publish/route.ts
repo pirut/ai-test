@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
-import { createHash, createPrivateKey, sign } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import {
   createReleaseArtifactUpload,
   publishReleaseArtifacts,
 } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
+import { signReleaseChecksum } from "@/lib/release-signing";
 
 const formSchema = z.object({
   name: z.string().trim().min(1),
@@ -26,31 +28,15 @@ async function sha256ForFile(file: File) {
   return hash.digest("hex");
 }
 
-function signChecksum(sha256: string) {
-  const privateKey = process.env.SHOWROOM_RELEASE_SIGNING_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  const keyId = process.env.SHOWROOM_RELEASE_SIGNING_KEY_ID?.trim();
-  if (!privateKey || !keyId) {
-    throw new Error(
-      "Release signing is not configured. Set SHOWROOM_RELEASE_SIGNING_PRIVATE_KEY and SHOWROOM_RELEASE_SIGNING_KEY_ID.",
-    );
-  }
-
-  const signature = sign(
-    null,
-    Buffer.from(sha256.replace(/^sha256:/, ""), "hex"),
-    createPrivateKey(privateKey),
-  );
-  return { signature: signature.toString("base64"), keyId };
-}
-
 async function uploadArtifact(file: File) {
-  const sha256 = await sha256ForFile(file);
-  const signed = signChecksum(sha256);
+  // The upload URL is only issued to platform operators, so ask for it before signing.
   const upload = await createReleaseArtifactUpload({
     fileName: file.name,
     mimeType: file.type || "application/octet-stream",
     bytes: file.size,
   });
+  const sha256 = await sha256ForFile(file);
+  const signed = signReleaseChecksum(sha256);
 
   const uploadResponse = await fetch(upload.uploadUrl, {
     method: "POST",
@@ -78,7 +64,7 @@ async function uploadArtifact(file: File) {
   };
 }
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async function POST(request: Request) {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -102,7 +88,7 @@ export async function POST(request: Request) {
 
   if (system instanceof File) {
     return NextResponse.json(
-      { error: "Operating-system images are deployed through the A/B Raspberry Pi Connect OTA lane, not the app release lane." },
+      { error: "System bundles are too large to upload here. Host the bundle and add it to a release by URL." },
       { status: 400 },
     );
   }
@@ -132,4 +118,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json(result, { status: 201 });
-}
+});

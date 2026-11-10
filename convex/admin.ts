@@ -1,11 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import {
-  defaultRolloutRings,
-  fleetManagedGeneration,
   isFleetManagedDevice,
   commandQueuePolicy,
+  releaseVersionPattern,
   requiresFleetManagedDevice,
-  rolloutRingForIndex,
+  supportsSystemBundles,
 } from "@showroom/contracts";
 
 import type { Doc, Id } from "./_generated/dataModel";
@@ -14,54 +13,16 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import * as showroom from "./showroom";
 import { deviceCredentialTtlMs } from "./credentialPolicy";
 import { serializeScreenDetail } from "./screenSerialization";
+import { startReleaseRollout } from "./fleet";
 import {
   hashValue,
+  isPlatformOrg,
+  platformOrgIds,
   randomToken,
   requireAdmin,
+  requirePlatformAdmin,
   requireOrgIdentity,
 } from "./lib";
-
-const defaultFailureThresholdPercent = 10;
-
-function releaseCommandPayload(release: Doc<"releases">) {
-  return {
-    version: release.version,
-    agentVersion: release.agentUrl ? release.version : undefined,
-    agentUrl: release.agentUrl,
-    agentSha256: release.agentSha256,
-    agentSignature: release.agentSignature,
-    playerVersion: release.playerUrl ? release.version : undefined,
-    playerUrl: release.playerUrl,
-    playerSha256: release.playerSha256,
-    playerSignature: release.playerSignature,
-    systemVersion: release.systemUrl ? release.version : undefined,
-    systemUrl: release.systemUrl,
-    systemSha256: release.systemSha256,
-    systemSignature: release.systemSignature,
-    signingKeyId: release.signingKeyId,
-  };
-}
-
-async function queueReleaseCommand(
-  ctx: any,
-  release: Doc<"releases">,
-  device: Doc<"devices">,
-  now: number,
-) {
-  if (!isFleetManagedDevice(device)) {
-    throw new ConvexError("Flash this device with the fleet appliance before deploying releases");
-  }
-  return ctx.db.insert("deviceCommands", {
-    organizationId: release.organizationId,
-    deviceId: device._id,
-    commandType: "update_release",
-    status: "queued",
-    payload: releaseCommandPayload(release),
-    queuedAt: now,
-    maxAttempts: 5,
-    idempotencyKey: `release:${release._id}:${device._id}`,
-  });
-}
 
 function expiresAtFromNow(now: number, ttlMs: number) {
   return now + ttlMs;
@@ -559,33 +520,7 @@ export const listScreens = query({
           ? await ctx.db.get(device.defaultPlaylistId)
           : await showroom.getDefaultPlaylist(ctx, orgId, device);
 
-        return {
-          id: device._id,
-          name: device.name ?? "Unnamed screen",
-          siteName: device.siteName ?? "Unassigned",
-          status: showroom.deriveDeviceStatus(device),
-          lastHeartbeatAt: new Date(device.lastHeartbeatAt ?? device._creationTime).toISOString(),
-          screenshotUrl: device.screenshotUrl ?? null,
-          currentPlaylistName:
-            device.currentPlaylistName ?? defaultPlaylist?.name ?? null,
-          manifestVersion: device.manifestVersion ?? null,
-          ...showroom.serializeLinkState(device),
-          desiredAgentVersion: device.desiredAgentVersion ?? null,
-          desiredPlayerVersion: device.desiredPlayerVersion ?? null,
-          agentVersion: device.agentVersion ?? null,
-          appVersion: device.appVersion ?? null,
-          releaseChannel: device.releaseChannel ?? null,
-          hardwareProfile: device.hardwareProfile ?? null,
-          currentAssetId: device.currentAssetId ?? null,
-          fleetManagementState: isFleetManagedDevice(device) ? "managed" : "legacy",
-          applianceGeneration: device.applianceGeneration ?? null,
-          agentProtocolVersion: device.agentProtocolVersion ?? null,
-          capabilities: device.capabilities ?? [],
-          applianceActivatedAt: device.applianceActivatedAt
-            ? new Date(device.applianceActivatedAt).toISOString()
-            : null,
-          health: device.health ?? null,
-        };
+        return serializeScreenDetail(device, defaultPlaylist);
       }),
     );
   },
@@ -722,6 +657,23 @@ export const listLibraryFolders = query({
   },
 });
 
+export const getWorkspaceAccess = query({
+  args: {},
+  returns: v.object({
+    isPlatformOperator: v.boolean(),
+    canDeployToAllWorkspaces: v.boolean(),
+  }),
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgIdentity(ctx);
+    return {
+      isPlatformOperator: isPlatformOrg(orgId),
+      // Only a configured platform workspace can reach other workspaces'
+      // screens; without the gate every workspace manages its own.
+      canDeployToAllWorkspaces: platformOrgIds() !== null && isPlatformOrg(orgId),
+    };
+  },
+});
+
 export const listReleases = query({
   args: {},
   returns: v.array(v.any()),
@@ -747,6 +699,8 @@ export const listReleases = query({
     const deviceNameById = new Map(
       devices.map((device) => [device._id, device.name ?? device.siteName ?? "Unnamed screen"]),
     );
+    const count = (entries: typeof rollouts, status: (typeof rollouts)[number]["status"]) =>
+      entries.filter((entry) => entry.status === status).length;
 
     return releases.map((release) => {
       const releaseRollouts = rollouts.filter((entry) => entry.releaseId === release._id);
@@ -773,15 +727,25 @@ export const listReleases = query({
         updatedAt: new Date(release.updatedAt).toISOString(),
         rolloutSummary: {
           total: releaseRollouts.length,
-          queued: releaseRollouts.filter((entry) => entry.status === "queued").length,
-          inProgress: releaseRollouts.filter((entry) => entry.status === "in_progress").length,
-          succeeded: releaseRollouts.filter((entry) => entry.status === "succeeded").length,
-          failed: releaseRollouts.filter((entry) => entry.status === "failed").length,
+          queued: count(releaseRollouts, "queued"),
+          inProgress: count(releaseRollouts, "in_progress"),
+          succeeded: count(releaseRollouts, "succeeded"),
+          failed: count(releaseRollouts, "failed"),
+          waiting: count(releaseRollouts, "waiting"),
+          paused: count(releaseRollouts, "paused"),
         },
-        latestRollouts: releaseRollouts.slice(0, 8).map((entry) => ({
+        // Problems first, so a failed screen is never hidden behind the cap.
+        latestRollouts: [...releaseRollouts]
+          .sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed"))
+          .slice(0, 12)
+          .map((entry) => ({
           id: entry._id,
           deviceId: entry.deviceId,
-          deviceName: deviceNameById.get(entry.deviceId) ?? "Unknown screen",
+          // Other workspaces' screen names stay private to them.
+          deviceName: deviceNameById.get(entry.deviceId) ??
+            (entry.deviceOrganizationId ? "Screen in another workspace" : "Removed screen"),
+          ring: entry.ring ?? 0,
+          includesSystem: entry.includesSystem ?? false,
           status: entry.status,
           queuedAt: new Date(entry.queuedAt).toISOString(),
           startedAt: entry.startedAt ? new Date(entry.startedAt).toISOString() : null,
@@ -1094,6 +1058,14 @@ export const importYouTubePlaylist = mutation({
   },
 });
 
+function assertReleaseVersion(version: string) {
+  if (!releaseVersionPattern.test(version)) {
+    throw new ConvexError(
+      "Use only letters, numbers, dots, dashes and underscores in the version. Screens reject anything else.",
+    );
+  }
+}
+
 export const createRelease = mutation({
   args: {
     name: v.string(),
@@ -1112,12 +1084,13 @@ export const createRelease = mutation({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const identity = await requireAdmin(ctx);
-    if (args.systemUrl) {
-      throw new ConvexError("Operating-system updates must use the A/B OTA lane");
-    }
+    const identity = await requirePlatformAdmin(ctx);
     if (!args.playerUrl && !args.agentUrl && !args.systemUrl) {
       throw new ConvexError("Provide a player URL, agent URL, and/or system bundle URL");
+    }
+    assertReleaseVersion(args.version);
+    if (args.systemUrl && !/^https:\/\//i.test(args.systemUrl)) {
+      throw new ConvexError("The system bundle URL must start with https://");
     }
     for (const [url, checksum, signature, label] of [
       [args.playerUrl, args.playerSha256, args.playerSignature, "player"],
@@ -1195,7 +1168,7 @@ export const generateReleaseArtifactUploadUrl = mutation({
     expiresInSeconds: v.number(),
   }),
   handler: async (ctx, _args) => {
-    await requireAdmin(ctx);
+    await requirePlatformAdmin(ctx);
 
     return {
       uploadUrl: await ctx.storage.generateUploadUrl(),
@@ -1249,13 +1222,16 @@ export const publishReleaseArtifacts = mutation({
     ),
   }),
   handler: async (ctx, args) => {
-    const identity = await requireAdmin(ctx);
+    const identity = await requirePlatformAdmin(ctx);
     if (!args.player && !args.agent && !args.system) {
       throw new ConvexError("Provide a player artifact, agent artifact, and/or system bundle");
     }
     if (args.system) {
-      throw new ConvexError("Operating-system updates must use the A/B OTA lane");
+      throw new ConvexError(
+        "System bundles are too large to upload here. Host the bundle and add it to a release by URL.",
+      );
     }
+    assertReleaseVersion(args.version);
     const signingKeyIds = [
       args.player?.signingKeyId,
       args.agent?.signingKeyId,
@@ -1310,64 +1286,14 @@ export const publishReleaseArtifacts = mutation({
     let rolloutTotal = 0;
 
     if (args.deployToAll || (args.deviceIds && args.deviceIds.length > 0)) {
-      const orgDevices = await ctx.db
-        .query("devices")
-        .withIndex("by_org", (q) => q.eq("organizationId", identity.orgId))
-        .take(2_000);
-
-      const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
-      const selectedDevices = requestedIds
-        ? orgDevices.filter((device) => requestedIds.has(device._id))
-        : orgDevices;
-      const targetDevices = selectedDevices.filter(isFleetManagedDevice);
-
-      if (!targetDevices.length) {
-        throw new ConvexError("No flashed fleet appliances are eligible for this rollout");
-      }
-      if (requestedIds && targetDevices.length !== requestedIds.size) {
-        throw new ConvexError("One or more selected devices must be flashed before joining a rollout");
-      }
-      rolloutTotal = targetDevices.length;
-
-      let queuedDeviceCount = 0;
-      for (const [index, device] of targetDevices.entries()) {
-        const ring = rolloutRingForIndex(index, targetDevices.length);
-        const commandId = ring === 0
-          ? await queueReleaseCommand(ctx, release, device, now)
-          : undefined;
-        if (commandId) queuedDeviceCount += 1;
-
-        await ctx.db.insert("releaseRollouts", {
-          organizationId: identity.orgId,
-          releaseId: release._id,
-          deviceId: device._id,
-          commandId,
-          ring,
-          status: commandId ? "queued" : "waiting",
-          applianceGeneration: fleetManagedGeneration,
-          queuedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-        await ctx.db.patch(device._id, {
-          desiredAgentVersion: release.agentUrl ? release.version : device.desiredAgentVersion,
-          desiredPlayerVersion: release.playerUrl ? release.version : device.desiredPlayerVersion,
-          updatedAt: now,
-        });
-      }
-
+      const started = await startReleaseRollout(ctx, release, {
+        deviceIds: args.deviceIds?.length ? args.deviceIds : undefined,
+      });
+      rolloutTotal = started.targetDeviceCount;
       rollout = {
-        queuedDeviceCount,
+        queuedDeviceCount: started.queuedDeviceCount,
         releaseId: release._id,
       };
-      await ctx.db.patch(release._id, {
-        rolloutStatus: "active",
-        rolloutRings: [...defaultRolloutRings],
-        currentRing: 0,
-        failureThresholdPercent: defaultFailureThresholdPercent,
-        rolloutStartedAt: now,
-        updatedAt: now,
-      });
     }
 
     return {
@@ -1406,75 +1332,37 @@ export const deployRelease = mutation({
   args: {
     releaseId: v.id("releases"),
     deviceIds: v.optional(v.array(v.id("devices"))),
+    // Platform workspaces only: also reach screens in every other workspace.
+    allWorkspaces: v.optional(v.boolean()),
   },
   returns: v.object({
     queuedDeviceCount: v.number(),
+    targetDeviceCount: v.number(),
     releaseId: v.id("releases"),
   }),
   handler: async (ctx, args) => {
-    const { orgId } = await requireAdmin(ctx);
+    const { orgId } = await requirePlatformAdmin(ctx);
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.organizationId !== orgId) {
       throw new ConvexError("Release not found");
     }
-
-    const orgDevices = await ctx.db
-      .query("devices")
-      .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-      .take(2_000);
-
-    const requestedIds = args.deviceIds?.length ? new Set(args.deviceIds) : null;
-    const selectedDevices = requestedIds
-      ? orgDevices.filter((device) => requestedIds.has(device._id))
-      : orgDevices;
-    const targetDevices = selectedDevices.filter(isFleetManagedDevice);
-
-    if (!targetDevices.length) {
-      throw new ConvexError("No flashed fleet appliances are eligible for this rollout");
+    if (args.allWorkspaces && platformOrgIds() === null) {
+      throw new ConvexError(
+        "Deploying to every workspace needs SHOWROOM_PLATFORM_ORG_IDS to be set",
+      );
     }
-    if (requestedIds && targetDevices.length !== requestedIds.size) {
-      throw new ConvexError("One or more selected devices must be flashed before joining a rollout");
+    if (args.allWorkspaces && args.deviceIds?.length) {
+      throw new ConvexError("Pick screens or every workspace, not both");
     }
 
-    const now = Date.now();
-    let queuedDeviceCount = 0;
-    for (const [index, device] of targetDevices.entries()) {
-      const ring = rolloutRingForIndex(index, targetDevices.length);
-      const commandId = ring === 0
-        ? await queueReleaseCommand(ctx, release, device, now)
-        : undefined;
-      if (commandId) queuedDeviceCount += 1;
-
-      await ctx.db.insert("releaseRollouts", {
-        organizationId: orgId,
-        releaseId: release._id,
-        deviceId: device._id,
-        commandId,
-        ring,
-        status: commandId ? "queued" : "waiting",
-        applianceGeneration: fleetManagedGeneration,
-        queuedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.patch(device._id, {
-        desiredAgentVersion: release.agentUrl ? release.version : device.desiredAgentVersion,
-        desiredPlayerVersion: release.playerUrl ? release.version : device.desiredPlayerVersion,
-        updatedAt: now,
-      });
-    }
-
-    await ctx.db.patch(release._id, {
-      rolloutStatus: "active",
-      rolloutRings: [...defaultRolloutRings],
-      currentRing: 0,
-      failureThresholdPercent: defaultFailureThresholdPercent,
-      rolloutStartedAt: now,
-      updatedAt: now,
+    const started = await startReleaseRollout(ctx, release, {
+      deviceIds: args.deviceIds?.length ? args.deviceIds : undefined,
+      allWorkspaces: args.allWorkspaces,
     });
 
     return {
-      queuedDeviceCount,
+      queuedDeviceCount: started.queuedDeviceCount,
+      targetDeviceCount: started.targetDeviceCount,
       releaseId: release._id,
     };
   },
@@ -1506,7 +1394,12 @@ export const cancelReleaseRollout = internalMutation({
     let cancelledCommandCount = 0;
 
     for (const rollout of activeRollouts) {
-      if (rollout.status !== "queued" && rollout.status !== "in_progress") {
+      if (
+        rollout.status !== "queued" &&
+        rollout.status !== "in_progress" &&
+        rollout.status !== "waiting" &&
+        rollout.status !== "paused"
+      ) {
         continue;
       }
 
@@ -1826,29 +1719,63 @@ export const removeScreen = mutation({
   },
 });
 
+// Claim codes are 6 characters, so cap guesses per workspace.
+const maxClaimFailures = 10;
+const claimLockoutWindowMs = 15 * 60_000;
+
 export const claimDeviceByCode = mutation({
   args: {
     claimCode: v.string(),
     name: v.string(),
     siteName: v.string(),
   },
-  returns: v.object({
-    deviceId: v.id("devices"),
-    credential: v.string(),
-  }),
+  returns: v.union(
+    v.object({
+      deviceId: v.id("devices"),
+      credential: v.string(),
+    }),
+    v.object({
+      error: v.union(v.literal("invalid_code"), v.literal("too_many_attempts")),
+    }),
+  ),
   handler: async (ctx, args) => {
     const { orgId } = await requireAdmin(ctx);
-    const registration = await ctx.db
-      .query("deviceRegistrations")
-      .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
-      .first();
+    const now = Date.now();
+    const recentFailures = await ctx.db
+      .query("claimFailures")
+      .withIndex("by_org_and_failed_at", (q) =>
+        q.eq("organizationId", orgId).gt("failedAt", now - claimLockoutWindowMs),
+      )
+      .take(maxClaimFailures);
+    if (recentFailures.length >= maxClaimFailures) {
+      return { error: "too_many_attempts" as const };
+    }
 
-    if (
-      !registration ||
-      registration.claimedDeviceId ||
-      (typeof registration.expiresAt === "number" && registration.expiresAt <= Date.now())
-    ) {
-      throw new ConvexError("Invalid claim code");
+    // Codes are random, so an old expired registration can share a code with
+    // the screen being paired now; take the one that is still open.
+    const registration = (
+      await ctx.db
+        .query("deviceRegistrations")
+        .withIndex("by_claim_code", (q) => q.eq("claimCode", args.claimCode))
+        .order("desc")
+        .take(10)
+    ).find(
+      (entry) =>
+        !entry.claimedDeviceId &&
+        !(typeof entry.expiresAt === "number" && entry.expiresAt <= now),
+    );
+
+    if (!registration) {
+      // Returned rather than thrown so the failure record is kept.
+      await ctx.db.insert("claimFailures", { organizationId: orgId, failedAt: now });
+      const expired = await ctx.db
+        .query("claimFailures")
+        .withIndex("by_org_and_failed_at", (q) =>
+          q.eq("organizationId", orgId).lt("failedAt", now - claimLockoutWindowMs),
+        )
+        .take(50);
+      for (const failure of expired) await ctx.db.delete(failure._id);
+      return { error: "invalid_code" as const };
     }
 
     const credential = randomToken(32);
@@ -1924,12 +1851,24 @@ export const enqueueDeviceCommand = mutation({
     ) {
       throw new ConvexError("Admin role required");
     }
+    if (args.commandType === "update_release" && !isPlatformOrg(orgId)) {
+      throw new ConvexError("Releases are managed by the platform operator");
+    }
     const device = await ctx.db.get(args.deviceId);
     if (!device || device.organizationId !== orgId) {
       throw new ConvexError("Device not found");
     }
     if (requiresFleetManagedDevice(args.commandType) && !isFleetManagedDevice(device)) {
       throw new ConvexError("Flash this device with the fleet appliance before using this command");
+    }
+    if (
+      args.commandType === "update_release" &&
+      args.payload?.systemUrl &&
+      !supportsSystemBundles(device)
+    ) {
+      // Agents without system_bundles reject the whole release, not just the
+      // system part.
+      throw new ConvexError("Only screens running Showroom OS can install system updates");
     }
 
     const now = Date.now();
@@ -2082,9 +2021,21 @@ export const deletePlaylist = mutation({
       .query("scheduleTargets")
       .withIndex("by_org", (q) => q.eq("organizationId", orgId))
       .collect();
-    await Promise.all(
-      targets.filter((t) => t.playlistId === args.playlistId).map((t) => ctx.db.delete(t._id)),
-    );
+    // A schedule plays exactly one playlist, so it goes with it. Left behind,
+    // it would show in the dashboard as a schedule that plays nothing.
+    const orphanedScheduleIds = new Set<Id<"schedules">>();
+    for (const target of targets) {
+      if (target.playlistId !== args.playlistId) continue;
+      await ctx.db.delete(target._id);
+      orphanedScheduleIds.add(target.scheduleId);
+    }
+    for (const target of targets) {
+      if (target.playlistId !== args.playlistId) orphanedScheduleIds.delete(target.scheduleId);
+    }
+    for (const scheduleId of orphanedScheduleIds) {
+      const schedule = await ctx.db.get(scheduleId);
+      if (schedule && schedule.organizationId === orgId) await ctx.db.delete(scheduleId);
+    }
 
     const affectedDeviceIds = new Set<Id<"devices">>();
     const devices = await listOrgDevices(ctx, orgId);
@@ -2189,6 +2140,11 @@ export const deleteMediaAsset = mutation({
 
     await ctx.db.delete(args.assetId);
     await recompileDevicesForPlaylists(ctx, orgId, affectedPlaylistIds);
+    if (asset.storageId) {
+      // Free the uploaded file; screens keep playing their cached copy until
+      // the new manifest reaches them.
+      await ctx.storage.delete(asset.storageId).catch(() => undefined);
+    }
     return null;
   },
 });

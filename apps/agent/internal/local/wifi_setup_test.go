@@ -357,7 +357,10 @@ func TestPairingScreenGetsADashboardLinkWithTheCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = store.Update(func(next *state.DeviceState) { next.ClaimCode = "K7Q2XM" })
+	_ = store.Update(func(next *state.DeviceState) {
+		next.ClaimCode = "K7Q2XM"
+		next.LastCloudContactAt = time.Now().UTC().Format(time.RFC3339)
+	})
 	server := NewServer(config.Config{APIBaseURL: "https://screen.example.com/"}, store)
 
 	response := httptest.NewRecorder()

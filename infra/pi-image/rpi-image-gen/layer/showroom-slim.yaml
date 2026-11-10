@@ -5,7 +5,7 @@
 # X-Env-Layer-Desc: Digital Curator signage appliance without X11 or Chromium.
 #  The native player draws directly to the display; there is no legacy
 #  browser kiosk to fall back to. Build with SHOWROOM_IMAGE_VARIANT=slim.
-# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota
+# X-Env-Layer-Requires: device-user-admin,rpi-connect-lite,rpi-connect-ota,showroom-tailscale
 # METAEND
 ---
 # Must match showroom.yaml minus chromium, openbox, python3-xdg, scrot,

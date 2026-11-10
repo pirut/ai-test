@@ -39,6 +39,191 @@ export function shouldPauseRollout(failed: number, total: number, thresholdPerce
   return total > 0 && failed > 0 && (failed / total) * 100 >= thresholdPercent;
 }
 
+// Showroom OS screens install signed A/B OS bundles sent as a release's
+// systemUrl and say so with this capability. Every other agent rejects a
+// release that carries a system part, so it is only ever sent to these.
+export const systemBundlesCapability = "system_bundles";
+
+export function supportsSystemBundles(device: FleetManagedDeviceDescriptor) {
+  return isFleetManagedDevice(device) &&
+    Boolean(device.capabilities?.includes(systemBundlesCapability));
+}
+
+export type ReleaseArtifacts = {
+  version: string;
+  agentUrl?: string | null;
+  agentSha256?: string | null;
+  agentSignature?: string | null;
+  playerUrl?: string | null;
+  playerSha256?: string | null;
+  playerSignature?: string | null;
+  systemUrl?: string | null;
+  systemSha256?: string | null;
+  systemSignature?: string | null;
+  signingKeyId?: string | null;
+};
+
+// The update_release payload for one screen: the player and agent parts for
+// any fleet-managed screen, plus the system bundle only when the screen can
+// install it. Null when nothing in the release applies to this screen (a
+// system-only release and a screen that is not on Showroom OS).
+export function releaseCommandPayloadForDevice(
+  release: ReleaseArtifacts,
+  device: FleetManagedDeviceDescriptor,
+) {
+  if (!isFleetManagedDevice(device)) {
+    return null;
+  }
+  const withSystem = Boolean(release.systemUrl) && supportsSystemBundles(device);
+  if (!release.agentUrl && !release.playerUrl && !withSystem) {
+    return null;
+  }
+  return {
+    version: release.version,
+    agentVersion: release.agentUrl ? release.version : undefined,
+    agentUrl: release.agentUrl ?? undefined,
+    agentSha256: release.agentUrl ? release.agentSha256 ?? undefined : undefined,
+    agentSignature: release.agentUrl ? release.agentSignature ?? undefined : undefined,
+    playerVersion: release.playerUrl ? release.version : undefined,
+    playerUrl: release.playerUrl ?? undefined,
+    playerSha256: release.playerUrl ? release.playerSha256 ?? undefined : undefined,
+    playerSignature: release.playerUrl ? release.playerSignature ?? undefined : undefined,
+    systemVersion: withSystem ? release.version : undefined,
+    systemUrl: withSystem ? release.systemUrl ?? undefined : undefined,
+    systemSha256: withSystem ? release.systemSha256 ?? undefined : undefined,
+    systemSignature: withSystem ? release.systemSignature ?? undefined : undefined,
+    signingKeyId: release.signingKeyId ?? undefined,
+  };
+}
+
+export type RolloutCandidate = FleetManagedDeviceDescriptor & {
+  id: string;
+  organizationId?: string | null;
+  lastHeartbeatAt?: number | null;
+};
+
+export type RolloutPlan<Device extends RolloutCandidate> =
+  | { ok: true; targets: Array<{ device: Device; ring: number; includesSystem: boolean }> }
+  | { ok: false; error: string };
+
+// Chooses the screens a rollout reaches and the ring each one lands in.
+// Screens the release does not apply to are left out (or refused when they
+// were picked by hand), and screens already receiving it are not queued twice.
+// The release's own workspace and recently seen screens go first, so the
+// canary ring is a screen the operator can watch.
+export function planReleaseRollout<Device extends RolloutCandidate>(input: {
+  release: ReleaseArtifacts;
+  releaseOrganizationId: string;
+  devices: Device[];
+  requestedIds?: readonly string[] | null;
+  // Screens with a rollout of this release still waiting, queued or running.
+  activeDeviceIds?: ReadonlySet<string>;
+}): RolloutPlan<Device> {
+  const requested = input.requestedIds?.length ? new Set(input.requestedIds) : null;
+  const selected = requested
+    ? input.devices.filter((device) => requested.has(device.id))
+    : input.devices;
+  const eligible = selected.filter(
+    (device) => releaseCommandPayloadForDevice(input.release, device) !== null,
+  );
+  const systemOnly = Boolean(input.release.systemUrl) &&
+    !input.release.agentUrl && !input.release.playerUrl;
+
+  if (requested && eligible.length !== requested.size) {
+    return {
+      ok: false,
+      error: systemOnly
+        ? "One or more selected screens cannot install system updates. Only screens running Showroom OS can."
+        : "One or more selected devices must be flashed before joining a rollout",
+    };
+  }
+  if (!eligible.length) {
+    return {
+      ok: false,
+      error: systemOnly
+        ? "No screens running Showroom OS are available for this system update"
+        : "No flashed fleet appliances are eligible for this rollout",
+    };
+  }
+
+  const fresh = eligible.filter((device) => !input.activeDeviceIds?.has(device.id));
+  if (!fresh.length) {
+    return { ok: false, error: "This release is already rolling out to every eligible screen" };
+  }
+
+  const ordered = [...fresh].sort((a, b) => {
+    const ownA = a.organizationId === input.releaseOrganizationId ? 0 : 1;
+    const ownB = b.organizationId === input.releaseOrganizationId ? 0 : 1;
+    if (ownA !== ownB) return ownA - ownB;
+    return (b.lastHeartbeatAt ?? 0) - (a.lastHeartbeatAt ?? 0);
+  });
+
+  return {
+    ok: true,
+    targets: ordered.map((device, index) => ({
+      device,
+      ring: rolloutRingForIndex(index, ordered.length),
+      includesSystem: Boolean(input.release.systemUrl) && supportsSystemBundles(device),
+    })),
+  };
+}
+
+// The agent builds file paths from the release version, so it only accepts
+// these characters; anything else fails on every screen.
+export const releaseVersionPattern = /^[A-Za-z0-9._-]+$/;
+
+// True when a screen's reported OS name (os-release PRETTY_NAME, for example
+// "Showroom OS 2026.11.09.42 (Buildroot 2026.02.3)") is the given version.
+export function osVersionMatches(osVersion: string | null | undefined, version: string) {
+  const wanted = version.trim();
+  if (!osVersion || !wanted) return false;
+  // The first token that starts with a digit is the OS version; later ones
+  // (the Buildroot release in brackets) are not.
+  const reported = osVersion.split(/[\s()]+/).find((token) => /^\d/.test(token));
+  return reported === wanted;
+}
+
+// A system bundle only takes effect after the screen restarts, and the screen
+// falls back to its previous OS if the new one fails its health check. The
+// install command therefore finishes before the outcome is known; the rollout
+// waits for the first heartbeat from an agent started after the install.
+export const systemUpdateConfirmTimeoutMs = 45 * 60_000;
+
+// The agent keeps its last health report on disk, so the first heartbeat
+// after a restart can still carry the OS version from before it. Both times
+// here come from the screen's own clock, so clock drift does not matter.
+export function healthCapturedSinceAgentStart(heartbeat: {
+  lastSeenAt?: unknown;
+  uptimeSeconds?: unknown;
+  health?: { capturedAt?: unknown } | null;
+}) {
+  const sentAt = typeof heartbeat.lastSeenAt === "string" ? Date.parse(heartbeat.lastSeenAt) : NaN;
+  const capturedAt =
+    typeof heartbeat.health?.capturedAt === "string" ? Date.parse(heartbeat.health.capturedAt) : NaN;
+  if (!Number.isFinite(sentAt) || !Number.isFinite(capturedAt) || typeof heartbeat.uptimeSeconds !== "number") {
+    return false;
+  }
+  return capturedAt >= sentAt - (heartbeat.uptimeSeconds + 1) * 1000;
+}
+
+export type SystemUpdateOutcome = "pending" | "confirmed" | "rolled_back" | "timed_out";
+
+export function systemUpdateOutcome(input: {
+  installedAt: number;
+  expectedVersion: string;
+  now: number;
+  // Heartbeat details; leave out when checking for a timeout only.
+  agentStartedAt?: number;
+  osVersion?: string | null;
+}): SystemUpdateOutcome {
+  const restarted =
+    typeof input.agentStartedAt === "number" && input.agentStartedAt > input.installedAt;
+  if (restarted && input.osVersion) {
+    return osVersionMatches(input.osVersion, input.expectedVersion) ? "confirmed" : "rolled_back";
+  }
+  return input.now - input.installedAt >= systemUpdateConfirmTimeoutMs ? "timed_out" : "pending";
+}
+
 export const orientationSchema = z.union([
   z.literal(0),
   z.literal(90),
@@ -120,13 +305,6 @@ export const releaseUpdatePayloadSchema = z
     path: ["agentUrl"],
   })
   .superRefine((value, context) => {
-    if (value.systemUrl) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Operating-system updates must use the A/B OTA lane",
-        path: ["systemUrl"],
-      });
-    }
     if ((value.agentUrl || value.playerUrl || value.systemUrl) && !value.signingKeyId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -242,7 +420,9 @@ export const heartbeatPayloadSchema = z.object({
     agentRestarts: z.number().int().nonnegative().optional(),
     playerRestarts: z.number().int().nonnegative().optional(),
     rollbackCount: z.number().int().nonnegative().optional(),
-  }).optional(),
+    // A malformed health report is dropped rather than rejecting the whole
+    // heartbeat, so the screen still shows as online.
+  }).optional().catch(undefined),
   // Sent by newer agents only. A malformed value is dropped rather than
   // rejecting the whole heartbeat, so the screen still shows as online.
   sync: z.object({
@@ -320,6 +500,12 @@ export const deviceSummarySchema = z.object({
   desiredManifestVersion: z.string().nullable().optional(),
   lastSyncAt: z.string().nullable().optional(),
   lastError: z.string().nullable().optional(),
+  // Showroom OS screens only: the OS the screen reports running, its active
+  // A/B slot, and the OS version last rolled out to it.
+  osVersion: z.string().nullable().optional(),
+  bootSlot: z.string().nullable().optional(),
+  desiredSystemVersion: z.string().nullable().optional(),
+  supportsSystemUpdates: z.boolean().optional(),
 });
 
 export const libraryFolderSchema = z.object({
@@ -373,6 +559,9 @@ export const releaseRolloutSchema = z.object({
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   message: z.string().nullable(),
+  ring: z.number().int().nonnegative().optional(),
+  // Which parts of the release this screen was sent.
+  includesSystem: z.boolean().optional(),
 });
 
 export const releaseSummarySchema = z.object({
@@ -401,6 +590,8 @@ export const releaseSummarySchema = z.object({
     inProgress: z.number().int().nonnegative(),
     succeeded: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative(),
+    waiting: z.number().int().nonnegative().optional(),
+    paused: z.number().int().nonnegative().optional(),
   }),
   latestRollouts: z.array(releaseRolloutSchema),
 });

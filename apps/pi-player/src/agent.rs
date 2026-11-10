@@ -28,6 +28,10 @@ pub struct WifiStatus {
     pub hotspot: Option<Hotspot>,
     #[serde(default)]
     pub connecting: bool,
+    /// A network cable carries the connection (`connected` is then true,
+    /// with no SSID unless Wi-Fi is joined too). Older agents send nothing.
+    #[serde(default)]
+    pub wired: bool,
     #[serde(default)]
     pub last_attempt: Option<Attempt>,
 }
@@ -116,6 +120,10 @@ pub struct PlayerState {
     /// filled in. Older agents send none.
     #[serde(default)]
     pub claim_qr: Vec<String>,
+    /// Whether the agent reached the service recently. Agents that do not
+    /// report it send nothing, and no offline badge is shown.
+    #[serde(default)]
+    pub online: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -148,6 +156,14 @@ impl std::fmt::Display for StateError {
             StateError::Other(message) => f.write_str(message),
         }
     }
+}
+
+#[derive(Debug)]
+pub enum WifiError {
+    /// The agent refused or failed the attempt, with a line for the screen.
+    Message(String),
+    /// No answer arrived (the attempt may still be running on the agent).
+    NoAnswer(String),
 }
 
 #[derive(Clone)]
@@ -249,24 +265,29 @@ impl Client {
         Ok(())
     }
 
-    pub fn configure_wifi(&self, ssid: &str, password: &str) -> Result<WifiStatus, String> {
+    pub fn configure_wifi(&self, ssid: &str, password: &str) -> Result<WifiStatus, WifiError> {
         let body = serde_json::to_vec(&WifiConfigureRequest { ssid, password })
-            .map_err(|e| e.to_string())?;
-        let response = self.request(
-            "POST",
-            "/local/wifi/configure",
-            Some(&body),
-            Duration::from_secs(60),
-        )?;
+            .map_err(|e| WifiError::NoAnswer(e.to_string()))?;
+        // The agent answers only after nmcli gives up (up to 45 s) and, on a
+        // failure, after it has rescanned and reopened the setup hotspot.
+        let response = self
+            .request(
+                "POST",
+                "/local/wifi/configure",
+                Some(&body),
+                Duration::from_secs(120),
+            )
+            .map_err(WifiError::NoAnswer)?;
         if response.status != 200 {
             let message = String::from_utf8_lossy(&response.body).trim().to_string();
-            return Err(if message.is_empty() {
-                format!("Wi-Fi setup failed (HTTP {})", response.status)
+            return Err(WifiError::Message(if message.is_empty() {
+                "Couldn't connect. Try again.".to_string()
             } else {
                 message
-            });
+            }));
         }
-        serde_json::from_slice(&response.body).map_err(|e| format!("invalid Wi-Fi status: {e}"))
+        serde_json::from_slice(&response.body)
+            .map_err(|e| WifiError::NoAnswer(format!("invalid Wi-Fi status: {e}")))
     }
 }
 
@@ -302,6 +323,14 @@ mod tests {
         let state: PlayerState = serde_json::from_slice(&response.body).unwrap();
         assert!(state.claimed);
         assert!(state.items.is_empty());
+        assert_eq!(state.online, None);
+        let state: PlayerState = serde_json::from_slice(
+            br#"{"online":false,"pendingItems":2,"wifi":{"supported":true,"connected":true,"wired":true}}"#,
+        )
+        .unwrap();
+        assert_eq!(state.online, Some(false));
+        assert_eq!(state.pending_items, 2);
+        assert!(state.wifi.unwrap().wired);
     }
 
     #[test]

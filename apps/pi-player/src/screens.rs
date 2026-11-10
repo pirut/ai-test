@@ -43,31 +43,39 @@ pub fn choose(state: Option<&PlayerState>) -> Screen {
         .claim_code
         .clone()
         .filter(|code| !code.trim().is_empty());
-    if !state.has_manifest {
+    if !state.claimed {
+        // An unpaired screen (new, or removed from its account) shows setup
+        // or pairing, never content left over from a previous owner, even if
+        // a manifest file is still on disk.
         let offline = state.wifi.as_ref().is_some_and(|wifi| !wifi.connected);
-        if !state.claimed && claim_code.is_none() && offline {
+        if claim_code.is_none() && offline {
             return Screen::WifiSetup;
         }
-        if !state.claimed {
-            let qr = if claim_code.is_some() {
-                state.claim_qr.clone()
-            } else {
-                Vec::new()
-            };
-            return Screen::Claim {
-                code: claim_code,
-                qr,
-            };
-        }
+        let qr = if claim_code.is_some() {
+            state.claim_qr.clone()
+        } else {
+            Vec::new()
+        };
+        return Screen::Claim {
+            code: claim_code,
+            qr,
+        };
+    }
+    if !state.has_manifest {
+        // Paired with nothing saved yet: the agent's count tells a first
+        // download from "nothing assigned" (older agents send no count).
         return Screen::Waiting {
-            downloading: false,
+            downloading: state.pending_items > 0,
             error: state.last_error.clone(),
         };
     }
     if state.items.is_empty() {
+        // An empty manifest (all content removed, nothing assigned) is a
+        // normal state: no error line, only "choose a playlist".
+        let downloading = state.pending_items > 0;
         return Screen::Waiting {
-            downloading: state.pending_items > 0,
-            error: state.last_error.clone(),
+            downloading,
+            error: state.last_error.clone().filter(|_| downloading),
         };
     }
     Screen::Playing
@@ -88,6 +96,73 @@ pub fn escape(text: &str) -> String {
         }
     }
     escaped
+}
+
+const CANNOT_REACH: &str = "Can't reach Digital Curator. Check this screen's internet connection.";
+const NO_WIFI: &str = "Wi-Fi isn't available on this screen. Connect an Ethernet cable instead.";
+
+/// Whether an agent error only says the service could not be reached.
+pub fn is_connectivity_error(raw: &str) -> bool {
+    let lower = raw.to_lowercase();
+    [
+        "dial tcp",
+        "no such host",
+        "name resolution",
+        "connection refused",
+        "connection reset",
+        "network is unreachable",
+        "no route to host",
+        "timeout",
+        "deadline exceeded",
+        "tls",
+        "x509",
+        "certificate",
+        "unexpected eof",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+        || lower.ends_with(": eof")
+}
+
+/// Turns the agent's last error into a line a customer can act on. Returns
+/// None for errors that need no line because the screen already says what to
+/// do. Unknown errors pass through, for a photo to support. The web player
+/// has the same table (friendlyError).
+pub fn friendly_error(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let lower = raw.to_lowercase();
+    if raw.is_empty() {
+        return None;
+    }
+    if lower.contains("not on the screen yet") {
+        return Some(
+            "Some content couldn't be downloaded. This screen will keep trying.".to_string(),
+        );
+    }
+    if lower.contains("no playable media assets") {
+        // "after 0 hydration failures" is a screen with nothing assigned yet.
+        if lower.contains("after 0 ") {
+            return None;
+        }
+        return Some(
+            "Some content couldn't be downloaded. This screen will keep trying.".to_string(),
+        );
+    }
+    if lower.contains("youtube") {
+        return Some(raw.to_string());
+    }
+    if lower.contains("media cache") {
+        return Some(
+            "This screen is out of storage for new content. Use a smaller playlist.".to_string(),
+        );
+    }
+    if lower.contains("credential") {
+        return None;
+    }
+    if is_connectivity_error(raw) {
+        return Some(CANNOT_REACH.to_string());
+    }
+    Some(raw.to_string())
 }
 
 /// Splits a six-character pairing code into two groups so it reads across a room.
@@ -139,10 +214,11 @@ pub fn render(
         Screen::Playing => return None,
         Screen::Starting => vec![
             background(),
-            text(960, 470, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
-            text(960, 550, 72, TEXT, "\\b1", "Starting player"),
+            text(960, 440, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
+            text(960, 530, 80, TEXT, "\\b1", "Starting player"),
+            text(960, 630, 38, MUTED, "", "This only takes a moment."),
         ],
-        Screen::Claim { code, qr } => claim_lines(code.as_deref(), qr, wifi),
+        Screen::Claim { code, qr } => claim_lines(code.as_deref(), qr, wifi, last_error),
         Screen::Waiting { downloading, error } => {
             let mut lines = vec![
                 background(),
@@ -154,26 +230,27 @@ pub fn render(
                     TEXT,
                     "\\b1",
                     if *downloading {
-                        "Downloading content"
+                        "Downloading your content"
                     } else {
                         "Waiting for content"
                     },
                 ),
-                text(
-                    960,
-                    610,
-                    38,
-                    MUTED,
-                    "",
-                    if *downloading {
-                        "Your playlist will start as soon as the first item is saved on this screen."
-                    } else {
-                        "Assign a playlist in Digital Curator. This screen will update automatically."
-                    },
-                ),
             ];
-            if let Some(error) = error.as_deref().filter(|e| !e.is_empty()) {
-                lines.push(text(960, 720, 28, ERROR, "", &truncate(error, 120)));
+            let copy: [&str; 2] = if *downloading {
+                [
+                    "Your playlist will start as soon as the first item",
+                    "is saved on this screen.",
+                ]
+            } else {
+                [
+                    "This screen is paired. Choose a playlist for it in Digital Curator",
+                    "and it will start playing automatically.",
+                ]
+            };
+            lines.push(text(960, 610, 38, MUTED, "", copy[0]));
+            lines.push(text(960, 664, 38, MUTED, "", copy[1]));
+            if let Some(error) = error.as_deref().and_then(friendly_error) {
+                lines.push(text(960, 770, 30, ERROR, "", &truncate(&error, 110)));
             }
             lines
         }
@@ -236,14 +313,16 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
         Some(("Connecting…".to_string(), TEXT))
     } else if let Some(message) = attempt_error {
         Some((message, ERROR))
-    } else if wifi.is_some_and(|w| !w.supported) {
-        Some((
-            "Wireless setup unavailable. Connect Ethernet instead.".to_string(),
-            ERROR,
-        ))
+    } else if wifi
+        .is_some_and(|w| !w.supported || w.error.as_deref().is_some_and(|e| !e.is_empty()))
+    {
+        Some((NO_WIFI.to_string(), ERROR))
     } else {
-        wifi.and_then(|w| w.error.clone())
-            .or(last_error.map(str::to_string))
+        // Not reaching the service is why this screen is showing, so only
+        // other errors earn a line.
+        last_error
+            .filter(|error| !is_connectivity_error(error))
+            .and_then(friendly_error)
             .map(|error| (error, ERROR))
     };
     if let Some((message, color)) = status {
@@ -252,18 +331,27 @@ fn wifi_lines(form: &WifiForm, wifi: Option<&WifiStatus>, last_error: Option<&st
     lines
 }
 
-fn claim_lines(code: Option<&str>, qr: &[String], wifi: Option<&WifiStatus>) -> Vec<String> {
+fn claim_lines(
+    code: Option<&str>,
+    qr: &[String],
+    wifi: Option<&WifiStatus>,
+    last_error: Option<&str>,
+) -> Vec<String> {
+    let has_code = code.is_some();
     let code = code
         .map(format_claim_code)
         .unwrap_or_else(|| "••• •••".to_string());
     let status = match wifi {
-        Some(wifi) if wifi.connected => match wifi.ssid.as_deref().filter(|s| !s.is_empty()) {
-            Some(ssid) => format!("Online via {}", truncate(ssid, 40)),
+        Some(wifi) if wifi.connected => match network_name(wifi) {
+            Some(name) => format!("Online via {name}"),
             None => "Online".to_string(),
         },
         Some(_) => "Waiting for network".to_string(),
         None => "Online".to_string(),
     };
+    if !has_code {
+        return no_code_lines(wifi, last_error);
+    }
     if qr.is_empty() {
         return vec![
             background(),
@@ -343,6 +431,82 @@ fn claim_lines(code: Option<&str>, qr: &[String], wifi: Option<&WifiStatus>) -> 
         TEXT,
         "\\b1",
         "Scan to add this screen",
+    ));
+    lines
+}
+
+/// What the screen is connected through, for "Online via …": the Wi-Fi name,
+/// or the cable on a wired screen (which has no name to show).
+fn network_name(wifi: &WifiStatus) -> Option<String> {
+    match wifi.ssid.as_deref().filter(|ssid| !ssid.is_empty()) {
+        Some(ssid) => Some(truncate(ssid, 40)),
+        None if wifi.wired => Some("a network cable".to_string()),
+        None => None,
+    }
+}
+
+/// An unpaired screen with no pairing code: either the first moments after
+/// boot, or the service has not answered for a while (the agent then holds
+/// the code back, since nobody could use it). Never the bare "••• •••".
+fn no_code_lines(wifi: Option<&WifiStatus>, last_error: Option<&str>) -> Vec<String> {
+    let problem = last_error.and_then(friendly_error);
+    let network = wifi.filter(|w| w.connected).and_then(network_name);
+    let mut lines = vec![
+        background(),
+        text(960, 360, 30, ACCENT, "\\b1\\fsp4", "PAIR THIS SCREEN"),
+    ];
+    if problem.is_some() {
+        lines.push(text(
+            960,
+            450,
+            80,
+            TEXT,
+            "\\b1",
+            "Can't reach Digital Curator",
+        ));
+        lines.push(text(
+            960,
+            550,
+            38,
+            MUTED,
+            "",
+            &match &network {
+                Some(ssid) => format!("This screen is on {ssid} but the service is not answering."),
+                None => "This screen is connected but the service is not answering.".to_string(),
+            },
+        ));
+        lines.push(text(
+            960,
+            604,
+            38,
+            MUTED,
+            "",
+            "Check that this network has internet access. The screen keeps retrying.",
+        ));
+        if let Some(detail) = problem.filter(|p| p != CANNOT_REACH) {
+            lines.push(text(960, 690, 28, ERROR, "", &truncate(&detail, 110)));
+        }
+    } else {
+        lines.push(text(960, 450, 80, TEXT, "\\b1", "Getting a pairing code"));
+        lines.push(text(
+            960,
+            550,
+            38,
+            MUTED,
+            "",
+            &match &network {
+                Some(ssid) => format!("Online via {ssid}. This only takes a moment."),
+                None => "This only takes a moment.".to_string(),
+            },
+        ));
+    }
+    lines.push(text(
+        960,
+        800,
+        30,
+        MUTED,
+        "",
+        "Wrong network? Plug in a USB keyboard and press Enter to choose a different Wi-Fi.",
     ));
     lines
 }
@@ -635,6 +799,63 @@ pub fn recovering_badge() -> String {
     .join("\n")
 }
 
+/// The small badge shown over media while the screen cannot reach the
+/// service, matching the web player's.
+pub fn offline_badge() -> String {
+    [
+        rect(1456, 1000, 440, 56, BACKGROUND, "&H38&"),
+        format!(
+            "{{\\an6\\pos(1874,1028)\\fs26\\bord0\\shad0\\1c{TEXT}}}Offline · playing saved content"
+        ),
+    ]
+    .join("\n")
+}
+
+/// Shown instead of a black screen while no item in the playlist will play.
+pub fn playback_failed() -> String {
+    [
+        background(),
+        text(960, 420, 30, ACCENT, "\\b1\\fsp4", "PLAYBACK PROBLEM"),
+        text(960, 510, 80, TEXT, "\\b1", "Can't play this content"),
+        text(
+            960,
+            610,
+            38,
+            MUTED,
+            "",
+            "Check this screen's playlist in Digital Curator, or upload the media again.",
+        ),
+        text(
+            960,
+            664,
+            38,
+            MUTED,
+            "",
+            "This screen keeps trying on its own.",
+        ),
+    ]
+    .join("\n")
+}
+
+/// Shown when the agent has not answered for a while after boot.
+pub fn starting_slowly() -> String {
+    [
+        background(),
+        text(960, 440, 30, ACCENT, "\\b1\\fsp4", "SCREEN READY"),
+        text(960, 530, 80, TEXT, "\\b1", "Starting player"),
+        text(960, 630, 38, MUTED, "", "This is taking longer than usual."),
+        text(
+            960,
+            684,
+            38,
+            MUTED,
+            "",
+            "If nothing changes in a few minutes, unplug this screen's power and plug it back in.",
+        ),
+    ]
+    .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,6 +903,165 @@ mod tests {
                 qr: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn an_unpaired_screen_never_plays_leftover_content() {
+        let mut current = state();
+        current.has_manifest = true;
+        current.items.push(Item {
+            id: "i".into(),
+            asset_id: "a".into(),
+            asset_type: "video".into(),
+            title: String::new(),
+            local_path: "/c/a.mp4".into(),
+            duration_seconds: None,
+        });
+        assert_eq!(
+            choose(Some(&current)),
+            Screen::Claim {
+                code: None,
+                qr: Vec::new(),
+            }
+        );
+        current.claimed = true;
+        assert_eq!(choose(Some(&current)), Screen::Playing);
+    }
+
+    #[test]
+    fn agent_errors_become_lines_a_customer_can_act_on() {
+        let dns = "Post \"https://app.example/api/device/register\": dial tcp: lookup app.example: no such host";
+        assert!(is_connectivity_error(dns));
+        assert_eq!(friendly_error(dns).as_deref(), Some(CANNOT_REACH));
+        assert_eq!(
+            friendly_error("no playable media assets were available after 0 hydration failures"),
+            None
+        );
+        assert!(friendly_error(
+            "no playable media assets were available after 2 hydration failures"
+        )
+        .unwrap()
+        .contains("couldn't be downloaded"));
+        assert_eq!(friendly_error("  "), None);
+        assert_eq!(
+            friendly_error("device credential was rejected (1): 401"),
+            None
+        );
+        assert_eq!(
+            friendly_error("something new").as_deref(),
+            Some("something new")
+        );
+
+        // Waiting for content with nothing assigned shows no error line.
+        let waiting = Screen::Waiting {
+            downloading: false,
+            error: Some(
+                "no playable media assets were available after 0 hydration failures".into(),
+            ),
+        };
+        let events = render(&waiting, &WifiForm::default(), None, None).unwrap();
+        assert!(!events.contains("hydration"));
+        assert!(events.contains("Choose a playlist for it in Digital Curator"));
+
+        // The Wi-Fi screen does not repeat that the service is unreachable.
+        let wifi = WifiStatus {
+            supported: true,
+            ..Default::default()
+        };
+        let events = render(
+            &Screen::WifiSetup,
+            &WifiForm::default(),
+            Some(&wifi),
+            Some(dns),
+        )
+        .unwrap();
+        assert!(!events.contains("dial tcp") && !events.contains("Can't reach"));
+    }
+
+    #[test]
+    fn claim_screen_without_a_code_says_why() {
+        let waiting = Screen::Claim {
+            code: None,
+            qr: Vec::new(),
+        };
+        let events = render(&waiting, &WifiForm::default(), None, None).unwrap();
+        assert!(events.contains("Getting a pairing code"));
+        assert!(!events.contains("•••"));
+        let wifi = WifiStatus {
+            supported: true,
+            connected: true,
+            ssid: Some("Guest".into()),
+            ..Default::default()
+        };
+        let events = render(
+            &waiting,
+            &WifiForm::default(),
+            Some(&wifi),
+            Some("Post \"https://x/api\": dial tcp 1.2.3.4:443: i/o timeout"),
+        )
+        .unwrap();
+        assert!(events.contains("Can't reach Digital Curator"));
+        assert!(events.contains("This screen is on Guest"));
+        assert!(events.contains("keeps retrying"));
+        assert!(events.contains("press Enter to choose a different Wi-Fi"));
+        assert!(!events.contains("dial tcp") && !events.contains("•••"));
+    }
+
+    #[test]
+    fn a_first_download_and_a_cabled_screen_read_sensibly() {
+        let mut current = state();
+        current.claimed = true;
+        current.pending_items = 3;
+        let screen = choose(Some(&current));
+        let events = render(&screen, &WifiForm::default(), None, None).unwrap();
+        assert!(events.contains("Downloading your content"));
+        assert!(!events.contains("Choose a playlist"));
+
+        let cable = WifiStatus {
+            supported: true,
+            connected: true,
+            wired: true,
+            ..Default::default()
+        };
+        let mut unpaired = state();
+        unpaired.wifi = Some(cable.clone());
+        // On a cable with no code yet: pairing, never Wi-Fi setup.
+        let screen = choose(Some(&unpaired));
+        assert_eq!(
+            screen,
+            Screen::Claim {
+                code: None,
+                qr: Vec::new()
+            }
+        );
+        let events = render(&screen, &WifiForm::default(), Some(&cable), None).unwrap();
+        assert!(events.contains("Online via a network cable."));
+        let with_code = Screen::Claim {
+            code: Some("K7Q2XM".into()),
+            qr: Vec::new(),
+        };
+        let events = render(&with_code, &WifiForm::default(), Some(&cable), None).unwrap();
+        assert!(events.contains("Online via a network cable"));
+    }
+
+    #[test]
+    fn an_empty_manifest_waits_for_a_playlist_without_an_error() {
+        let mut current = state();
+        current.claimed = true;
+        current.has_manifest = true;
+        current.last_error = Some("1 of 2 items are not on the screen yet: x".into());
+        assert_eq!(
+            choose(Some(&current)),
+            Screen::Waiting {
+                downloading: false,
+                error: None
+            }
+        );
+        current.pending_items = 1;
+        let screen = choose(Some(&current));
+        let events = render(&screen, &WifiForm::default(), None, None).unwrap();
+        assert!(events.contains("Downloading your content"));
+        assert!(events.contains("couldn't be downloaded"));
     }
 
     #[test]

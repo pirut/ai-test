@@ -1,0 +1,211 @@
+#!/bin/bash
+# RAUC custom bootloader backend for the Raspberry Pi firmware's tryboot A/B.
+#
+# autoboot.txt on partition 1 names the committed boot partition under [all]
+# and the one to try under [tryboot]. After an install, showroom-reboot
+# reboots with "0 tryboot", which boots [tryboot] exactly once; any later
+# reset, including the hardware watchdog, returns to [all]. Marking the tried
+# slot good makes it the [all] slot. Slot A is boot partition 2 with root
+# partition 5, slot B is boot partition 3 with root partition 6.
+#
+# Usage (called by RAUC): get-primary | set-primary SLOT | get-state SLOT |
+#                         set-state SLOT good|bad | get-current
+set -euo pipefail
+
+DISK_ID=53484f57
+AUTOBOOT_DEVICE="/dev/disk/by-partuuid/${DISK_ID}-01"
+STATE_DIR=/data/rauc
+PENDING="${STATE_DIR}/tryboot-pending"
+ATTEMPTED="${STATE_DIR}/tryboot-attempted"
+MOUNT_DIR=""
+
+cleanup() {
+  if [[ -n "${MOUNT_DIR}" ]]; then
+    umount "${MOUNT_DIR}" 2>/dev/null || true
+    rmdir "${MOUNT_DIR}" 2>/dev/null || true
+  fi
+}
+
+fail() {
+  echo "rauc-tryboot-backend: $*" >&2
+  cleanup
+  exit 1
+}
+trap cleanup EXIT
+
+partition_of() {
+  case "$1" in
+    A) echo 2 ;;
+    B) echo 3 ;;
+    *) fail "unknown slot '$1'" ;;
+  esac
+}
+
+slot_of() {
+  case "$1" in
+    2) echo A ;;
+    3) echo B ;;
+    *) fail "unknown boot partition '$1'" ;;
+  esac
+}
+
+other_partition() {
+  if [[ "$1" == 2 ]]; then echo 3; else echo 2; fi
+}
+
+mount_vfat() {
+  MOUNT_DIR="$(mktemp -d /run/showroom-boot.XXXXXX)"
+  mount -t vfat -o "$2" "$1" "${MOUNT_DIR}"
+}
+
+unmount_vfat() {
+  sync
+  umount "${MOUNT_DIR}"
+  rmdir "${MOUNT_DIR}"
+  MOUNT_DIR=""
+}
+
+# Prints the boot partition in [all] of autoboot.txt.
+committed_partition() {
+  local section="" key value result=""
+  mount_vfat "${AUTOBOOT_DEVICE}" ro
+  while IFS='=' read -r key value || [[ -n "${key}" ]]; do
+    key="${key//[[:space:]]/}"
+    value="${value//[[:space:]]/}"
+    case "${key}" in
+      \[*\]) section="${key}" ;;
+      boot_partition) if [[ "${section}" == "[all]" ]]; then result="${value}"; fi ;;
+    esac
+  done <"${MOUNT_DIR}/autoboot.txt"
+  unmount_vfat
+  [[ "${result}" == 2 || "${result}" == 3 ]] || fail "autoboot.txt has no usable [all] boot_partition"
+  echo "${result}"
+}
+
+write_autoboot() {
+  local committed="$1" tryboot="$2"
+  mount_vfat "${AUTOBOOT_DEVICE}" rw
+  cat >"${MOUNT_DIR}/autoboot.new" <<AUTOBOOT
+# Raspberry Pi firmware A/B selection, rewritten by the RAUC tryboot backend
+# (/usr/libexec/showroom/rauc-tryboot-backend). [all] is the committed slot;
+# a "0 tryboot" reboot tries [tryboot] once and falls back to [all].
+[all]
+tryboot_a_b=1
+boot_partition=${committed}
+[tryboot]
+boot_partition=${tryboot}
+AUTOBOOT
+  sync
+  mv -f "${MOUNT_DIR}/autoboot.new" "${MOUNT_DIR}/autoboot.txt"
+  unmount_vfat
+}
+
+# The slot's cmdline.txt must point at its own root partition. Every boot
+# partition carries cmdline-A.txt and cmdline-B.txt; RAUC writes the same boot
+# image into either slot, so pick the matching one here.
+select_cmdline() {
+  local slot="$1"
+  mount_vfat "/dev/disk/by-partuuid/${DISK_ID}-0$(partition_of "${slot}")" rw
+  [[ -s "${MOUNT_DIR}/cmdline-${slot}.txt" ]] || fail "boot slot ${slot} has no cmdline-${slot}.txt"
+  cp "${MOUNT_DIR}/cmdline-${slot}.txt" "${MOUNT_DIR}/cmdline.new"
+  sync
+  mv -f "${MOUNT_DIR}/cmdline.new" "${MOUNT_DIR}/cmdline.txt"
+  grep -q "rauc.slot=${slot}" "${MOUNT_DIR}/cmdline.txt" || fail "cmdline.txt of slot ${slot} does not name it"
+  unmount_vfat
+}
+
+booted_slot() {
+  local argument arguments
+  read -r -a arguments </proc/cmdline
+  for argument in "${arguments[@]}"; do
+    case "${argument}" in
+      rauc.slot=*)
+        echo "${argument#rauc.slot=}"
+        return
+        ;;
+    esac
+  done
+  fail "the kernel command line has no rauc.slot="
+}
+
+clear_pending() {
+  rm -f "${PENDING}" "${ATTEMPTED}"
+}
+
+command="${1:-}"
+case "${command}" in
+  get-current)
+    booted_slot
+    ;;
+
+  get-primary)
+    pending="$(cat "${PENDING}" 2>/dev/null || true)"
+    if [[ -n "${pending}" && "${pending}" != "$(booted_slot)" ]]; then
+      echo "${pending}"
+    else
+      slot_of "$(committed_partition)"
+    fi
+    ;;
+
+  set-primary)
+    slot="${2:?set-primary needs a slot}"
+    target="$(partition_of "${slot}")"
+    committed="$(committed_partition)"
+    if [[ "${target}" == "${committed}" ]]; then
+      clear_pending
+      write_autoboot "${committed}" "$(other_partition "${committed}")"
+    else
+      select_cmdline "${slot}"
+      write_autoboot "${committed}" "${target}"
+      mkdir -p "${STATE_DIR}"
+      rm -f "${ATTEMPTED}"
+      echo "${slot}" >"${PENDING}"
+      sync
+    fi
+    ;;
+
+  get-state)
+    slot="${2:?get-state needs a slot}"
+    if [[ "$(partition_of "${slot}")" == "$(committed_partition)" ]]; then
+      echo good
+    else
+      echo bad
+    fi
+    ;;
+
+  set-state)
+    slot="${2:?set-state needs a slot}"
+    state="${3:?set-state needs good or bad}"
+    target="$(partition_of "${slot}")"
+    committed="$(committed_partition)"
+    case "${state}" in
+      good)
+        if [[ "${target}" == "${committed}" ]]; then
+          clear_pending
+        elif [[ "${slot}" == "$(booted_slot)" ]]; then
+          write_autoboot "${target}" "${committed}"
+          clear_pending
+        else
+          fail "slot ${slot} is neither committed nor running, so it cannot be marked good"
+        fi
+        ;;
+      bad)
+        if [[ "${target}" == "${committed}" ]]; then
+          fail "refusing to mark the committed slot ${slot} bad"
+        fi
+        # The slot is about to be written or failed its trial boot: never
+        # try it again until a new install selects it.
+        if [[ "$(cat "${PENDING}" 2>/dev/null || true)" == "${slot}" ]]; then
+          clear_pending
+        fi
+        ;;
+      *)
+        fail "unknown state '${state}'"
+        ;;
+    esac
+    ;;
+
+  *)
+    fail "unknown command '${command}'"
+    ;;
+esac

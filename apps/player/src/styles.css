@@ -6,6 +6,10 @@
 
 * { box-sizing: border-box; }
 
+/* These pages are read from across a room: scale all text with the display
+   (24px on a 1080p TV) instead of a desktop browser's 16px. */
+html { font-size: clamp(16px, 1.25vw, 32px); }
+
 html,
 body,
 #root {
@@ -320,3 +324,17 @@ body,
 .claimWithQr .claimQr { margin: 0; display: grid; gap: 1rem; justify-items: center; }
 .claimWithQr .claimQr .wifiQr { width: clamp(12rem, 24vw, 22rem); }
 .claimWithQr figcaption { font-weight: 650; }
+
+/* Pairing without a code: the way to Wi-Fi setup */
+.changeWifi {
+  margin-top: 2.5rem;
+  padding: 0.8rem 1.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.7rem;
+  background: transparent;
+  color: rgba(245, 247, 251, 0.8);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.changeWifi:focus-visible { outline: none; border-color: #91aaff; background: rgba(145, 170, 255, 0.1); }

@@ -28,6 +28,7 @@ func newLinkTestService(t *testing.T, handler http.Handler) (*Service, string) {
 	}
 	return &Service{
 		config: config.Config{
+			APIBaseURL:        server.URL,
 			StateRoot:         stateRoot,
 			StorageRoot:       t.TempDir(),
 			PollInterval:      time.Second,

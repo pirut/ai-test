@@ -22,6 +22,9 @@ type wifiStatus struct {
 	Interface string `json:"interface,omitempty"`
 	SSID      string `json:"ssid,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Wired is set when a network cable carries the connection; Connected is
+	// then true, with no SSID unless Wi-Fi is joined too.
+	Wired bool `json:"wired,omitempty"`
 
 	// Setup details, filled in by wifiSetup. Older players ignore them.
 	Networks    []wifiNetwork `json:"networks,omitempty"`
@@ -136,18 +139,26 @@ func wifiStatusSnapshot(ctx context.Context) (wifiStatus, error) {
 		return wifiStatus{}, err
 	}
 
-	status := wifiStatus{Supported: true}
+	return wifiStatusFromDevices(devices), nil
+}
+
+// wifiStatusFromDevices treats a connected network cable as connected, so a
+// cabled screen is never told to set up Wi-Fi.
+func wifiStatusFromDevices(devices deviceSummary) wifiStatus {
+	status := wifiStatus{Supported: true, Wired: devices.wired, Connected: devices.wired}
 	wifi := devices.wifi
 	if wifi == nil {
-		status.Error = "no wifi interface found"
-		return status, nil
+		if !devices.wired {
+			status.Error = "no wifi interface found"
+		}
+		return status
 	}
 	status.Interface = wifi.name
-	status.Connected = wifi.connected && wifi.connection != setupConnectionName
-	if status.Connected {
+	if wifi.connected && wifi.connection != setupConnectionName {
+		status.Connected = true
 		status.SSID = wifi.connection
 	}
-	return status, nil
+	return status
 }
 
 type networkDevice struct {

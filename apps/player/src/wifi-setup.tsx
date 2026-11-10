@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { NO_WIFI, friendlyError, isConnectivityError } from "./screen-text";
 
 export type WiFiNetwork = {
   ssid: string;
@@ -24,18 +25,26 @@ export type WiFiStatus = {
   networks?: WiFiNetwork[];
   hotspot?: WiFiHotspot;
   connecting?: boolean;
+  /** A network cable carries the connection; there is then no ssid to show. */
+  wired?: boolean;
   lastAttempt?: { ssid: string; ok: boolean; message?: string };
 };
 
 type Submission = { status: "idle" | "saving" | "error" | "success"; message?: string };
 
 async function configureWiFi(ssid: string, password: string) {
-  const response = await fetch("/local/wifi/configure", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ssid, password }),
-  });
-  if (!response.ok) throw new Error((await response.text()).trim() || "Unable to connect to Wi-Fi");
+  let response: Response;
+  try {
+    response = await fetch("/local/wifi/configure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ssid, password }),
+    });
+  } catch {
+    // The browser's own text ("Failed to fetch") tells the customer nothing.
+    throw new Error("The screen didn't answer. Wait a moment and try again.");
+  }
+  if (!response.ok) throw new Error((await response.text()).trim() || "Couldn't connect. Try again.");
   return (await response.json()) as WiFiStatus;
 }
 
@@ -88,10 +97,13 @@ export function WiFiSetup({
   wifiStatus,
   lastError,
   onSubmitted,
+  onCancel,
 }: {
   wifiStatus: WiFiStatus | null;
   lastError?: string;
   onSubmitted: () => void;
+  /** Set when setup was opened by choice; adds a way back. */
+  onCancel?: () => void;
 }) {
   const [chosen, setChosen] = useState<WiFiNetwork | "other" | null>(null);
   const [ssid, setSsid] = useState("");
@@ -115,6 +127,14 @@ export function WiFiSetup({
   }, [chosen, networks.length]);
 
   useEffect(() => {
+    // A success note gives way to live status (connecting, a failed attempt
+    // from the phone page) instead of covering it for good.
+    if (submission.status !== "success") return;
+    const timer = window.setTimeout(() => setSubmission({ status: "idle" }), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [submission]);
+
+  useEffect(() => {
     // A fresh list from the agent replaces a manual rescan.
     setScanned(null);
   }, [wifiStatus?.networks]);
@@ -135,7 +155,7 @@ export function WiFiSetup({
     } catch (error) {
       setSubmission({
         status: "error",
-        message: error instanceof Error ? error.message : "Unable to connect to Wi-Fi",
+        message: error instanceof Error ? error.message : "Couldn't connect. Try again.",
       });
     }
   };
@@ -158,16 +178,19 @@ export function WiFiSetup({
 
   const saving = submission.status === "saving";
   const attempt = wifiStatus?.lastAttempt;
+  // Not reaching the service is why this screen is showing, so only other
+  // agent errors earn a line.
+  const agentProblem = lastError && !isConnectivityError(lastError) ? friendlyError(lastError) : null;
   const status: { text: string; error: boolean } | null = submission.message
     ? { text: submission.message, error: submission.status === "error" }
     : wifiStatus?.connecting
       ? { text: "Connecting…", error: false }
       : attempt && !attempt.ok && attempt.message
         ? { text: attempt.message, error: true }
-        : wifiStatus && !wifiStatus.supported
-          ? { text: "Wireless setup unavailable. Connect Ethernet instead.", error: true }
-          : (wifiStatus?.error ?? lastError)
-            ? { text: (wifiStatus?.error ?? lastError) as string, error: true }
+        : wifiStatus && (!wifiStatus.supported || wifiStatus.error)
+          ? { text: NO_WIFI, error: true }
+          : agentProblem
+            ? { text: agentProblem, error: true }
             : null;
 
   const renderForm = () => (
@@ -325,6 +348,11 @@ export function WiFiSetup({
             <p aria-live="polite" className={status.error ? "setupMessage error" : "setupMessage"}>
               {status.text}
             </p>
+          ) : null}
+          {onCancel ? (
+            <button className="rescan" disabled={saving} onClick={onCancel} type="button">
+              Keep the current network
+            </button>
           ) : null}
         </div>
       </section>

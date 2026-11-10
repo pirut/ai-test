@@ -1,0 +1,12 @@
+[Unit]
+Description=Grow the Showroom data partition to fill the card
+DefaultDependencies=no
+Wants=dev-disk-by\x2dlabel-showroom\x2ddata.device
+After=dev-disk-by\x2dlabel-showroom\x2ddata.device
+Before=systemd-fsck@dev-disk-by\x2dlabel-showroom\x2ddata.service data.mount shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/showroom/showroom-data-grow

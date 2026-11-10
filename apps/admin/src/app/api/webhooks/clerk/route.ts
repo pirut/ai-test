@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
 
 import {
+  canSyncClerkRecords,
   deleteOrganizationFromClerkWebhook,
   deleteUserFromClerkWebhook,
   upsertOrganizationFromClerkWebhook,
@@ -9,7 +10,18 @@ import {
 } from "@/lib/backend";
 
 export async function POST(request: Request) {
-  const event = await verifyWebhook(request as NextRequest);
+  let event: Awaited<ReturnType<typeof verifyWebhook>>;
+  try {
+    event = await verifyWebhook(request as NextRequest);
+  } catch {
+    // Unsigned, badly signed, or the signing secret is not configured.
+    return NextResponse.json({ error: "Webhook signature could not be verified" }, { status: 400 });
+  }
+
+  if (!canSyncClerkRecords()) {
+    // Workspaces work without these records; acknowledge so Clerk stops retrying.
+    return NextResponse.json({ received: true, synced: false });
+  }
 
   switch (event.type) {
     case "organization.created":

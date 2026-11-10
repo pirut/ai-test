@@ -3,8 +3,9 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { deletePlaylist, setDefaultPlaylist, updatePlaylist } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
-export async function DELETE(
+export const DELETE = withApiErrors(async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -20,9 +21,9 @@ export async function DELETE(
   const { id } = await params;
   await deletePlaylist(id);
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function PATCH(
+export const PATCH = withApiErrors(async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -64,4 +65,4 @@ export async function PATCH(
       folderId: payload.folderId,
     }),
   });
-}
+});

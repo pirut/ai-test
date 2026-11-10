@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { isFleetManagedDevice } from "@showroom/contracts";
+import { healthCapturedSinceAgentStart, isFleetManagedDevice, systemBundlesCapability, systemUpdateOutcome } from "@showroom/contracts";
 
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -356,6 +356,20 @@ export const claimCommands = mutation({
         const attempts = (command.attempts ?? 0) + 1;
         if (attempts > (command.maxAttempts ?? 5)) {
           await ctx.db.patch(command._id, { status: "failed", completedAt: now, resultMessage: "Command retry limit exceeded" });
+          // Without this the rollout row stays "in progress" forever and the
+          // release never finishes or pauses.
+          const stalled = await ctx.db
+            .query("releaseRollouts")
+            .withIndex("by_command", (q) => q.eq("commandId", command._id))
+            .unique();
+          if (stalled) {
+            await ctx.db.patch(stalled._id, {
+              status: "failed",
+              message: "The screen kept dropping this update before finishing it",
+              completedAt: now,
+              updatedAt: now,
+            });
+          }
           return null;
         }
         const leaseToken = randomToken(24);
@@ -535,6 +549,10 @@ export const recordHeartbeat = mutation({
       updatedAt: now,
     });
 
+    if (Array.isArray(capabilities) && capabilities.includes(systemBundlesCapability)) {
+      await settleSystemUpdates(ctx, device, args.payload, now);
+    }
+
     return {
       ...args.payload,
       deviceId: device._id,
@@ -542,6 +560,52 @@ export const recordHeartbeat = mutation({
     };
   },
 });
+
+// Closes rollouts that were waiting on this screen to restart into a new OS:
+// succeeded when it reports the new version, failed when it came back on
+// something else (the screen rolled itself back).
+async function settleSystemUpdates(
+  ctx: MutationCtx,
+  device: Doc<"devices">,
+  payload: any,
+  now: number,
+) {
+  const recent = await ctx.db
+    .query("releaseRollouts")
+    .withIndex("by_device_and_queued_at", (q) => q.eq("deviceId", device._id))
+    .order("desc")
+    .take(5);
+  const uptimeSeconds = typeof payload?.uptimeSeconds === "number" ? payload.uptimeSeconds : null;
+  const osVersion =
+    typeof payload?.health?.osVersion === "string" && healthCapturedSinceAgentStart(payload ?? {})
+      ? payload.health.osVersion
+      : null;
+  for (const rollout of recent) {
+    if (rollout.status !== "in_progress" || !rollout.systemInstalledAt || !rollout.systemVersion) continue;
+    const outcome = systemUpdateOutcome({
+      installedAt: rollout.systemInstalledAt,
+      expectedVersion: rollout.systemVersion,
+      now,
+      agentStartedAt: uptimeSeconds === null ? undefined : now - uptimeSeconds * 1000,
+      osVersion,
+    });
+    if (outcome === "confirmed") {
+      await ctx.db.patch(rollout._id, {
+        status: "succeeded",
+        message: `Running ${osVersion}`,
+        completedAt: now,
+        updatedAt: now,
+      });
+    } else if (outcome === "rolled_back") {
+      await ctx.db.patch(rollout._id, {
+        status: "failed",
+        message: `The screen restarted on ${osVersion} instead of ${rollout.systemVersion}. It went back to its previous system.`,
+        completedAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+}
 
 async function resolveCurrentPlaylistName(
   ctx: MutationCtx,
@@ -663,7 +727,24 @@ export const recordCommandResult = mutation({
       .query("releaseRollouts")
       .withIndex("by_command", (q) => q.eq("commandId", command._id))
       .unique();
-    if (rollout) {
+    // A system bundle only runs after the screen restarts, and the screen
+    // falls back to its old OS if the new one fails its health check. Keep the
+    // rollout open until a heartbeat from the restarted screen settles it.
+    const awaitingRestart =
+      args.payload.status === "succeeded" &&
+      command.commandType === "update_release" &&
+      typeof command.payload?.systemUrl === "string" &&
+      command.payload.systemUrl.length > 0;
+    if (rollout && awaitingRestart) {
+      const now = Date.now();
+      await ctx.db.patch(rollout._id, {
+        status: "in_progress",
+        systemVersion: String(command.payload.systemVersion ?? command.payload.version ?? ""),
+        systemInstalledAt: now,
+        message: "Installed. Restarting into the new system.",
+        updatedAt: now,
+      });
+    } else if (rollout) {
       await ctx.db.patch(rollout._id, {
         status: args.payload.status,
         startedAt:

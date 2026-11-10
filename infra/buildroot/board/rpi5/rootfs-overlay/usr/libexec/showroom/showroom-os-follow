@@ -1,0 +1,95 @@
+#!/bin/bash
+# Keeps a test screen on the newest build of an OS update channel, so new
+# images reach it without reflashing. Only development images enable it: they
+# carry /etc/showroom/os-channel.env and trust only the development bundle
+# key, so a screen in the field never follows a channel.
+#
+# The channel is a small JSON file:
+#   {"version": "2026.10.22.5", "bundle": "https://…/x.raucb", "sha256": "…"}
+#
+# A new version is installed into the inactive slot with RAUC and tried once
+# (showroom-reboot). showroom-os-commit commits it after the health check or
+# falls back to the previous slot; a version that fell back is not retried.
+set -euo pipefail
+
+CHANNEL_ENV="${SHOWROOM_OS_CHANNEL_ENV:-/etc/showroom/os-channel.env}"
+STATE="${SHOWROOM_OS_FOLLOW_STATE:-/data/rauc/follow}"
+TRYBOOT_PENDING="${SHOWROOM_TRYBOOT_PENDING:-/data/rauc/tryboot-pending}"
+TRYBOOT_ATTEMPTED="${SHOWROOM_TRYBOOT_ATTEMPTED:-/data/rauc/tryboot-attempted}"
+OS_RELEASE="${SHOWROOM_OS_RELEASE:-/etc/os-release}"
+INSTALL="${SHOWROOM_OS_INSTALL:-/usr/libexec/showroom/showroom-os-install}"
+REBOOT="${SHOWROOM_OS_REBOOT:-/usr/libexec/showroom/showroom-reboot}"
+
+log() {
+  echo "showroom-os-follow: $*" >&2
+}
+
+# shellcheck disable=SC1090
+. "${CHANNEL_ENV}"
+: "${SHOWROOM_OS_CHANNEL_URL:?SHOWROOM_OS_CHANNEL_URL is not set in ${CHANNEL_ENV}}"
+
+mkdir -p "${STATE}"
+touch "${STATE}/failed"
+booted="$(sed -n 's/^VERSION_ID=//p' "${OS_RELEASE}" | tr -d '"')"
+
+# An install or trial boot is in progress. If this script installed a bundle
+# and the reboot never happened (power cut, crash), reboot now to try it.
+if [[ -e "${TRYBOOT_PENDING}" ]]; then
+  if [[ -s "${STATE}/attempted" && ! -e "${TRYBOOT_ATTEMPTED}" ]]; then
+    log "version $(cat "${STATE}/attempted") is installed but was never tried; rebooting into it"
+    exec "${REBOOT}"
+  fi
+  exit 0
+fi
+
+# The last version this script installed either runs now (committed) or
+# fell back to the previous slot.
+if [[ -s "${STATE}/attempted" ]]; then
+  attempted="$(cat "${STATE}/attempted")"
+  if [[ "${attempted}" != "${booted}" ]]; then
+    log "version ${attempted} fell back to ${booted}; it will not be retried"
+    printf '%s\n' "${attempted}" >>"${STATE}/failed"
+  fi
+  rm -f "${STATE}/attempted"
+fi
+
+manifest="$(curl -fsSL --retry 3 --max-time 60 "${SHOWROOM_OS_CHANNEL_URL}")"
+version="$(jq -er '.version' <<<"${manifest}")"
+bundle_url="$(jq -er '.bundle' <<<"${manifest}")"
+sha256="$(jq -er '.sha256 | ascii_downcase' <<<"${manifest}")"
+[[ "${version}" =~ ^[A-Za-z0-9._+-]+$ ]] || { log "channel version '${version}' is not valid"; exit 1; }
+[[ "${sha256}" =~ ^[0-9a-f]{64}$ ]] || { log "channel sha256 is not valid"; exit 1; }
+
+if [[ "${version}" == "${booted}" ]]; then
+  exit 0
+fi
+if grep -qxF "${version}" "${STATE}/failed"; then
+  exit 0
+fi
+
+log "installing ${version} (running ${booted})"
+bundle="${STATE}/update.raucb"
+# Resume a partial download of the same version; start over otherwise.
+if [[ "$(cat "${STATE}/download-version" 2>/dev/null || true)" != "${version}" ]]; then
+  rm -f "${bundle}.part"
+  printf '%s\n' "${version}" >"${STATE}/download-version"
+fi
+curl -fSL --retry 5 --retry-delay 10 --max-time 1800 -C - -o "${bundle}.part" "${bundle_url}"
+if [[ "$(sha256sum "${bundle}.part" | cut -d' ' -f1)" != "${sha256}" ]]; then
+  rm -f "${bundle}.part"
+  log "bundle for ${version} does not match the channel checksum"
+  exit 1
+fi
+mv "${bundle}.part" "${bundle}"
+
+# RAUC checks the bundle's signature against the image's keyring and its
+# compatible string before it writes the inactive slot.
+printf '%s\n' "${version}" >"${STATE}/attempted"
+if ! "${INSTALL}" "${bundle}"; then
+  rm -f "${bundle}" "${STATE}/attempted"
+  printf '%s\n' "${version}" >>"${STATE}/failed"
+  log "RAUC refused ${version}; it will not be retried"
+  exit 1
+fi
+rm -f "${bundle}" "${STATE}/download-version"
+exec "${REBOOT}"

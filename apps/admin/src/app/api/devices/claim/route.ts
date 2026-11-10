@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
-import { claimDevice } from "@/lib/backend";
+import { ClaimRateLimitedError, claimDevice } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   claimCode: z
@@ -17,7 +18,7 @@ const schema = z.object({
 const invalidCodeMessage =
   "That code didn't match a screen waiting to pair. Check the code on the screen; it refreshes automatically if it expired.";
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async function POST(request: Request) {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -39,6 +40,9 @@ export async function POST(request: Request) {
   try {
     result = await claimDevice({ orgId: session.orgId, ...parsed.data });
   } catch (error) {
+    if (error instanceof ClaimRateLimitedError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
     if (error instanceof Error && /Invalid claim code/i.test(error.message)) {
       return NextResponse.json({ error: invalidCodeMessage }, { status: 404 });
     }
@@ -51,4 +55,4 @@ export async function POST(request: Request) {
 
   // The device credential is for the screen only; never hand it to the browser.
   return NextResponse.json({ deviceId: result.deviceId }, { status: 201 });
-}
+});

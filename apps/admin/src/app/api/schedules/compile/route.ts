@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 
 import { compileManifests } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
-export async function POST() {
+export const POST = withApiErrors(async function POST() {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,4 +15,4 @@ export async function POST() {
   }
 
   return NextResponse.json(await compileManifests(session.orgId));
-}
+});

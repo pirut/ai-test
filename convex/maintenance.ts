@@ -30,6 +30,18 @@ export const pruneFleetTelemetry = internalMutation({
       )
       .take(500);
 
+    // A screen waiting to be paired asks for a new code every 15 minutes;
+    // drop the ones nobody claimed.
+    const staleRegistrations = await ctx.db
+      .query("deviceRegistrations")
+      .withIndex("by_claimed_device", (q) => q.eq("claimedDeviceId", undefined))
+      .take(500);
+    for (const registration of staleRegistrations) {
+      if ((registration.expiresAt ?? registration.createdAt) < now - day) {
+        await ctx.db.delete(registration._id);
+      }
+    }
+
     for (const heartbeat of heartbeats) await ctx.db.delete(heartbeat._id);
     for (const screenshot of screenshots) {
       if (screenshot.storageId) await ctx.storage.delete(screenshot.storageId);
@@ -122,7 +134,18 @@ export const purgeRemovedScreenData = internalMutation({
       removed = records.length;
     } else {
       const records = await ctx.db.query("scheduleTargets").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(batchSize);
-      for (const record of records) await ctx.db.delete(record._id);
+      for (const record of records) {
+        await ctx.db.delete(record._id);
+        // A schedule made for just this screen has nothing left to play on.
+        const remaining = await ctx.db
+          .query("scheduleTargets")
+          .withIndex("by_schedule", (q) => q.eq("scheduleId", record.scheduleId))
+          .take(1);
+        if (!remaining.length) {
+          const schedule = await ctx.db.get(record.scheduleId);
+          if (schedule) await ctx.db.delete(schedule._id);
+        }
+      }
       removed = records.length;
     }
 

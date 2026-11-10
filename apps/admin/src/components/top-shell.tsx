@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   Package2,
   PlaySquare,
+  Rocket,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -40,6 +41,7 @@ const navGroups = [
     items: [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
       { href: "/screens", label: "Screens", icon: MonitorSmartphone },
+      { href: "/get-started", label: "Get started", icon: Rocket },
     ],
   },
   {
@@ -81,10 +83,12 @@ export function TopShell({
   children,
   authEnabled,
   fleetPulse,
+  showReleases = true,
 }: {
   children: React.ReactNode;
   authEnabled: boolean;
   fleetPulse: FleetPulse | null;
+  showReleases?: boolean;
 }) {
   const pathname = usePathname();
   const currentSection = navItems.find(
@@ -127,7 +131,9 @@ export function TopShell({
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map((item) => {
+                  {group.items
+                    .filter((item) => showReleases || item.href !== "/releases")
+                    .map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     const Icon = item.icon;
                     const attention = item.href === "/screens" ? fleetPulse?.attention ?? 0 : 0;
@@ -166,12 +172,24 @@ export function TopShell({
                 <SidebarMenuButton
                   size="lg"
                   tooltip={fleetPulseLabel(fleetPulse)}
-                  render={<Link href={fleetPulse.attention ? "/screens?view=attention" : "/screens"} />}
+                  render={
+                    <Link
+                      href={
+                        fleetPulse.total === 0
+                          ? "/get-started"
+                          : fleetPulse.attention
+                            ? "/screens?view=attention"
+                            : "/screens"
+                      }
+                    />
+                  }
                 >
                   <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                     <span
                       className={
-                        fleetPulse.attention
+                        fleetPulse.total === 0
+                          ? "size-2 rounded-full bg-sidebar-foreground/40"
+                          : fleetPulse.attention
                           ? "size-2 rounded-full bg-amber-400"
                           : "size-2 rounded-full bg-emerald-400 motion-safe:animate-[pulse-dot_2s_ease-in-out_infinite]"
                       }
@@ -179,10 +197,14 @@ export function TopShell({
                   </span>
                   <span className="grid min-w-0 flex-1 text-left leading-tight">
                     <span className="truncate text-xs font-medium">
-                      {fleetPulse.online} of {fleetPulse.total} screens online
+                      {fleetPulse.total === 0
+                        ? "No screens yet"
+                        : `${fleetPulse.online} of ${fleetPulse.total} screens online`}
                     </span>
                     <span className="truncate text-xs text-sidebar-foreground/60">
-                      {fleetPulse.attention
+                      {fleetPulse.total === 0
+                        ? "Set up your first screen"
+                        : fleetPulse.attention
                         ? `${fleetPulse.attention} need${fleetPulse.attention === 1 ? "s" : ""} attention`
                         : "Everything looks good"}
                     </span>
@@ -208,7 +230,7 @@ export function TopShell({
                 <>
                   <div className="hidden lg:block">
                     <OrganizationSwitcher
-                      afterCreateOrganizationUrl="/dashboard"
+                      afterCreateOrganizationUrl="/get-started"
                       afterLeaveOrganizationUrl="/"
                       afterSelectOrganizationUrl="/dashboard"
                       appearance={clerkAppearance}
@@ -235,6 +257,7 @@ export function TopShell({
 }
 
 function fleetPulseLabel(pulse: FleetPulse) {
+  if (pulse.total === 0) return "No screens yet. Set up your first screen";
   return pulse.attention
     ? `${pulse.attention} of ${pulse.total} screens need attention`
     : `${pulse.online} of ${pulse.total} screens online`;

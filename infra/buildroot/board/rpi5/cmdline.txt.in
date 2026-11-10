@@ -1,0 +1,1 @@
+root=PARTUUID=@ROOT_PARTUUID@ rootfstype=erofs ro rootwait rauc.slot=@SLOT@ console=ttyAMA10,115200 console=tty3 quiet loglevel=3 logo.nologo vt.global_cursor_default=0 cfg80211.ieee80211_regdom=US fsck.repair=yes

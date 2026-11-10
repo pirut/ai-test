@@ -1,6 +1,6 @@
 import { TopShell } from "@/components/top-shell";
 import { isLocalMockMode, requireOrgContext } from "@/lib/auth";
-import { listDevices } from "@/lib/backend";
+import { getWorkspaceAccess, listDevices } from "@/lib/backend";
 import { countByStatus, needsAttention } from "@/lib/device-health";
 
 async function loadFleetPulse(orgId: string) {
@@ -24,9 +24,18 @@ export default async function ProtectedLayout({
   children: React.ReactNode;
 }) {
   const session = await requireOrgContext();
-  const pulse = session.orgId ? await loadFleetPulse(session.orgId) : null;
+  const [pulse, access] = await Promise.all([
+    session.orgId ? loadFleetPulse(session.orgId) : null,
+    session.orgId
+      ? getWorkspaceAccess().catch(() => ({ isPlatformOperator: true }))
+      : { isPlatformOperator: false },
+  ]);
   return (
-    <TopShell authEnabled={!isLocalMockMode()} fleetPulse={pulse}>
+    <TopShell
+      authEnabled={!isLocalMockMode()}
+      fleetPulse={pulse}
+      showReleases={access.isPlatformOperator}
+    >
       {children}
     </TopShell>
   );

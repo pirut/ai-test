@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 
 import { getDevice } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 // Polled by the "Add screen" flow while it waits for a freshly claimed screen
 // to check in for the first time.
-export async function GET(
+export const GET = withApiErrors(async function GET(
   _request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
@@ -29,4 +30,4 @@ export async function GET(
     },
     { headers: { "Cache-Control": "no-store" } },
   );
-}
+});

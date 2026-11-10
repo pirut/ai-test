@@ -16,7 +16,10 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 
-export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: string } = {}) {
+export function AddScreenDialog({
+  initialClaimCode,
+  hasDefaultPlaylist,
+}: { initialClaimCode?: string; hasDefaultPlaylist?: boolean } = {}) {
   // A screen's scan-to-add QR code links here with ?claim=CODE.
   const [open, setOpen] = useState(Boolean(initialClaimCode));
   const router = useRouter();
@@ -31,7 +34,7 @@ export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: strin
         <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="text-xl font-semibold">Add a screen</SheetTitle>
           <SheetDescription className="leading-6">
-            Enter the 6-character code shown on the screen. We&apos;ll wait here until the screen connects.
+            Enter the 6-character code shown on the TV. We&apos;ll wait here until the screen connects.
           </SheetDescription>
         </SheetHeader>
         <Separator />
@@ -40,6 +43,8 @@ export function AddScreenDialog({ initialClaimCode }: { initialClaimCode?: strin
             // Remount on every open so the panel always starts at the form.
             key={open ? "open" : "closed"}
             embedded
+            hasDefaultPlaylist={hasDefaultPlaylist}
+            idPrefix="add-screen"
             initialClaimCode={initialClaimCode}
             // Drop ?claim= once it is used, so reopening the panel starts empty.
             onClaimed={() => (initialClaimCode ? router.replace("/screens") : router.refresh())}

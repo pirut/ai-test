@@ -30,8 +30,21 @@ func NewServer(cfg config.Config, store *state.Store) *Server {
 // needsWiFiSetup is true while the screen has never reached the service: it
 // is unclaimed and has no claim code yet.
 func (s *Server) needsWiFiSetup() bool {
-	status := s.store.PlayerStatus()
+	status := s.playerStatus()
 	return !status.Claimed && status.ClaimCode == ""
+}
+
+// playerStatus is the stored status as the players should see it. A pairing
+// code is only shown while the service was reached recently: a code left over
+// from an earlier network (the screen was set up on a bench, then moved)
+// cannot be used, and showing it would hide Wi-Fi setup behind a dead code.
+// The code comes back as soon as the service answers again.
+func (s *Server) playerStatus() state.PlayerStatus {
+	status := s.store.PlayerStatus()
+	if !status.Claimed && !status.Online {
+		status.ClaimCode = ""
+	}
+	return status
 }
 
 // OnWiFiOnline sets what runs when first-time setup gets the screen online.
@@ -138,7 +151,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json")
-	status := s.store.PlayerStatus()
+	status := s.playerStatus()
 	payload := struct {
 		state.PlayerStatus
 		ClaimURL string   `json:"claimUrl,omitempty"`

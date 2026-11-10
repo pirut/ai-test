@@ -47,7 +47,10 @@ export function deviceIssues(device: DeviceSummary): DeviceIssue[] {
   }
 
   if (device.status === "online" || device.status === "stale") {
-    if (device.lastError) issues.push({ label: "Screen reported an error", severity: "warning" });
+    // lastError is the agent's plain sentence about content it could not put
+    // on the screen (for example "2 of 9 items are not on the screen yet"); it
+    // stays set while the rest keeps playing, so it is a warning, not a failure.
+    if (device.lastError) issues.push({ label: "Content needs attention", severity: "warning" });
     else if (device.contentState === "updating") issues.push({ label: "Updating content", severity: "info" });
   }
 

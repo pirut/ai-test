@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { z } from "zod";
 
 import { createLibraryFolder } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
 const schema = z.object({
   kind: z.enum(["media", "playlist"]),
@@ -10,7 +11,7 @@ const schema = z.object({
   parentId: z.string().nullable().optional(),
 });
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async function POST(request: Request) {
   const session = await getAuthSession();
   if (!session.userId || !session.orgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,4 +28,4 @@ export async function POST(request: Request) {
     },
     { status: 201 },
   );
-}
+});

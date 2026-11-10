@@ -224,6 +224,7 @@ func (s *Service) syncOnce(ctx context.Context) error {
 
 	if err := s.syncManifest(ctx, current.Credential); err != nil {
 		s.noteRequestError(current.Credential, err)
+		s.recordSyncError(err)
 		if shouldExposeManifestSyncError(filepath.Join(s.config.StateRoot, "manifest.json")) {
 			s.recordError(err)
 		} else {
@@ -236,6 +237,24 @@ func (s *Service) syncOnce(ctx context.Context) error {
 		next.LastError = ""
 	})
 	return nil
+}
+
+// recordSyncError keeps a failed sync for the dashboard even when the screen
+// still has older content and shows no error itself. Without it a screen that
+// can never fetch new content (a full disk, every item failing) looked
+// healthy forever. Network and credential failures are left out: they are not
+// content problems and clear on their own.
+func (s *Service) recordSyncError(err error) {
+	if err == nil || isConnectivityError(err) || remote.IsUnauthorized(err) {
+		return
+	}
+	message := userFacingError(err)
+	current := s.store.Snapshot()
+	if current.Credential == "" || current.SyncError == message {
+		return
+	}
+	_ = s.store.Update(func(next *state.DeviceState) { next.SyncError = message })
+	s.requestHeartbeat()
 }
 
 func shouldExposeManifestSyncError(manifestPath string) bool {
@@ -283,6 +302,8 @@ func (s *Service) ensureClaimFlow(ctx context.Context, current state.DeviceState
 	if !status.Claimed {
 		return s.store.Update(func(next *state.DeviceState) {
 			next.LastCloudContactAt = nowRFC3339()
+			// The service answered: an earlier "no internet" is over.
+			next.LastError = ""
 		})
 	}
 
@@ -409,6 +430,8 @@ func (s *Service) resetToPairing() error {
 		next.PreviousCachedAssets = map[string]state.AssetRecord{}
 		next.CompletedCommands = map[string]state.CompletedCommand{}
 		next.LastError = ""
+		next.SyncError = ""
+		next.PendingItems = 0
 	}); err != nil {
 		return err
 	}

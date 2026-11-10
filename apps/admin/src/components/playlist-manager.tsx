@@ -18,6 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   startTransition,
@@ -63,6 +64,13 @@ type ActiveDrag =
   | null;
 
 /* ── Utilities ──────────────────────────────────────── */
+
+/** Error bodies are not always JSON (a proxy timeout, for one); never throw while reading them. */
+async function readJson(res: Response): Promise<Record<string, unknown> & { error?: string }> {
+  return res.json().catch(() => ({}));
+}
+
+const networkErrorText = "Could not reach the server. Check your connection and try again.";
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -236,6 +244,8 @@ function MediaRow({
             ? "border-primary bg-primary text-primary-foreground"
             : "border-white/10 text-transparent hover:border-white/25",
         )}
+        aria-label={`Select ${asset.title}`}
+        aria-pressed={isSelected}
         onClick={(e) => {
           e.stopPropagation();
           onToggleSelect();
@@ -283,8 +293,9 @@ function MediaRow({
           "shrink-0 transition-opacity",
           isInQueue
             ? "text-primary opacity-100"
-            : "opacity-0 group-hover:opacity-100",
+            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
         )}
+        aria-label={isInQueue ? `Add ${asset.title} again` : `Add ${asset.title} to the playlist`}
         onClick={(e) => {
           e.stopPropagation();
           onAdd();
@@ -346,6 +357,7 @@ function QueueCard({
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <button
+        aria-label={`Reorder ${asset.title}`}
         className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground"
         type="button"
         {...attributes}
@@ -371,7 +383,9 @@ function QueueCard({
 
       {asset.type === "image" ? (
         <Input
+          aria-label={`Seconds to show ${asset.title}`}
           className="h-7 w-16 text-center text-xs"
+          inputMode="numeric"
           onChange={(e) => onChangeDwell(e.target.value)}
           placeholder="10"
           value={item.dwellSeconds ?? ""}
@@ -379,6 +393,7 @@ function QueueCard({
       ) : null}
 
       <button
+        aria-label={`Remove ${asset.title} from the playlist`}
         className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
         onClick={onRemove}
         type="button"
@@ -396,11 +411,14 @@ export function PlaylistManager({
   mediaAssets,
   initialPlaylistFolders,
   initialMediaFolders,
+  canEdit = true,
 }: {
   initialPlaylists: Playlist[];
   mediaAssets: MediaAsset[];
   initialPlaylistFolders: LibraryFolder[];
   initialMediaFolders: LibraryFolder[];
+  /** Members can look through playlists; only admins can change them. */
+  canEdit?: boolean;
 }) {
   const router = useRouter();
 
@@ -659,8 +677,12 @@ export function PlaylistManager({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "playlist", name: folderName.trim(), parentId }),
-    });
-    const data = await res.json();
+    }).catch(() => null);
+    if (!res) {
+      setStatus({ ok: false, text: networkErrorText });
+      return;
+    }
+    const data = await readJson(res);
     if (!res.ok) {
       setStatus({ ok: false, text: data.error ?? "Unable to create folder" });
       return;
@@ -678,8 +700,12 @@ export function PlaylistManager({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: folderName.trim() }),
-    });
-    const data = await res.json();
+    }).catch(() => null);
+    if (!res) {
+      setStatus({ ok: false, text: networkErrorText });
+      return;
+    }
+    const data = await readJson(res);
     if (!res.ok) {
       setStatus({ ok: false, text: data.error ?? "Unable to rename folder" });
       return;
@@ -697,9 +723,13 @@ export function PlaylistManager({
       )
     )
       return;
-    const res = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" }).catch(() => null);
+    if (!res) {
+      setStatus({ ok: false, text: networkErrorText });
+      return;
+    }
     if (!res.ok) {
-      const data = await res.json();
+      const data = await readJson(res);
       setStatus({ ok: false, text: data.error ?? "Unable to delete folder" });
       return;
     }
@@ -734,7 +764,7 @@ export function PlaylistManager({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folderId }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? "Unable to move playlist");
       const next = data.playlist as Playlist;
       setPlaylists((c) => c.map((p) => (p.id === playlistId ? next : p)));
@@ -774,7 +804,7 @@ export function PlaylistManager({
           assetFolderId: selectedMediaFolderId,
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok)
         throw new Error(data.error ?? "Unable to import YouTube playlist");
       const pl = data.playlist as Playlist;
@@ -817,7 +847,12 @@ export function PlaylistManager({
 
   async function handleSave() {
     if (!name.trim() || queue.length === 0) {
-      setStatus({ ok: false, text: "Add a name and at least one item." });
+      setStatus({
+        ok: false,
+        text: !name.trim()
+          ? "Give the playlist a name."
+          : "Add at least one item from the media library.",
+      });
       return;
     }
     setSaving(true);
@@ -839,7 +874,7 @@ export function PlaylistManager({
           }),
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? "Unable to save playlist");
       const pl = data.playlist as Playlist;
       setPlaylists((c) => {
@@ -850,7 +885,12 @@ export function PlaylistManager({
         }));
       });
       loadPlaylist(pl);
-      setStatus({ ok: true, text: `Saved "${pl.name}".` });
+      setStatus({
+        ok: true,
+        text: pl.isDefault
+          ? `Saved "${pl.name}". Screens without their own playlist start playing it within a minute.`
+          : `Saved "${pl.name}". To play it, tick Workspace default, pick it in a screen's settings, or add it to a schedule.`,
+      });
       refreshData();
     } catch (error) {
       setStatus({
@@ -864,9 +904,13 @@ export function PlaylistManager({
 
   async function handleDelete(playlistId: string) {
     if (!window.confirm("Delete this playlist?")) return;
-    const res = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" });
+    const res = await fetch(`/api/playlists/${playlistId}`, { method: "DELETE" }).catch(() => null);
+    if (!res) {
+      setStatus({ ok: false, text: networkErrorText });
+      return;
+    }
     if (!res.ok) {
-      const data = await res.json();
+      const data = await readJson(res);
       setStatus({ ok: false, text: data.error ?? "Unable to delete playlist" });
       return;
     }
@@ -1022,10 +1066,12 @@ export function PlaylistManager({
                 <p className="text-sm font-medium text-foreground">
                   Playlists
                 </p>
-                <Button onClick={startNewPlaylist} size="sm" type="button">
-                  <Plus className="size-3.5" />
-                  New
-                </Button>
+                {canEdit ? (
+                  <Button onClick={startNewPlaylist} size="sm" type="button">
+                    <Plus className="size-3.5" />
+                    New
+                  </Button>
+                ) : null}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
@@ -1057,6 +1103,7 @@ export function PlaylistManager({
                 <Input
                   className="h-8 text-xs"
                   onChange={(e) => setPlaylistSearch(e.target.value)}
+                  aria-label="Search playlists"
                   placeholder="Search playlists…"
                   value={playlistSearch}
                 />
@@ -1067,14 +1114,18 @@ export function PlaylistManager({
             <div className="border-b border-white/5">
               <div className="flex items-center justify-between px-4 py-1.5">
                 <span className="text-[11px] text-muted-foreground">Folders</span>
-                <Button
-                  onClick={() => void createFolder(selectedPlaylistFolderId)}
-                  size="icon-xs"
-                  type="button"
-                  variant="ghost"
-                >
-                  <FolderPlus className="size-3.5" />
-                </Button>
+                {canEdit ? (
+                  <Button
+                    aria-label="New playlist folder"
+                    onClick={() => void createFolder(selectedPlaylistFolderId)}
+                    size="icon-xs"
+                    title="New folder"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <FolderPlus className="size-3.5" />
+                  </Button>
+                ) : null}
               </div>
               <div className="px-2 pb-2">
                 {activeDrag?.type === "playlist" ? (
@@ -1087,11 +1138,11 @@ export function PlaylistManager({
                 activeDragType={
                   activeDrag?.type === "playlist" ? "playlist" : null
                 }
-                droppableScope="playlist"
+                droppableScope={canEdit ? "playlist" : undefined}
                 folders={playlistFolders}
                 itemCounts={playlistFolderCounts}
-                onDelete={(folder) => void deleteFolder(folder)}
-                onRename={(folder) => void renameFolder(folder)}
+                onDelete={canEdit ? (folder) => void deleteFolder(folder) : undefined}
+                onRename={canEdit ? (folder) => void renameFolder(folder) : undefined}
                 onSelect={setSelectedPlaylistFolderId}
                 rootLabel="All playlists"
                 selectedFolderId={selectedPlaylistFolderId}
@@ -1117,13 +1168,16 @@ export function PlaylistManager({
                     ? "No playlists match that search."
                     : selectedPlaylistFolderId
                       ? "This folder has no playlists yet."
-                      : "No playlists yet. Use New to make one."}
+                      : canEdit
+                        ? "No playlists yet. Name one on the right, add media to it, and save."
+                        : "No playlists yet."}
                 </div>
               )}
             </div>
           </Card>
 
           {/* YouTube import (collapsible) */}
+          {canEdit ? (
           <Card className="gap-0 py-0">
             <button
               className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-accent/30"
@@ -1205,18 +1259,25 @@ export function PlaylistManager({
               </div>
             ) : null}
           </Card>
+          ) : null}
         </aside>
 
         {/* ──────────── Editor area ──────────── */}
-        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className={cn("grid gap-4", canEdit && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
           {/* Queue editor */}
           <Card className="gap-0 py-0">
             <div className="shrink-0 border-b border-white/5 px-5 py-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-foreground">
-                  {selectedPlaylistId ? "Editing playlist" : "New playlist"}
+                  {!canEdit
+                    ? selectedPlaylistId
+                      ? name
+                      : "Choose a playlist to see what is in it"
+                    : selectedPlaylistId
+                      ? "Editing playlist"
+                      : "New playlist"}
                 </p>
-                <div className="flex shrink-0 gap-2">
+                <div className={cn("flex shrink-0 gap-2", !canEdit && "hidden")}>
                   {selectedPlaylistId ? (
                     <Button
                       onClick={startNewPlaylist}
@@ -1238,14 +1299,15 @@ export function PlaylistManager({
                 </div>
               </div>
 
-              <div className="mt-3 flex gap-3">
+              <div className={cn("mt-3 flex flex-wrap gap-3", !canEdit && "hidden")}>
                 <Input
-                  className="flex-1"
+                  aria-label="Playlist name"
+                  className="min-w-40 flex-1"
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Playlist name"
                   value={name}
                 />
-                <label className="flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md border border-input bg-[var(--surface-high)] px-3 text-[13px] text-foreground">
+                <label className="flex min-h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md border border-input bg-[var(--surface-high)] px-3 text-[13px] text-foreground">
                   <input
                     checked={makeDefault}
                     className="size-3.5 accent-[var(--primary)]"
@@ -1260,10 +1322,15 @@ export function PlaylistManager({
                 <p className="mt-2 text-xs text-muted-foreground">
                   Screens without their own playlist play {currentDefault.name}.
                 </p>
+              ) : !currentDefault && !makeDefault && canEdit ? (
+                <p className="mt-2 text-xs text-warning">
+                  No workspace default yet. Tick Workspace default so screens have something to play.
+                </p>
               ) : null}
 
               {status ? (
                 <div
+                  role="status"
                   className={cn(
                     "mt-3 rounded-md border px-3 py-2 text-[13px]",
                     status.ok
@@ -1296,7 +1363,7 @@ export function PlaylistManager({
                     <span className="text-muted-foreground/40">&middot;</span>
                     <span>{queueDurationLabel}</span>
                   </div>
-                  {queue.length > 0 ? (
+                  {queue.length > 0 && canEdit ? (
                     <Button
                       onClick={() => setQueue([])}
                       size="xs"
@@ -1336,13 +1403,17 @@ export function PlaylistManager({
                   </SortableContext>
                 ) : (
                   <div className="py-10 text-center text-[13px] text-muted-foreground">
-                    Drag media here or browse the library to add items.
+                    {!canEdit
+                      ? "Nothing to show."
+                      : assets.length === 0
+                        ? "Your media library is empty. Add media first, then build the playlist here."
+                        : "Drag media here, or use the + next to an item in the media library."}
                   </div>
                 )}
               </QueueDropZone>
             </div>
 
-            {selectedPlaylistId ? (
+            {selectedPlaylistId && canEdit ? (
               <div className="shrink-0 border-t border-white/5 px-5 py-3">
                 <button
                   className="text-[13px] text-muted-foreground transition-colors hover:text-destructive"
@@ -1356,6 +1427,7 @@ export function PlaylistManager({
           </Card>
 
           {/* ──────────── Media picker ──────────── */}
+          {canEdit ? (
           <aside className="2xl:sticky 2xl:top-[8rem] 2xl:self-start">
             <Card className="gap-0 py-0 2xl:max-h-[calc(100vh-10rem)]">
               <div className="shrink-0 border-b border-white/5 px-4 py-3">
@@ -1390,6 +1462,7 @@ export function PlaylistManager({
                   <Input
                     className="h-8 text-xs"
                     onChange={(e) => setMediaSearch(e.target.value)}
+                    aria-label="Search media"
                     placeholder="Search media…"
                     value={mediaSearch}
                   />
@@ -1456,6 +1529,7 @@ export function PlaylistManager({
                         Add {sourceSelectionCount}
                       </Button>
                       <Button
+                        aria-label="Clear selection"
                         onClick={clearSourceSelection}
                         size="xs"
                         type="button"
@@ -1503,12 +1577,21 @@ export function PlaylistManager({
                       ? "No media matches that search."
                       : selectedMediaFolderId
                         ? "This folder is empty."
-                        : "No media yet. Upload some on the Media page first."}
+                        : (
+                          <>
+                            No media yet.{" "}
+                            <Link className="text-primary underline underline-offset-4" href="/media">
+                              Add some on the Media page
+                            </Link>{" "}
+                            first.
+                          </>
+                        )}
                   </div>
                 )}
               </div>
             </Card>
           </aside>
+          ) : null}
         </div>
       </div>
 

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 
 import { latestScreenshot } from "@/lib/backend";
+import { withApiErrors } from "@/lib/api-errors";
 
-export async function GET(
+export const GET = withApiErrors(async function GET(
   _request: Request,
   { params }: { params: Promise<{ deviceId: string }> },
 ) {
@@ -14,4 +15,4 @@ export async function GET(
 
   const { deviceId } = await params;
   return NextResponse.json({ screenshot: await latestScreenshot(deviceId) });
-}
+});

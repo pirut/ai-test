@@ -2,6 +2,7 @@
 
 import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { readApiPayload } from "@/lib/api-response";
 import { cn } from "@/lib/utils";
 
 type ScheduleSummary = {
@@ -195,10 +197,13 @@ export function ScheduleManager({
   initialSchedules,
   playlists,
   devices,
+  canEdit = true,
 }: {
   initialSchedules: ScheduleSummary[];
   playlists: PlaylistOption[];
   devices: DeviceOption[];
+  /** Members can look at schedules; only admins can change them. */
+  canEdit?: boolean;
 }) {
   const router = useRouter();
   const [schedules, setSchedules] = useState(initialSchedules);
@@ -312,17 +317,17 @@ export function ScheduleManager({
         }),
       });
 
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to save schedule");
+      const payload = await readApiPayload<{ schedule: ScheduleSummary }>(response);
+      if (!response.ok || !payload.schedule) {
+        throw new Error(payload.error ?? `Could not save the schedule (${response.status}). Try again.`);
       }
 
-      const nextSchedule = payload.schedule as ScheduleSummary;
+      const nextSchedule = payload.schedule;
       setSchedules((current) => [
         nextSchedule,
         ...current.filter((s) => s.id !== nextSchedule.id),
       ]);
-      setStatus({ ok: true, text: `Saved "${nextSchedule.label}"` });
+      setStatus({ ok: true, text: `Saved "${nextSchedule.label}". Screens pick it up within a minute.` });
       cancelEditing();
       router.refresh();
     } catch (error) {
@@ -346,8 +351,8 @@ export function ScheduleManager({
     try {
       const response = await fetch(`/api/schedules/${scheduleId}`, { method: "DELETE" });
       if (!response.ok) {
-        const payload = await response.json();
-        throw new Error(payload.error ?? "Unable to delete schedule");
+        const payload = await readApiPayload(response);
+        throw new Error(payload.error ?? `Could not delete the schedule (${response.status}). Try again.`);
       }
 
       setSchedules((current) => current.filter((s) => s.id !== scheduleId));
@@ -364,7 +369,8 @@ export function ScheduleManager({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
+    <div className={cn("grid gap-6", canEdit && "xl:grid-cols-[380px_1fr]")}>
+      {canEdit ? (
       <Card className="h-fit xl:sticky xl:top-20">
         <CardHeader className="border-b">
           <CardTitle>
@@ -410,10 +416,10 @@ export function ScheduleManager({
           />
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-sm">Priority</Label>
+            <Label className="text-sm" htmlFor="schedule-priority">Priority</Label>
             <p className="text-xs text-muted-foreground">When windows overlap, the higher number plays.</p>
             <Select items={PRIORITY_OPTIONS} onValueChange={(value) => setPriority(value ?? "10")} value={priority}>
-              <SelectTrigger>
+              <SelectTrigger id="schedule-priority">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -427,15 +433,15 @@ export function ScheduleManager({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-sm">Playlist</Label>
+            <Label className="text-sm" htmlFor="schedule-playlist">Playlist</Label>
             <Select
               disabled={!hasPlaylists}
               items={playlistOptions}
               onValueChange={(value) => setPlaylistId(value ?? "")}
               value={playlistId || null}
             >
-              <SelectTrigger>
-                <SelectValue placeholder={hasPlaylists ? "Choose playlist" : "No playlists available"} />
+              <SelectTrigger id="schedule-playlist">
+                <SelectValue placeholder={hasPlaylists ? "Choose playlist" : "No playlists yet"} />
               </SelectTrigger>
               <SelectContent>
                 {playlistOptions.map((playlist) => (
@@ -448,13 +454,13 @@ export function ScheduleManager({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-sm">Screens</Label>
+            <Label className="text-sm" htmlFor="schedule-screens">Screens</Label>
             <Select
               items={deviceOptions}
               onValueChange={(value) => setDeviceId(value === ALL_SCREENS_VALUE ? "" : value ?? "")}
               value={deviceId || ALL_SCREENS_VALUE}
             >
-              <SelectTrigger>
+              <SelectTrigger id="schedule-screens">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -488,12 +494,17 @@ export function ScheduleManager({
               {status.text}
             </p>
           ) : !hasPlaylists ? (
-            <p className="text-xs text-muted-foreground">
-              Create a playlist first, then come back to schedule it.
+            <p className="text-sm text-muted-foreground">
+              A schedule needs a playlist to play.{" "}
+              <Link className="text-primary underline underline-offset-4" href="/playlists">
+                Make a playlist
+              </Link>{" "}
+              first, then come back.
             </p>
           ) : null}
         </CardContent>
       </Card>
+      ) : null}
 
       <section className="flex min-w-0 flex-col gap-6">
         <ScheduleWeekView
@@ -501,7 +512,7 @@ export function ScheduleManager({
           selectedId={editingId}
           onSelect={(id) => {
             const target = schedules.find((schedule) => schedule.id === id);
-            if (target) startEditing(target);
+            if (target && canEdit) startEditing(target);
           }}
         />
         {schedules.length > 0 ? (
@@ -535,6 +546,7 @@ export function ScheduleManager({
                           <Badge variant="outline">Priority {window.priority}</Badge>
                         </div>
                       </div>
+                      {canEdit ? (
                       <div className="flex shrink-0 items-center gap-1">
                         <Button
                           disabled={deleting}
@@ -556,6 +568,7 @@ export function ScheduleManager({
                           {confirmDeleteId === window.id ? "Really delete?" : "Delete"}
                         </Button>
                       </div>
+                      ) : null}
                     </div>
                   </CardHeader>
                   <CardContent className="flex flex-col">
@@ -587,7 +600,9 @@ export function ScheduleManager({
         ) : (
           <div className="rounded-lg border border-dashed p-6 text-center">
             <p className="text-sm text-muted-foreground">
-              No schedules yet. Every screen plays its default playlist all the time. Add a window on the left to play something different at certain times.
+              {canEdit
+                ? "No schedules yet. Every screen plays its default playlist all the time. Add a schedule to play something different at certain times."
+                : "No schedules yet. Every screen plays its default playlist all the time."}
             </p>
           </div>
         )}
