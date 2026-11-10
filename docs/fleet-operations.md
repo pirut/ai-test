@@ -17,6 +17,44 @@ separate checksummed artifacts alongside the build manifest, configuration, and
 SBOM. Promotion remains explicit: inspect the SBOM, soak the candidate, then
 publish it to the canary hardware ring in Connect.
 
+## Fleet health and alerts
+
+Uptime, outages and unexpected restarts are worked out on the server from the
+heartbeats screens already send, so every screen is covered without new
+software, including ones on older agents.
+
+- **Outages.** A minute-by-minute check (`fleetHealth.sweep`) records an outage
+  for any screen with no check-in for 5 minutes, dated from its last check-in.
+  The screen's next heartbeat closes it. Uptime is the share of the last 7 days
+  a screen was not in an outage, counted only from when it was first watched.
+- **Unexpected restarts.** A heartbeat whose agent uptime did not move forward,
+  or whose player restart counter stepped up, is a restart nobody asked for.
+  Restarts within 15 minutes of a restart, reboot, update or network command
+  are expected and ignored, and a restart after a gap is left to the outage
+  record. Three inside 30 minutes open a crash loop, which closes after 30
+  quiet minutes.
+- **Dashboard.** The overview shows a banner while any screen is offline or
+  crash looping, and a Reliability card with fleet uptime, outage and restart
+  counts and recent events. Each screen's page has an uptime tile.
+- **Emails.** Admins choose recipients and the wait (5 to 60 minutes, default
+  10) under Alert emails on the Reliability card. An outage is emailed once
+  after the wait and once more when the screen is back; an outage that clears
+  sooner is never emailed. A crash loop is emailed right away. Everything due
+  for a workspace in the same minute goes out as one email. Screens that were
+  already dark for over an hour when monitoring first runs are recorded but
+  not announced.
+
+Emails are sent through Resend and stay off until these are set on the
+**Convex** deployment (not Vercel):
+
+| Variable | Purpose |
+| --- | --- |
+| `RESEND_API_KEY` | Resend API key |
+| `SHOWROOM_ALERT_EMAIL_FROM` | From address on a domain verified in Resend, for example `Showroom alerts <alerts@example.com>` |
+| `SHOWROOM_DASHBOARD_URL` | Optional. Site address, used for the "Open the dashboard" link |
+
+Send test email in the Alert emails dialog confirms the setup end to end.
+
 ## Legacy-safe cutover
 
 The control plane can be deployed before any Pi is reflashed. Existing devices

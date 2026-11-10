@@ -128,12 +128,17 @@ export default defineSchema({
     health: v.optional(v.any()),
     lastHealthAt: v.optional(v.number()),
     connectDeviceId: v.optional(v.string()),
+    // Fleet health: the agent uptime from the last heartbeat (a drop means
+    // the agent restarted) and when uptime tracking began for this screen.
+    lastUptimeSeconds: v.optional(v.number()),
+    healthTrackedSince: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_claim_code", ["claimCode"])
     .index("by_org", ["organizationId"])
-    .index("by_org_and_status", ["organizationId", "status"]),
+    .index("by_org_and_status", ["organizationId", "status"])
+    .index("by_status_and_last_heartbeat", ["status", "lastHeartbeatAt"]),
 
   deviceCredentials: defineTable({
     deviceId: v.id("devices"),
@@ -405,9 +410,16 @@ export default defineSchema({
     openedAt: v.number(),
     resolvedAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
+    // Email progress for alerts that notify people: "pending" until the
+    // problem is emailed, "sent" after, "recovery_pending" once it clears and
+    // the all-clear is still to send. Unset for records that never email.
+    notifyState: v.optional(v.string()),
   })
     .index("by_device", ["deviceId"])
-    .index("by_org_and_state", ["organizationId", "state"]),
+    .index("by_org_and_state", ["organizationId", "state"])
+    .index("by_org_and_resolved_at", ["organizationId", "resolvedAt"])
+    .index("by_notify_state", ["notifyState"])
+    .index("by_state_and_type", ["state", "alertType"]),
 
   hardwareProfiles: defineTable({
     organizationId: v.string(),
