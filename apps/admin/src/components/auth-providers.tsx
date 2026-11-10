@@ -21,6 +21,19 @@ const clerkAppearance = {
   },
 } as const;
 
+// The product calls a Clerk organization a workspace.
+const clerkLocalization = {
+  createOrganization: {
+    title: "Name your workspace",
+    formButtonSubmit: "Create workspace",
+  },
+  organizationList: {
+    createOrganization: "Create workspace",
+    action__createOrganization: "Create workspace",
+    titleWithoutPersonal: "Choose a workspace",
+  },
+} as const;
+
 export function AuthProviders({ children, localMockMode }: { children: React.ReactNode; localMockMode: boolean }) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const content = (
@@ -29,7 +42,13 @@ export function AuthProviders({ children, localMockMode }: { children: React.Rea
     </ConvexClientProvider>
   );
   return publishableKey && !localMockMode ? (
-    <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
+    <ClerkProvider
+      publishableKey={publishableKey}
+      appearance={clerkAppearance}
+      localization={clerkLocalization}
+      // A new account names its workspace before anything else.
+      signUpFallbackRedirectUrl="/welcome"
+    >
       {content}
     </ClerkProvider>
   ) : content;

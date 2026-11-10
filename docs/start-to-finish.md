@@ -48,22 +48,34 @@ only.
 
 ## Part 2: a customer's first screen
 
-1. **Sign up** and create a workspace. A new workspace opens on **Get started**.
-2. **Download the image** and write it to a microSD card with Raspberry Pi
-   Imager (Raspberry Pi 5, "Use custom", no OS customisation).
-3. **Plug in** the card, HDMI, then power. The first start restarts once on
-   its own while it grows the storage partition.
-4. **Get online.** With a network cable there is nothing to do. For Wi-Fi the
-   TV shows a QR code: scanning it joins the screen's own setup hotspot and
-   opens a page to pick the network. A USB keyboard works too, on the TV
-   itself.
-5. **Pair.** Once online the TV shows a 6-character code and a QR code.
-   Scanning opens the dashboard with the code filled in; typing the code into
-   **Add screen** does the same. The code renews itself if it expires.
-6. **Add content.** Upload photos and videos or add YouTube links in
-   **Media**, put them in order in **Playlists**, and tick **Workspace
-   default** on one playlist. Every screen plays the default unless it has
-   its own playlist or a schedule says otherwise.
+The dashboard walks a new customer through this as a four-step guide on
+**Get started**. It reads the workspace's own screens and playlists, so it
+resumes on any browser, and it shows "To finish" in the sidebar until a
+screen has something to play.
+
+1. **Sign up.** After creating an account the customer names a workspace on
+   `/welcome` (someone with an invitation picks the workspace instead) and
+   lands on **Get started**.
+2. **Get the screen ready.** Download the image and write it to a microSD
+   card with Raspberry Pi Imager (Raspberry Pi 5, "Use custom", no OS
+   customisation). Plug in the card, HDMI, then power. The first start
+   restarts once on its own while it grows the storage partition. With a
+   network cable there is nothing more to do. For Wi-Fi the TV shows a QR
+   code: scanning it joins the screen's own setup hotspot and opens a page to
+   pick the network. A USB keyboard works too, on the TV itself.
+3. **Pair.** Once online the TV shows a 6-character code and a QR code.
+   Typing the code into the guide pairs the screen; scanning the QR code
+   opens the guide with the code filled in, also for someone who has to sign
+   up and name a workspace first. The code renews itself if it expires.
+4. **Add the first video.** One upload or YouTube link in the guide becomes
+   "Main playlist", the workspace default. This can be done while the card is
+   still writing. Every screen plays the default unless it has its own
+   playlist or a schedule says otherwise.
+5. **Watch it play.** The guide follows the screen from online to downloaded
+   to playing and shows a picture taken by the screen itself.
+
+To try the guide without a Pi, run the admin app with `SHOWROOM_MOCK_MODE=true`
+and `SHOWROOM_MOCK_EMPTY=1`, and pair with the code `DEMO01`.
 
 What the TV shows along the way, in both players:
 

@@ -25,6 +25,13 @@ The earlier "Signal Room" dark/mint spec is retired.
 - `screen-controls.tsx`: `ScreenCommandProvider` shares one command sender per screen page; `ScreenActions`, `ScreenPreview`, `NetworkCard` read from it.
 - shadcn/Base UI primitives in `components/ui`. When a `Button` renders a `Link`, pass `nativeButton={false}`.
 
+## First run
+
+- A signed-in account with no workspace goes to `/welcome` (outside the dashboard shell, same look as sign-up) to name one, then to **Get started**.
+- **Get started** is the setup guide (`components/setup-guide.tsx`): get the screen ready, pair it, add the first video, watch it play. Steps can be done in any order.
+- `lib/onboarding.ts` derives all progress from the workspace's screens and playlists. Nothing is stored, so don't add a "dismissed" flag; the guide is finished when a screen is playing.
+- The sidebar shows "To finish" on Get started, and Overview shows a card, only while the workspace has no screen or nothing to play.
+
 ## Pi screens (`apps/player`)
 
 - Pairing shows the code in two groups of three (`ABC 123`), three numbered steps and the network status.
